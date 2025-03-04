@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
-import { base } from '@/lib/airtable';
+import { base, hasAirtableConfig } from '@/lib/airtable';
+
+// Define a type for Airtable records
+interface AirtableRecord {
+  id: string;
+  fields: Record<string, any>;
+}
 
 const testUsers = [
   {
@@ -35,13 +41,21 @@ const testUsers = [
 ];
 
 export async function GET() {
+  // If Airtable is not configured, return a message
+  if (!hasAirtableConfig) {
+    return NextResponse.json({
+      success: false,
+      message: 'Airtable is not configured. Please add AIRTABLE_API_KEY and AIRTABLE_BASE_ID to your environment variables.'
+    }, { status: 503 });
+  }
+
   try {
     const records = await base('User').create(testUsers);
 
     return NextResponse.json({
       success: true,
       message: 'Test users created successfully',
-      records: records.map(record => ({
+      records: records.map((record: AirtableRecord) => ({
         id: record.id,
         fields: record.fields
       }))
