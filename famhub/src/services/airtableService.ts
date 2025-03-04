@@ -1,4 +1,10 @@
-import { base } from '@/lib/airtable';
+import { base, hasAirtableConfig } from '@/lib/airtable';
+
+// Define a type for Airtable records
+interface AirtableRecord {
+  id: string;
+  fields: Record<string, any>;
+}
 
 export interface Record {
   id: string;
@@ -12,15 +18,22 @@ export class AirtableService {
     this.table = tableName;
   }
 
+  private checkConfig() {
+    if (!hasAirtableConfig) {
+      throw new Error('Airtable is not configured. Please add AIRTABLE_API_KEY and AIRTABLE_BASE_ID to your environment variables.');
+    }
+  }
+
   async getRecords(filterFormula?: string): Promise<Record[]> {
     try {
+      this.checkConfig();
       const records = await base(this.table)
         .select({
           filterByFormula: filterFormula,
         })
         .all();
 
-      return records.map((record) => ({
+      return records.map((record: AirtableRecord) => ({
         id: record.id,
         fields: record.fields,
       }));
@@ -32,6 +45,7 @@ export class AirtableService {
 
   async createRecord(fields: any): Promise<Record> {
     try {
+      this.checkConfig();
       const record = await base(this.table).create([{ fields }]);
       return {
         id: record[0].id,
@@ -45,6 +59,7 @@ export class AirtableService {
 
   async updateRecord(id: string, fields: any): Promise<Record> {
     try {
+      this.checkConfig();
       const record = await base(this.table).update([
         {
           id,
@@ -63,6 +78,7 @@ export class AirtableService {
 
   async deleteRecord(id: string): Promise<void> {
     try {
+      this.checkConfig();
       await base(this.table).destroy([id]);
     } catch (error) {
       console.error('Error deleting record:', error);
