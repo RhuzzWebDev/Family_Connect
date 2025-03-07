@@ -6,7 +6,7 @@ interface AirtableRecord {
   fields: Record<string, any>;
 }
 
-export interface Record {
+export interface AirtableRecordData {
   id: string;
   fields: any;
 }
@@ -24,7 +24,7 @@ export class AirtableService {
     }
   }
 
-  async getRecords(filterFormula?: string): Promise<Record[]> {
+  async getRecords(filterFormula?: string): Promise<AirtableRecordData[]> {
     try {
       this.checkConfig();
       const records = await base(this.table)
@@ -43,7 +43,7 @@ export class AirtableService {
     }
   }
 
-  async createRecord(fields: any): Promise<Record> {
+  async createRecord(fields: any): Promise<AirtableRecordData> {
     try {
       this.checkConfig();
       const record = await base(this.table).create([{ fields }]);
@@ -57,7 +57,7 @@ export class AirtableService {
     }
   }
 
-  async updateRecord(id: string, fields: any): Promise<Record> {
+  async updateRecord(id: string, fields: any): Promise<AirtableRecordData> {
     try {
       this.checkConfig();
       const record = await base(this.table).update([
