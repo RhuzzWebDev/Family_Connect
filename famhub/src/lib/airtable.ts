@@ -1,20 +1,21 @@
 import Airtable from 'airtable';
 
-if (!process.env.AIRTABLE_API_KEY) {
-  throw new Error('Missing AIRTABLE_API_KEY');
+// Get environment variables
+const apiKey = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY;
+const baseId = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID;
+
+// Check if configuration is valid
+export const hasAirtableConfig = Boolean(apiKey && baseId);
+
+// Configure Airtable with API key
+if (hasAirtableConfig) {
+  Airtable.configure({
+    apiKey: apiKey as string,
+    endpointUrl: 'https://api.airtable.com',
+  });
 }
 
-if (!process.env.AIRTABLE_BASE_ID) {
-  throw new Error('Missing AIRTABLE_BASE_ID');
-}
-
-// Configure Airtable
-Airtable.configure({
-  endpointUrl: 'https://api.airtable.com',
-  apiKey: process.env.AIRTABLE_API_KEY,
-});
-
-// Initialize base
-const base = Airtable.base(process.env.AIRTABLE_BASE_ID);
-
-export { base };
+// Export the base instance with proper typing
+export const base = hasAirtableConfig 
+  ? Airtable.base(baseId as string)
+  : undefined;

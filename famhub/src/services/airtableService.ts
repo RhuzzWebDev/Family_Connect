@@ -1,72 +1,139 @@
-import { base } from '@/lib/airtable';
+import { base, hasAirtableConfig } from '@/lib/airtable';
+import Airtable, { FieldSet, Record, Records } from 'airtable';
 
-export interface Record {
-  id: string;
-  fields: any;
+// Define our user fields with index signature to make it compatible with FieldSet
+export interface UserFields extends FieldSet {
+  Name: string;
+  Email: string;
+  Password: string;
+  Confirm_Password?: string; // Added Confirm_Password field
+  Status?: string; // Optional Status field with default "Validating"
 }
 
+/**
+ * Service for interacting with Airtable
+ * Handles CRUD operations for user data
+ */
 export class AirtableService {
-  private table: string;
+  private readonly tableName: string;
 
-  constructor(tableName: string) {
-    this.table = tableName;
+  /**
+   * Initialize the Airtable service
+   * @param tableName The name of the table to use (defaults to 'User')
+   */
+  constructor(tableName = 'User') {
+    if (!hasAirtableConfig) {
+      throw new Error('Airtable is not configured. Please check your environment variables.');
+    }
+    
+    this.tableName = tableName;
   }
 
-  async getRecords(filterFormula?: string): Promise<Record[]> {
+  /**
+   * Create a new user record
+   * @param fields The user data to store
+   * @returns The created record
+   */
+  async createRecord(fields: UserFields): Promise<Record<FieldSet>> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
+    // Set default Status if not provided
+    if (!fields.Status) {
+      fields.Status = 'Validating';
+    }
+
+    // Ensure Confirm_Password matches Password if not provided
+    if (!fields.Confirm_Password) {
+      fields.Confirm_Password = fields.Password;
+    }
+
     try {
-      const records = await base(this.table)
-        .select({
-          filterByFormula: filterFormula,
-        })
+      // Get existing records to check the current IDs
+      const existingRecords = await this.getRecords();
+      console.log('Existing records count:', existingRecords.length);
+      
+      if (existingRecords.length > 0) {
+        // Log the IDs of existing records to understand the sequence
+        console.log('Existing record IDs:', existingRecords.map(record => record.id));
+      }
+      
+      const records = await base(this.tableName).create([{ fields }]);
+      
+      // Log the newly created record ID
+      console.log('New record created with ID:', records[0].id);
+      
+      return records[0];
+    } catch (error: any) {
+      console.error('Failed to create user:', error);
+      throw new Error(`Failed to create user: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get user records with optional filter
+   * @param filterFormula Optional Airtable formula to filter records
+   * @returns Array of matching records
+   */
+  async getRecords(filterFormula?: string): Promise<Records<FieldSet>> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
+    try {
+      // Only include filterByFormula if it's provided, otherwise omit it
+      const selectOptions = filterFormula ? { filterByFormula: filterFormula } : {};
+      
+      const records = await base(this.tableName)
+        .select(selectOptions)
         .all();
-
-      return records.map((record) => ({
-        id: record.id,
-        fields: record.fields,
-      }));
-    } catch (error) {
-      console.error('Error fetching records:', error);
-      throw error;
+      return records;
+    } catch (error: any) {
+      console.error('Failed to fetch users:', error);
+      throw new Error(`Failed to fetch users: ${error.message}`);
     }
   }
 
-  async createRecord(fields: any): Promise<Record> {
+  /**
+   * Update an existing user record
+   * @param id The ID of the record to update
+   * @param fields The fields to update
+   * @returns The updated record
+   */
+  async updateRecord(id: string, fields: Partial<UserFields>): Promise<Record<FieldSet>> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
+    // If Password is updated, update Confirm_Password as well
+    if (fields.Password && !fields.Confirm_Password) {
+      fields.Confirm_Password = fields.Password;
+    }
+
     try {
-      const record = await base(this.table).create([{ fields }]);
-      return {
-        id: record[0].id,
-        fields: record[0].fields,
-      };
-    } catch (error) {
-      console.error('Error creating record:', error);
-      throw error;
+      const records = await base(this.tableName).update([{ id, fields }]);
+      return records[0];
+    } catch (error: any) {
+      console.error('Failed to update user:', error);
+      throw new Error(`Failed to update user: ${error.message}`);
     }
   }
 
-  async updateRecord(id: string, fields: any): Promise<Record> {
-    try {
-      const record = await base(this.table).update([
-        {
-          id,
-          fields,
-        },
-      ]);
-      return {
-        id: record[0].id,
-        fields: record[0].fields,
-      };
-    } catch (error) {
-      console.error('Error updating record:', error);
-      throw error;
-    }
-  }
-
+  /**
+   * Delete a user record
+   * @param id The ID of the record to delete
+   */
   async deleteRecord(id: string): Promise<void> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
     try {
-      await base(this.table).destroy([id]);
-    } catch (error) {
-      console.error('Error deleting record:', error);
-      throw error;
+      await base(this.tableName).destroy([id]);
+    } catch (error: any) {
+      console.error('Failed to delete user:', error);
+      throw new Error(`Failed to delete user: ${error.message}`);
     }
   }
 }
