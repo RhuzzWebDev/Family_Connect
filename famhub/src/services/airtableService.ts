@@ -2,16 +2,31 @@ import { base, hasAirtableConfig } from '@/lib/airtable';
 import Airtable, { FieldSet, Record, Records, Attachment } from 'airtable';
 import { FileStorageService } from './fileStorageService';
 
+export type UserRole = 
+  | 'Father'
+  | 'Grandfather'
+  | 'Grandmother'
+  | 'Middle Brother'
+  | 'Middle Sister'
+  | 'Mother'
+  | 'Older Brother'
+  | 'Older Sister'
+  | 'Youngest Brother'
+  | 'Youngest Sister';
+
+export type UserPersona = 'Parent' | 'Children';
+
 // Define our user fields with index signature to make it compatible with FieldSet
 export interface UserFields extends FieldSet {
-  Name: string;
+  id?: string;
+  first_name: string;
+  last_name: string;
   Email: string;
   Password: string;
   Confirm_Password?: string;
   Status?: string;
-  role?: 'parent' | 'child';
-  first_name?: string;
-  last_name?: string;
+  role: UserRole;
+  persona: UserPersona;
 }
 
 // Define question fields
@@ -32,19 +47,18 @@ export interface QuestionFields extends FieldSet {
  * Handles CRUD operations for user data and questions
  */
 export class AirtableService {
-  private readonly tableName: string;
   private readonly fileStorageService: FileStorageService;
+  private readonly USERS_TABLE = 'User';
+  private readonly QUESTIONS_TABLE = 'Questions_user';
 
   /**
    * Initialize the Airtable service
-   * @param tableName The name of the table to use (defaults to 'User')
    */
-  constructor(tableName = 'User') {
+  constructor() {
     if (!hasAirtableConfig) {
       throw new Error('Airtable is not configured. Please check your environment variables.');
     }
     
-    this.tableName = tableName;
     this.fileStorageService = new FileStorageService();
   }
 
@@ -58,27 +72,24 @@ export class AirtableService {
       throw new Error('Airtable base is not available');
     }
 
-    // Set default Status if not provided
-    if (!fields.Status) {
-      fields.Status = 'Validating';
-    }
-
-    // Ensure Confirm_Password matches Password if not provided
-    if (!fields.Confirm_Password) {
-      fields.Confirm_Password = fields.Password;
-    }
-
     try {
-      // Get existing records to check the current IDs
-      const existingRecords = await this.getRecords();
-      console.log('Existing records count:', existingRecords.length);
-      
-      if (existingRecords.length > 0) {
-        // Log the IDs of existing records to understand the sequence
-        console.log('Existing record IDs:', existingRecords.map(record => record.id));
+      // Check if email already exists
+      const existingUsers = await this.getRecords(`Email = "${fields.Email}"`);
+      if (existingUsers && existingUsers.length > 0) {
+        throw new Error('Email already exists');
       }
-      
-      const records = await base(this.tableName).create([{ fields }]);
+
+      // Set default Status if not provided
+      if (!fields.Status) {
+        fields.Status = 'Validating';
+      }
+
+      // Ensure Confirm_Password matches Password if not provided
+      if (!fields.Confirm_Password) {
+        fields.Confirm_Password = fields.Password;
+      }
+
+      const records = await base(this.USERS_TABLE).create([{ fields }]);
       
       // Log the newly created record ID
       console.log('New record created with ID:', records[0].id);
@@ -104,7 +115,7 @@ export class AirtableService {
       // Only include filterByFormula if it's provided, otherwise omit it
       const selectOptions = filterFormula ? { filterByFormula: filterFormula } : {};
       
-      const records = await base(this.tableName)
+      const records = await base(this.USERS_TABLE)
         .select(selectOptions)
         .all();
       return records;
@@ -131,7 +142,7 @@ export class AirtableService {
     }
 
     try {
-      const records = await base(this.tableName).update([{ id, fields }]);
+      const records = await base(this.USERS_TABLE).update([{ id, fields }]);
       return records[0];
     } catch (error: any) {
       console.error('Failed to update user:', error);
@@ -149,7 +160,7 @@ export class AirtableService {
     }
 
     try {
-      await base(this.tableName).destroy([id]);
+      await base(this.USERS_TABLE).destroy([id]);
     } catch (error: any) {
       console.error('Failed to delete user:', error);
       throw new Error(`Failed to delete user: ${error.message}`);
@@ -167,7 +178,7 @@ export class AirtableService {
     }
 
     try {
-      const records = await base('Users')
+      const records = await base(this.USERS_TABLE)
         .select({
           filterByFormula: filterByFormula || '',
         })
@@ -191,7 +202,7 @@ export class AirtableService {
     }
 
     try {
-      const records = await base('Questions_user')
+      const records = await base(this.QUESTIONS_TABLE)
         .select({
           filterByFormula: filterByFormula || '',
           sort: [{ field: 'Timestamp', direction: 'desc' }]
@@ -232,10 +243,9 @@ export class AirtableService {
       let folderPath = '';
 
       // Create folder structure based on role
-      if (user.role === 'parent' && user.last_name) {
+      if (user.persona === 'Parent' && user.last_name) {
         folderPath = `${user.last_name}/${user.first_name || 'unknown'}`;
       } else {
-        // For non-parent users or missing last name
         folderPath = `other/${user.first_name || 'unknown'}`;
       }
 
@@ -246,7 +256,7 @@ export class AirtableService {
       }
 
       // Create question record
-      const records = await base('Questions_user').create([{
+      const records = await base(this.QUESTIONS_TABLE).create([{
         fields: {
           ...fields,
           file_url,
@@ -275,7 +285,7 @@ export class AirtableService {
     }
 
     try {
-      const records = await base('Questions_user').update([{
+      const records = await base(this.QUESTIONS_TABLE).update([{
         id,
         fields: { like_count: likeCount }
       }]);
@@ -298,7 +308,7 @@ export class AirtableService {
     }
 
     try {
-      const records = await base('Questions_user').update([{
+      const records = await base(this.QUESTIONS_TABLE).update([{
         id,
         fields: { comment_count: commentCount }
       }]);

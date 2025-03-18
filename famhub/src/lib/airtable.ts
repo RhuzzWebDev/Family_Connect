@@ -9,8 +9,11 @@ export const hasAirtableConfig = Boolean(apiKey && baseId);
 
 // Configure Airtable with API key
 if (hasAirtableConfig) {
+  // Add the 'pat' prefix if not present
+  const fullApiKey = apiKey?.startsWith('pat') ? apiKey : `pat${apiKey}`;
+  
   Airtable.configure({
-    apiKey: apiKey as string,
+    apiKey: fullApiKey,
     endpointUrl: 'https://api.airtable.com',
   });
 }
