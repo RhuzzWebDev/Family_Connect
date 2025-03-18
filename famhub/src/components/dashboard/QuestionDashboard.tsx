@@ -5,9 +5,11 @@ import { AirtableService } from "@/services/airtableService";
 import { QuestionCard } from "@/components/ui/QuestionCard";
 import { CreateQuestionForm } from "@/components/question/CreateQuestionForm";
 import { Loader2 } from "lucide-react";
+import { Record } from "airtable";
+import { QuestionFields } from "@/services/airtableService";
 
 export function QuestionDashboard() {
-  const [questions, setQuestions] = useState<any[]>([]);
+  const [questions, setQuestions] = useState<Record<QuestionFields>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,8 +18,10 @@ export function QuestionDashboard() {
   const fetchQuestions = async () => {
     try {
       const records = await airtableService.getQuestions();
-      setQuestions(records);
-      setError(null);
+      if (records) {
+        setQuestions(records);
+        setError(null);
+      }
     } catch (err) {
       setError("Failed to load questions");
       console.error(err);
@@ -54,13 +58,15 @@ export function QuestionDashboard() {
           No questions found. Be the first to ask a question!
         </div>
       ) : (
-        questions.map((record) => (
-          <QuestionCard
-            key={record.id}
-            questionId={record.id}
-            onUpdate={fetchQuestions}
-          />
-        ))
+        <div className="space-y-4">
+          {questions.map((record) => (
+            <QuestionCard
+              key={record.id}
+              questionId={record.id}
+              onUpdate={fetchQuestions}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

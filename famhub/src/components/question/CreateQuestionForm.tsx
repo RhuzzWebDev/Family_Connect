@@ -7,27 +7,41 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AirtableService } from "@/services/airtableService";
 import { Loader2, Image as ImageIcon, Video as VideoIcon, Music as AudioIcon } from "lucide-react";
+import { QuestionFields } from "@/services/airtableService";
 
-export function CreateQuestionForm({ onQuestionCreated }: { onQuestionCreated?: () => void }) {
+interface CreateQuestionFormProps {
+  onQuestionCreated?: () => void;
+}
+
+export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProps) {
   const [question, setQuestion] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const airtableService = new AirtableService();
 
+  const getMediaType = (file: File): 'image' | 'video' | 'audio' | undefined => {
+    const fileType = file.type.split('/')[0];
+    if (['image', 'video', 'audio'].includes(fileType)) {
+      return fileType as 'image' | 'video' | 'audio';
+    }
+    return undefined;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      // Check file type
-      const fileType = selectedFile.type.split('/')[0];
-      if (!['image', 'video', 'audio'].includes(fileType)) {
+      const mediaType = getMediaType(selectedFile);
+      if (!mediaType) {
         setError('Please upload an image, video, or audio file');
         return;
       }
       setFile(selectedFile);
       setError(null);
+    } else {
+      setFile(undefined);
     }
   };
 
@@ -37,19 +51,27 @@ export function CreateQuestionForm({ onQuestionCreated }: { onQuestionCreated?: 
     setError(null);
 
     try {
-      const userId = sessionStorage.getItem('userEmail');
-      if (!userId) {
+      const userEmail = sessionStorage.getItem('userEmail');
+      if (!userEmail) {
         throw new Error('Please log in to create a question');
       }
 
-      await airtableService.createQuestion({
-        user_id: userId,
+      const mediaType = file ? getMediaType(file) : undefined;
+
+      const questionData: Partial<QuestionFields> = {
+        user_id: userEmail,
         questions: question,
-      }, file || undefined);
+        mediaType,
+        like_count: 0,
+        comment_count: 0,
+        Timestamp: new Date().toISOString(),
+      };
+
+      await airtableService.createQuestion(questionData, file);
 
       // Clear form
       setQuestion('');
-      setFile(null);
+      setFile(undefined);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -68,8 +90,8 @@ export function CreateQuestionForm({ onQuestionCreated }: { onQuestionCreated?: 
 
   const getFileIcon = () => {
     if (!file) return null;
-    const fileType = file.type.split('/')[0];
-    switch (fileType) {
+    const mediaType = getMediaType(file);
+    switch (mediaType) {
       case 'image':
         return <ImageIcon className="h-5 w-5" />;
       case 'video':
