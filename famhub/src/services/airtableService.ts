@@ -31,15 +31,13 @@ export interface UserFields extends FieldSet {
 
 // Define question fields
 export interface QuestionFields extends FieldSet {
-  id: string;
+  id?: string;
   user_id: string;
-  questions: string;
+  question: string;
   file_url?: string;
   like_count: number;
   comment_count: number;
   Timestamp: string;
-  mediaType?: 'image' | 'video' | 'audio';
-  folder_path?: string;
 }
 
 /**
@@ -260,7 +258,6 @@ export class AirtableService {
         fields: {
           ...fields,
           file_url,
-          folder_path: folderPath,
           like_count: 0,
           comment_count: 0,
           Timestamp: new Date().toISOString()
