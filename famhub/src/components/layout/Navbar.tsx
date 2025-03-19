@@ -28,15 +28,15 @@ export function Navbar() {
         
         if (userEmail) {
           const airtableService = new AirtableService();
-          const filterFormula = `{Email} = '${userEmail}'`;
-          const users = await airtableService.getRecords(filterFormula);
-          
-          if (users.length > 0) {
-            const user = users[0];
+          try {
+            const user = await airtableService.getUser(userEmail);
             setUserData({
-              name: user.fields.Name as string || 'User',
-              email: user.fields.Email as string || ''
+              name: `${user.fields.first_name} ${user.fields.last_name}`,
+              email: user.fields.Email
             });
+          } catch (error) {
+            console.error('Error fetching user:', error);
+            setUserData({ name: 'Guest User', email: 'Not logged in' });
           }
         } else {
           // No user is logged in, show default values
@@ -53,14 +53,14 @@ export function Navbar() {
     fetchUserData();
   }, []);
 
-  // Close the menu when clicking outside
+  // Handle click outside of user menu to close it
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
       }
-    }
-    
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
@@ -68,13 +68,11 @@ export function Navbar() {
   }, []);
 
   const handleLogout = () => {
-    // Clear session data
     sessionStorage.removeItem('userEmail');
-    // Redirect to login page
+    setUserData({ name: 'Guest User', email: 'Not logged in' });
     router.push('/login');
   };
 
-  // Get first letter of name for avatar fallback
   const getInitial = () => {
     return userData.name ? userData.name.charAt(0).toUpperCase() : 'U';
   };

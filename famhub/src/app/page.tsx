@@ -1,32 +1,31 @@
 'use client';
 
-import { QuestionCard } from '@/components/ui/QuestionCard';
+import { QuestionCard } from '@/components/question/QuestionCard';
 import { Navbar } from '@/components/layout/Navbar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Home as HomeIcon, Users, Calendar, MessageSquare, PlusCircle, Search } from 'lucide-react';
-import { NewQuestionForm } from '@/components/new-question-form';
+import { CreateQuestionForm } from '@/components/question/CreateQuestionForm';
 import Link from 'next/link';
+import { QuestionFields } from '@/services/airtableService';
 
 // Mock data for demonstration
-const questions = Array(6).fill(null).map((_, i) => ({
-  id: i,
-  text: `What's your favorite family memory from ${2024 - i}?`,
-  mediaUrl: i % 3 === 0 ? '/sample-image.jpg' : i % 3 === 1 ? '/sample-video.mp4' : '/sample-audio.mp3',
+const questions: (QuestionFields & { id: string })[] = Array(6).fill(null).map((_, i) => ({
+  id: `mock-${i}`,
+  user_id: `user${i % 5 + 1}@example.com`,
+  questions: `What's your favorite family moment from ${2024 - i}?`,
+  file_url: i % 3 === 0 ? '/sample-image.jpg' : i % 3 === 1 ? '/sample-video.mp4' : '/sample-audio.mp3',
   mediaType: (i % 3 === 0 ? 'image' : i % 3 === 1 ? 'video' : 'audio') as 'image' | 'video' | 'audio',
-  likes: 3 + i,
-  comments: 2 + i,
-  author: {
-    name: `Family Member ${i % 5 + 1}`,
-    avatar: `/avatars/member${i % 5 + 1}.jpg`,
-  },
-  createdAt: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(), // Days ago
+  like_count: 3 + i,
+  comment_count: 2 + i,
+  Timestamp: new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString(),
+  folder_path: `/family/${i}`
 }));
 
 export default function HomePage() {
-  const handleNewQuestion = (question: any) => {
-    console.log('New question:', question);
-    // In a real app, you would send this to your backend
+  const handleQuestionCreated = () => {
+    // Refresh the page to show new question
+    window.location.reload();
   };
 
   return (
@@ -69,7 +68,7 @@ export default function HomePage() {
             <div className="relative w-full sm:w-96">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
-                placeholder="Search memories..."
+                placeholder="Search questions..."
                 className="w-full pl-9 pr-4 py-2 rounded-full border bg-background"
               />
             </div>
@@ -77,32 +76,29 @@ export default function HomePage() {
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto gap-2">
                   <PlusCircle className="w-5 h-5" />
-                  Create Memory
+                  Ask a Question
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Create a New Memory</DialogTitle>
+                  <DialogTitle>Ask a Family Question</DialogTitle>
                 </DialogHeader>
-                <NewQuestionForm onSubmit={handleNewQuestion} />
+                <CreateQuestionForm onQuestionCreated={handleQuestionCreated} />
               </DialogContent>
             </Dialog>
           </div>
 
-          {/* Memory cards grid */}
+          {/* Question cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {questions.map((question) => (
-              <QuestionCard
-                key={question.id}
-                question={question}
-              />
+              <QuestionCard key={question.id} question={question} />
             ))}
           </div>
 
           {/* Load more button */}
           <div className="mt-8 text-center">
             <Button variant="outline" size="lg">
-              Load More Memories
+              Load More Questions
             </Button>
           </div>
         </main>

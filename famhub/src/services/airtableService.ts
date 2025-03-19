@@ -23,8 +23,8 @@ export interface UserFields extends FieldSet {
   last_name: string;
   Email: string;
   Password: string;
-  Confirm_Password?: string;
-  Status?: string;
+  Confirm_Password: string;
+  Status: 'Active' | 'Validating' | 'Not Active';
   role: UserRole;
   persona: UserPersona;
 }
@@ -33,11 +33,13 @@ export interface UserFields extends FieldSet {
 export interface QuestionFields extends FieldSet {
   id?: string;
   user_id: string;
-  question: string;
+  questions: string;
   file_url?: string;
   like_count: number;
   comment_count: number;
   Timestamp: string;
+  mediaType: 'image' | 'video' | 'audio';
+  folder_path: string;
 }
 
 /**
@@ -46,7 +48,7 @@ export interface QuestionFields extends FieldSet {
  */
 export class AirtableService {
   private readonly fileStorageService: FileStorageService;
-  private readonly USERS_TABLE = 'User';
+  private readonly USERS_TABLE = 'Users';
   private readonly QUESTIONS_TABLE = 'Questions_user';
 
   /**
@@ -58,6 +60,19 @@ export class AirtableService {
     }
     
     this.fileStorageService = new FileStorageService();
+  }
+
+  private validateFields(record: Record<FieldSet>, type: 'question' | 'user'): boolean {
+    if (type === 'question') {
+      const fields = record.fields as Partial<QuestionFields>;
+      return !!(fields.user_id && fields.questions && typeof fields.like_count === 'number' && 
+                typeof fields.comment_count === 'number' && fields.Timestamp && 
+                fields.mediaType && fields.folder_path);
+    } else {
+      const fields = record.fields as Partial<UserFields>;
+      return !!(fields.first_name && fields.last_name && fields.Email && fields.Password && 
+                fields.Confirm_Password && fields.Status && fields.role && fields.persona);
+    }
   }
 
   /**
@@ -207,7 +222,8 @@ export class AirtableService {
         })
         .all();
 
-      return records as unknown as Record<QuestionFields>[];
+      const validRecords = records.filter(record => this.validateFields(record, 'question'));
+      return validRecords as unknown as Record<QuestionFields>[];
     } catch (error: any) {
       console.error('Failed to get questions:', error);
       throw new Error(`Failed to get questions: ${error.message}`);
@@ -216,55 +232,51 @@ export class AirtableService {
 
   /**
    * Create a new question
-   * @param fields Question data
-   * @param file Optional file to upload
-   * @returns Created question record
+   * @param fields The question data to store
+   * @returns The created record
    */
-  async createQuestion(fields: Partial<QuestionFields>, file?: File): Promise<Record<QuestionFields>> {
+  async createQuestion(fields: Partial<QuestionFields>): Promise<Record<QuestionFields>> {
     if (!base) {
       throw new Error('Airtable base is not available');
     }
 
+    if (!fields.user_id || !fields.questions) {
+      throw new Error('Missing required fields: user_id and questions are required');
+    }
+
     try {
-      // Get user info for folder structure
-      const userEmail = sessionStorage.getItem('userEmail');
-      if (!userEmail) {
-        throw new Error('User not authenticated');
+      // Validate required fields
+      if (!fields.user_id || !fields.questions) {
+        throw new Error('Missing required fields: user_id and questions are required');
       }
 
-      const userRecords = await this.getUsers(`Email = "${userEmail}"`);
-      if (!userRecords || userRecords.length === 0) {
-        throw new Error('User not found');
+      // Ensure numeric fields are initialized
+      fields.like_count = fields.like_count || 0;
+      fields.comment_count = fields.comment_count || 0;
+
+      // Set timestamp if not provided
+      if (!fields.Timestamp) {
+        fields.Timestamp = new Date().toISOString();
       }
 
-      const user = userRecords[0].fields as UserFields;
-      let folderPath = '';
-
-      // Create folder structure based on role
-      if (user.persona === 'Parent' && user.last_name) {
-        folderPath = `${user.last_name}/${user.first_name || 'unknown'}`;
-      } else {
-        folderPath = `other/${user.first_name || 'unknown'}`;
-      }
-
-      // If file is provided, upload it to appropriate folder
-      let file_url: string | undefined;
-      if (file) {
-        file_url = await this.fileStorageService.uploadFile(file, folderPath);
-      }
-
-      // Create question record
       const records = await base(this.QUESTIONS_TABLE).create([{
         fields: {
-          ...fields,
-          file_url,
-          like_count: 0,
-          comment_count: 0,
-          Timestamp: new Date().toISOString()
-        }
+          user_id: fields.user_id,
+          questions: fields.questions,
+          file_url: fields.file_url,
+          like_count: fields.like_count,
+          comment_count: fields.comment_count,
+          Timestamp: fields.Timestamp,
+          mediaType: fields.mediaType,
+          folder_path: fields.folder_path
+        } as QuestionFields
       }]);
 
-      return records[0] as unknown as Record<QuestionFields>;
+      const record = records[0];
+      if (!this.validateFields(record, 'question')) {
+        throw new Error('Created record is missing required fields');
+      }
+      return record as unknown as Record<QuestionFields>;
     } catch (error: any) {
       console.error('Failed to create question:', error);
       throw new Error(`Failed to create question: ${error.message}`);
@@ -273,47 +285,119 @@ export class AirtableService {
 
   /**
    * Update question like count
-   * @param id Question ID
-   * @param likeCount New like count
+   * @param questionId ID of the question to update
+   * @returns The updated record
    */
-  async updateQuestionLikes(id: string, likeCount: number): Promise<Record<QuestionFields>> {
+  async incrementLikeCount(questionId: string): Promise<Record<QuestionFields>> {
     if (!base) {
       throw new Error('Airtable base is not available');
     }
 
     try {
-      const records = await base(this.QUESTIONS_TABLE).update([{
-        id,
-        fields: { like_count: likeCount }
-      }]);
+      const question = await this.getQuestion(questionId);
+      const currentLikes = (question.fields as QuestionFields).like_count || 0;
 
-      return records[0] as unknown as Record<QuestionFields>;
+      const record = await base(this.QUESTIONS_TABLE).update(questionId, {
+        like_count: currentLikes + 1
+      });
+
+      if (!this.validateFields(record, 'question')) {
+        throw new Error('Updated record is missing required fields');
+      }
+      return record as unknown as Record<QuestionFields>;
     } catch (error: any) {
-      console.error('Failed to update question likes:', error);
-      throw new Error(`Failed to update question likes: ${error.message}`);
+      console.error('Failed to update like count:', error);
+      throw new Error(`Failed to update like count: ${error.message}`);
     }
   }
 
   /**
    * Update question comment count
-   * @param id Question ID
-   * @param commentCount New comment count
+   * @param questionId ID of the question to update
+   * @returns The updated record
    */
-  async updateQuestionComments(id: string, commentCount: number): Promise<Record<QuestionFields>> {
+  async incrementCommentCount(questionId: string): Promise<Record<QuestionFields>> {
     if (!base) {
       throw new Error('Airtable base is not available');
     }
 
     try {
-      const records = await base(this.QUESTIONS_TABLE).update([{
-        id,
-        fields: { comment_count: commentCount }
-      }]);
+      const question = await this.getQuestion(questionId);
+      const currentComments = (question.fields as QuestionFields).comment_count || 0;
 
-      return records[0] as unknown as Record<QuestionFields>;
+      const record = await base(this.QUESTIONS_TABLE).update(questionId, {
+        comment_count: currentComments + 1
+      });
+
+      if (!this.validateFields(record, 'question')) {
+        throw new Error('Updated record is missing required fields');
+      }
+      return record as unknown as Record<QuestionFields>;
     } catch (error: any) {
-      console.error('Failed to update question comments:', error);
-      throw new Error(`Failed to update question comments: ${error.message}`);
+      console.error('Failed to update comment count:', error);
+      throw new Error(`Failed to update comment count: ${error.message}`);
+    }
+  }
+
+  async getUser(email: string): Promise<Record<UserFields>> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
+    try {
+      const records = await base(this.USERS_TABLE)
+        .select({
+          filterByFormula: `{Email} = '${email}'`,
+          maxRecords: 1
+        })
+        .all();
+
+      if (records.length === 0) {
+        throw new Error('User not found');
+      }
+
+      const record = records[0];
+      if (!this.validateFields(record, 'user')) {
+        throw new Error('User record is missing required fields');
+      }
+      return record as unknown as Record<UserFields>;
+    } catch (error: any) {
+      console.error('Failed to fetch user:', error);
+      throw new Error(`Failed to fetch user: ${error.message}`);
+    }
+  }
+
+  async getQuestion(id: string): Promise<Record<QuestionFields>> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
+    try {
+      const record = await base(this.QUESTIONS_TABLE).find(id);
+      if (!this.validateFields(record, 'question')) {
+        throw new Error('Question record is missing required fields');
+      }
+      return record as unknown as Record<QuestionFields>;
+    } catch (error: any) {
+      console.error('Failed to fetch question:', error);
+      throw new Error(`Failed to fetch question: ${error.message}`);
+    }
+  }
+
+  async updateQuestion(id: string, fields: Partial<QuestionFields>): Promise<Record<QuestionFields>> {
+    if (!base) {
+      throw new Error('Airtable base is not available');
+    }
+
+    try {
+      const record = await base(this.QUESTIONS_TABLE).update(id, fields);
+      if (!this.validateFields(record, 'question')) {
+        throw new Error('Updated record is missing required fields');
+      }
+      return record as unknown as Record<QuestionFields>;
+    } catch (error: any) {
+      console.error('Failed to update question:', error);
+      throw new Error(`Failed to update question: ${error.message}`);
     }
   }
 }

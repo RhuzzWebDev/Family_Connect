@@ -7,18 +7,15 @@ const baseId = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID;
 // Check if configuration is valid
 export const hasAirtableConfig = Boolean(apiKey && baseId);
 
-// Configure Airtable with API key
-if (hasAirtableConfig) {
-  // Add the 'pat' prefix if not present
-  const fullApiKey = apiKey?.startsWith('pat') ? apiKey : `pat${apiKey}`;
-  
-  Airtable.configure({
-    apiKey: fullApiKey,
-    endpointUrl: 'https://api.airtable.com',
-  });
+if (!hasAirtableConfig) {
+  throw new Error('Airtable configuration is missing. Please check your environment variables.');
 }
 
-// Export the base instance with proper typing
-export const base = hasAirtableConfig 
-  ? Airtable.base(baseId as string)
-  : undefined;
+// Configure Airtable with API key
+Airtable.configure({
+  apiKey: apiKey as string,
+  endpointUrl: 'https://api.airtable.com',
+});
+
+// Export the base instance
+export const base = Airtable.base(baseId as string);

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import QuestionDashboard from '@/components/question/QuestionDashboard';
-import CreateMemoryForm from '@/components/memory/CreateMemoryForm';
+import { QuestionDashboard } from '@/components/question/QuestionDashboard';
+import { CreateQuestionForm } from '@/components/question/CreateQuestionForm';
+import { AirtableService } from '@/services/airtableService';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -11,13 +12,18 @@ export default function DashboardPage() {
 
   useEffect(() => {
     // Check if user is logged in based on session storage
-    const userSession = sessionStorage.getItem('user');
-    if (!userSession) {
+    const userEmail = sessionStorage.getItem('userEmail');
+    if (!userEmail) {
       router.push('/login');
     } else {
       setIsAuthorized(true);
     }
   }, [router]);
+
+  const handleQuestionCreated = () => {
+    // Refresh the QuestionDashboard when a new question is created
+    window.location.reload();
+  };
 
   if (!isAuthorized) {
     return null; // Don't render anything while checking authorization
@@ -34,10 +40,10 @@ export default function DashboardPage() {
           <QuestionDashboard />
         </div>
 
-        {/* Memory Creation Section - Takes up 1 column on large screens */}
+        {/* Question Creation Section - Takes up 1 column on large screens */}
         <div className="lg:col-span-1">
-          <h2 className="text-2xl font-semibold mb-4">Create Memory</h2>
-          <CreateMemoryForm />
+          <h2 className="text-2xl font-semibold mb-4">Ask a Question</h2>
+          <CreateQuestionForm onQuestionCreated={handleQuestionCreated} />
         </div>
       </div>
     </main>

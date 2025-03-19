@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AirtableService } from "@/services/airtableService";
+import { FileStorageService } from "@/services/fileStorageService";
 import { Loader2, Image as ImageIcon, Video as VideoIcon, Music as AudioIcon } from "lucide-react";
 import { QuestionFields } from "@/services/airtableService";
 
@@ -18,30 +19,28 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
   const [file, setFile] = useState<File | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const airtableService = new AirtableService();
-
-  const getMediaType = (file: File): 'image' | 'video' | 'audio' | undefined => {
-    const fileType = file.type.split('/')[0];
-    if (['image', 'video', 'audio'].includes(fileType)) {
-      return fileType as 'image' | 'video' | 'audio';
-    }
-    return undefined;
-  };
+  const fileStorageService = new FileStorageService();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const mediaType = getMediaType(selectedFile);
+      const mediaType = fileStorageService.getMediaType(selectedFile.name);
       if (!mediaType) {
         setError('Please upload an image, video, or audio file');
         return;
       }
       setFile(selectedFile);
+      // Create preview URL
+      const url = URL.createObjectURL(selectedFile);
+      setPreview(url);
       setError(null);
     } else {
       setFile(undefined);
+      setPreview(null);
     }
   };
 
@@ -56,22 +55,34 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
         throw new Error('Please log in to create a question');
       }
 
-      const mediaType = file ? getMediaType(file) : undefined;
+      let fileUrl = '';
+      let mediaType = undefined;
+      let folderPath = '';
+
+      // Handle file upload if present
+      if (file) {
+        folderPath = await fileStorageService.getUserFolderPath(userEmail);
+        fileUrl = await fileStorageService.uploadFile(file, folderPath);
+        mediaType = fileStorageService.getMediaType(file.name);
+      }
 
       const questionData: Partial<QuestionFields> = {
         user_id: userEmail,
-        questions: question,
+        question, 
+        file_url: fileUrl,
         mediaType,
+        folder_path: folderPath,
         like_count: 0,
         comment_count: 0,
         Timestamp: new Date().toISOString(),
       };
 
-      await airtableService.createQuestion(questionData, file);
+      await airtableService.createQuestion(questionData);
 
       // Clear form
       setQuestion('');
       setFile(undefined);
+      setPreview(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -88,21 +99,6 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
     }
   };
 
-  const getFileIcon = () => {
-    if (!file) return null;
-    const mediaType = getMediaType(file);
-    switch (mediaType) {
-      case 'image':
-        return <ImageIcon className="h-5 w-5" />;
-      case 'video':
-        return <VideoIcon className="h-5 w-5" />;
-      case 'audio':
-        return <AudioIcon className="h-5 w-5" />;
-      default:
-        return null;
-    }
-  };
-
   return (
     <Card className="p-4">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -116,7 +112,7 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="space-y-2">
           <Input
             type="file"
             ref={fileInputRef}
@@ -124,10 +120,15 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
             accept="image/*,video/*,audio/*"
             className="flex-1"
           />
-          {file && (
-            <div className="flex items-center gap-2 rounded-md bg-muted px-2 py-1">
-              {getFileIcon()}
-              <span className="text-sm">{file.name}</span>
+          {preview && file && (
+            <div className="mt-2">
+              {file.type.startsWith('image/') ? (
+                <img src={preview} alt="Preview" className="max-h-48 rounded object-cover" />
+              ) : file.type.startsWith('video/') ? (
+                <video src={preview} controls className="max-h-48 w-full rounded" />
+              ) : file.type.startsWith('audio/') ? (
+                <audio src={preview} controls className="w-full" />
+              ) : null}
             </div>
           )}
         </div>
