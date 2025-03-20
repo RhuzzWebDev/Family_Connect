@@ -1,32 +1,23 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { QuestionFields } from '@/services/airtableService';
+import { QuestionWithUser } from '@/lib/supabase';
+import { SupabaseService } from '@/services/supabaseService';
 import { Card } from '@/components/ui/card';
 import { QuestionCard } from '@/components/question/QuestionCard';
-
-interface Question extends QuestionFields {
-  id: string;
-}
+import { supabase } from '@/lib/supabase';
 
 export function QuestionDashboard() {
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<QuestionWithUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchQuestions = async () => {
     try {
-      const response = await fetch('/api/questions');
-      if (!response.ok) {
-        throw new Error('Failed to fetch questions');
-      }
-      const data = await response.json();
-      if (data.success) {
-        setQuestions(data.questions);
-      } else {
-        throw new Error(data.message || 'Failed to fetch questions');
-      }
-    } catch (err: any) {
-      setError(err.message);
+      const data = await SupabaseService.getQuestions();
+      setQuestions(data);
+      setError(null);
+    } catch (error) {
+      setError((error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -34,9 +25,27 @@ export function QuestionDashboard() {
 
   useEffect(() => {
     fetchQuestions();
-    // Poll for new questions every 30 seconds
-    const interval = setInterval(fetchQuestions, 30000);
-    return () => clearInterval(interval);
+
+    // Set up real-time subscription for questions
+    const channel = supabase
+      .channel('questions_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'questions'
+        },
+        async () => {
+          // Refetch questions when any change occurs
+          await fetchQuestions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   if (loading) {
@@ -54,6 +63,14 @@ export function QuestionDashboard() {
     return (
       <Card className="p-6">
         <p className="text-red-500">Error: {error}</p>
+      </Card>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <Card className="p-6">
+        <p className="text-center text-muted-foreground">No questions yet. Be the first to ask!</p>
       </Card>
     );
   }

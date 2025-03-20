@@ -1,28 +1,22 @@
+import { supabase } from '@/lib/supabase';
+import { SupabaseService } from './supabaseService';
+
 /**
- * Service for handling file uploads and storage
- * Currently using local storage, but can be extended to use cloud storage
+ * Service for handling file uploads and storage using Supabase Storage
  */
 export class FileStorageService {
-  private readonly baseStoragePath = 'public/uploads';
+  private readonly bucketName = 'uploads';
 
   /**
    * Get the folder path for a user based on their role
    * Parent role: /{last_name}/{first_name}/
    * Other roles: /other/{first_name}/
-   * @param userId User ID to get folder path for
+   * @param userEmail User email to get folder path for
    * @returns Folder path for the user
    */
-  async getUserFolderPath(userId: string): Promise<string> {
+  async getUserFolderPath(userEmail: string): Promise<string> {
     try {
-      // Fetch user details from Airtable
-      const response = await fetch(`/api/users/${userId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch user details');
-      }
-
-      const data = await response.json();
-      const user = data.user;
-
+      const user = await SupabaseService.getUserByEmail(userEmail);
       if (!user) {
         throw new Error('User not found');
       }
@@ -36,35 +30,39 @@ export class FileStorageService {
     } catch (error: any) {
       console.error('Failed to get user folder path:', error);
       // Return a fallback path if we can't determine the user's role
-      return `other/${userId}`;
+      return `other/${userEmail}`;
     }
   }
 
   /**
-   * Upload a file to storage
+   * Upload a file to Supabase Storage
    * @param file File to upload
    * @param folderPath Folder path within storage
    * @returns URL of the uploaded file
    */
   async uploadFile(file: File, folderPath: string): Promise<string> {
     try {
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folderPath', folderPath);
+      // Generate a unique filename with timestamp
+      const timestamp = new Date().getTime();
+      const fileName = `${timestamp}_${file.name}`;
+      const filePath = `${folderPath}/${fileName}`;
 
-      // Make API call to upload endpoint
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // Upload file to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from(this.bucketName)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to upload file');
-      }
+      if (error) throw error;
 
-      const data = await response.json();
-      return data.url;
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from(this.bucketName)
+        .getPublicUrl(filePath);
+
+      return publicUrl;
     } catch (error: any) {
       console.error('Failed to upload file:', error);
       throw new Error(`Failed to upload file: ${error.message}`);
@@ -78,7 +76,7 @@ export class FileStorageService {
    * @returns Full storage path
    */
   getStoragePath(folderPath: string, fileName: string): string {
-    return `${this.baseStoragePath}/${folderPath}/${fileName}`;
+    return `${folderPath}/${fileName}`;
   }
 
   /**

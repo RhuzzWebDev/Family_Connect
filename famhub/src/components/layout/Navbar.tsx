@@ -8,7 +8,8 @@ import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { AirtableService } from '@/services/airtableService';
+import { supabase } from '@/lib/supabase';
+import { SupabaseService } from '@/services/supabaseService';
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
@@ -18,25 +19,27 @@ export function Navbar() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Fetch user data from session cookie and Airtable
+  // Fetch user data from Supabase session
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         setIsLoading(true);
-        // Check if we have a user session (this would be set during login)
-        const userEmail = sessionStorage.getItem('userEmail');
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (userEmail) {
-          const airtableService = new AirtableService();
-          try {
-            const user = await airtableService.getUser(userEmail);
+        if (session?.user) {
+          const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('first_name, last_name, email')
+            .eq('id', session.user.id)
+            .single();
+
+          if (userError) throw userError;
+
+          if (user) {
             setUserData({
-              name: `${user.fields.first_name} ${user.fields.last_name}`,
-              email: user.fields.Email
+              name: `${user.first_name} ${user.last_name}`,
+              email: user.email
             });
-          } catch (error) {
-            console.error('Error fetching user:', error);
-            setUserData({ name: 'Guest User', email: 'Not logged in' });
           }
         } else {
           // No user is logged in, show default values
@@ -51,6 +54,19 @@ export function Navbar() {
     };
 
     fetchUserData();
+
+    // Set up real-time subscription for user data changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUserData({ name: 'Guest User', email: 'Not logged in' });
+      } else if (session?.user) {
+        fetchUserData();
+      }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
   }, []);
 
   // Handle click outside of user menu to close it
@@ -67,9 +83,8 @@ export function Navbar() {
     };
   }, []);
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('userEmail');
-    setUserData({ name: 'Guest User', email: 'Not logged in' });
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     router.push('/login');
   };
 

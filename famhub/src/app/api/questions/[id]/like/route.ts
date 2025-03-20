@@ -1,34 +1,47 @@
 import { NextResponse } from 'next/server';
-import { base, hasAirtableConfig } from '@/lib/airtable';
-import { QuestionFields } from '@/services/airtableService';
+import { supabase } from '@/lib/supabase';
 
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!hasAirtableConfig || !base) {
-      return NextResponse.json({
-        success: false,
-        message: 'Airtable is not configured'
-      }, { status: 503 });
+    const questionId = params.id;
+
+    // Get current like count
+    const { data: currentQuestion, error: fetchError } = await supabase
+      .from('questions')
+      .select('like_count')
+      .eq('id', questionId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
     }
 
-    const questionId = params.id;
-    const record = await base('Questions_user').find(questionId);
-    const currentLikes = (record.fields as QuestionFields).like_count || 0;
+    const newLikeCount = (currentQuestion?.like_count || 0) + 1;
 
-    // Increment like count
-    const updatedRecord = await base('Questions_user').update(questionId, {
-      like_count: currentLikes + 1
-    });
+    // Update like count
+    const { data, error: updateError } = await supabase
+      .from('questions')
+      .update({ like_count: newLikeCount })
+      .eq('id', questionId)
+      .select(`
+        *,
+        user:users (
+          first_name,
+          last_name
+        )
+      `)
+      .single();
+
+    if (updateError) {
+      throw updateError;
+    }
 
     return NextResponse.json({
       success: true,
-      record: {
-        id: updatedRecord.id,
-        fields: updatedRecord.fields
-      }
+      record: data
     });
 
   } catch (error: any) {

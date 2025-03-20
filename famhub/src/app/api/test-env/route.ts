@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 
 export async function GET() {
-  // This route is just for testing - remove it in production
+  // This route is for testing Supabase configuration
   return NextResponse.json({
-    hasAirtableKey: !!process.env.AIRTABLE_API_KEY,
-    hasBaseId: !!process.env.AIRTABLE_BASE_ID,
-    hasTableName: !!process.env.AIRTABLE_TABLE_NAME,
+    hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    hasSupabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   });
 }

@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { QuestionFields } from '@/services/airtableService';
+import { QuestionWithUser } from '@/lib/supabase';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ThumbsUp, MessageSquare } from 'lucide-react';
+import { SupabaseService } from '@/services/supabaseService';
 
 interface QuestionCardProps {
-  question: QuestionFields & { id: string };
+  question: QuestionWithUser;
 }
 
 export function QuestionCard({ question }: QuestionCardProps) {
@@ -32,12 +33,8 @@ export function QuestionCard({ question }: QuestionCardProps) {
     if (isLiking) return;
     setIsLiking(true);
     try {
-      const response = await fetch(`/api/questions/${question.id}/like`, {
-        method: 'POST',
-      });
-      if (response.ok) {
-        setLikeCount(prev => prev + 1);
-      }
+      await SupabaseService.updateQuestionLikes(question.id, true);
+      setLikeCount(prev => prev + 1);
     } catch (error) {
       console.error('Error liking question:', error);
     } finally {
@@ -45,35 +42,56 @@ export function QuestionCard({ question }: QuestionCardProps) {
     }
   };
 
+  // If we don't have user data, show a loading state
+  if (!question.user) {
+    return (
+      <Card className="overflow-hidden">
+        <div className="p-4">
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="overflow-hidden">
       <div className="p-4">
+        {/* User info */}
+        <div className="mb-2">
+          <p className="text-sm font-medium">
+            {question.user?.first_name || 'Anonymous'} {question.user?.last_name || 'User'}
+          </p>
+        </div>
+
         {/* Question content */}
         <div className="mb-4">
           <p className="text-lg mb-2">{question.question}</p>
           <p className="text-sm text-muted-foreground">
-            {formatTimestamp(question.Timestamp)}
+            {formatTimestamp(question.created_at)}
           </p>
         </div>
 
         {/* Media preview */}
         {question.file_url && (
           <div className="mb-4 relative rounded-lg overflow-hidden">
-            {question.mediaType === 'image' ? (
+            {question.media_type === 'image' ? (
               <img 
                 src={question.file_url} 
                 alt="Question media" 
                 className="w-full h-48 object-cover"
                 loading="lazy"
               />
-            ) : question.mediaType === 'video' ? (
+            ) : question.media_type === 'video' ? (
               <video 
                 src={question.file_url} 
                 controls 
                 className="w-full h-48 object-cover"
                 preload="metadata"
               />
-            ) : question.mediaType === 'audio' ? (
+            ) : question.media_type === 'audio' ? (
               <audio 
                 src={question.file_url} 
                 controls 

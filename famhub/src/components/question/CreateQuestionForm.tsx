@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { AirtableService } from "@/services/airtableService";
+import { SupabaseService } from "@/services/supabaseService";
 import { FileStorageService } from "@/services/fileStorageService";
-import { Loader2, Image as ImageIcon, Video as VideoIcon, Music as AudioIcon } from "lucide-react";
-import { QuestionFields } from "@/services/airtableService";
+import { Loader2 } from "lucide-react";
+import { Question } from "@/lib/supabase";
+import { supabase } from '@/lib/supabase';
 
 interface CreateQuestionFormProps {
   onQuestionCreated?: () => void;
@@ -22,7 +23,6 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const airtableService = new AirtableService();
   const fileStorageService = new FileStorageService();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -50,9 +50,17 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
     setError(null);
 
     try {
-      const userEmail = sessionStorage.getItem('userEmail');
-      if (!userEmail) {
+      // Get current user session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.user?.email) {
         throw new Error('Please log in to create a question');
+      }
+
+      // Get user details
+      const user = await SupabaseService.getUserByEmail(session.user.email);
+      if (!user) {
+        throw new Error('User not found');
       }
 
       let fileUrl = '';
@@ -61,23 +69,21 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
 
       // Handle file upload if present
       if (file) {
+        const userEmail = session.user.email;
         folderPath = await fileStorageService.getUserFolderPath(userEmail);
         fileUrl = await fileStorageService.uploadFile(file, folderPath);
         mediaType = fileStorageService.getMediaType(file.name);
       }
 
-      const questionData: Partial<QuestionFields> = {
-        user_id: userEmail,
-        question, 
-        file_url: fileUrl,
-        mediaType,
-        folder_path: folderPath,
-        like_count: 0,
-        comment_count: 0,
-        Timestamp: new Date().toISOString(),
+      const questionData: Omit<Question, 'id' | 'created_at' | 'like_count' | 'comment_count'> = {
+        user_id: user.id,
+        question,
+        file_url: fileUrl || undefined,
+        media_type: mediaType,
+        folder_path: folderPath || undefined
       };
 
-      await airtableService.createQuestion(questionData);
+      await SupabaseService.createQuestion(questionData);
 
       // Clear form
       setQuestion('');
@@ -91,9 +97,9 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
       if (onQuestionCreated) {
         onQuestionCreated();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to create question');
-      console.error('Failed to create question:', err);
+    } catch (error) {
+      setError((error as Error).message || 'Failed to create question');
+      console.error('Failed to create question:', error);
     } finally {
       setLoading(false);
     }
@@ -102,42 +108,43 @@ export function CreateQuestionForm({ onQuestionCreated }: CreateQuestionFormProp
   return (
     <Card className="p-4">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
+        {error && (
+          <div className="text-red-500 text-sm">{error}</div>
+        )}
+
+        <div className="space-y-2">
           <Textarea
-            placeholder="What's on your mind?"
+            placeholder="What would you like to ask your family?"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            className="min-h-[100px]"
             required
+            disabled={loading}
+            rows={4}
           />
         </div>
 
         <div className="space-y-2">
           <Input
             type="file"
-            ref={fileInputRef}
             onChange={handleFileChange}
             accept="image/*,video/*,audio/*"
-            className="flex-1"
+            disabled={loading}
+            ref={fileInputRef}
           />
-          {preview && file && (
-            <div className="mt-2">
-              {file.type.startsWith('image/') ? (
-                <img src={preview} alt="Preview" className="max-h-48 rounded object-cover" />
-              ) : file.type.startsWith('video/') ? (
-                <video src={preview} controls className="max-h-48 w-full rounded" />
-              ) : file.type.startsWith('audio/') ? (
+          {preview && (
+            <Card className="p-2">
+              {file && fileStorageService.getMediaType(file.name) === 'image' ? (
+                <img src={preview} alt="Preview" className="max-h-48 object-contain mx-auto" />
+              ) : file && fileStorageService.getMediaType(file.name) === 'video' ? (
+                <video src={preview} controls className="max-h-48 w-full" />
+              ) : file && fileStorageService.getMediaType(file.name) === 'audio' ? (
                 <audio src={preview} controls className="w-full" />
               ) : null}
-            </div>
+            </Card>
           )}
         </div>
 
-        {error && (
-          <div className="text-sm text-red-500">{error}</div>
-        )}
-
-        <Button type="submit" disabled={loading || !question.trim()}>
+        <Button type="submit" disabled={loading || !question.trim()} className="w-full">
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
