@@ -1,8 +1,10 @@
 'use client';
 
-import { Header } from "./Header";
-import { Sidebar } from "@/components/sidebar";
 import { useSession } from "@/hooks/useSession";
+import { Navbar } from "./Navbar";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { HomeIcon, Users, Calendar, MessageSquare } from "lucide-react";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,13 +23,40 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
-      <div className="flex h-[calc(100vh-64px)]">
-        <aside className="hidden md:block w-64 border-r bg-background fixed top-16 bottom-0">
-          <Sidebar />
+      <Navbar />
+      
+      <div className="flex">
+        {/* Sidebar */}
+        <aside className="w-64 hidden md:flex flex-col gap-2 p-4 border-r min-h-[calc(100vh-4rem)] sticky top-16">
+          <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
+            <Link href="/dashboard">
+              <HomeIcon className="w-5 h-5" />
+              Family Feed
+            </Link>
+          </Button>
+          <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
+            <Link href="/members">
+              <Users className="w-5 h-5" />
+              Family Members
+            </Link>
+          </Button>
+          <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
+            <Link href="/calendar">
+              <Calendar className="w-5 h-5" />
+              Family Calendar
+            </Link>
+          </Button>
+          <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
+            <Link href="/messages">
+              <MessageSquare className="w-5 h-5" />
+              Messages
+            </Link>
+          </Button>
         </aside>
-        <main className="flex-1 md:pl-64 w-full">
-          <div className="container mx-auto p-6">
+
+        {/* Main content */}
+        <main>
+          <div className="max-w-5xl mx-auto">
             {children}
           </div>
         </main>

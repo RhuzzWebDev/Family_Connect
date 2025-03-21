@@ -511,20 +511,40 @@ export default function QuestionGrid() {
   }, [selectedQuestionId]);
 
   if (loading) {
-    return <div className="text-center py-8">Loading questions...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <div className="w-10 h-10 border-4 border-t-blue-600 border-blue-200 rounded-full animate-spin"></div>
+        <p className="text-gray-500">Loading questions...</p>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="text-center py-8 text-red-500">{error}</div>;
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-4 bg-red-50 rounded-lg">
+        <AlertTriangle className="w-12 h-12 text-red-500" />
+        <p className="text-red-600 font-medium">{error}</p>
+        <Button 
+          onClick={fetchQuestions}
+          variant="outline"
+          className="border-red-200 text-red-600 hover:bg-red-50"
+        >
+          Try Again
+        </Button>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Family Feed</h2>
+        <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
         <Dialog>
           <DialogTrigger asChild>
-            <Button className="bg-gray-600 hover:bg-gray-700 text-white">Ask Question</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
+              <PlusCircle className="w-4 h-4" />
+              Ask Question
+            </Button>
           </DialogTrigger>
           <DialogContent className="bg-white sm:max-w-[600px] p-0">
             <DialogHeader className="pt-8 px-6 pb-4 border-b">
@@ -538,60 +558,85 @@ export default function QuestionGrid() {
       </div>
 
       {questions.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No questions yet. Be the first to ask!</div>
+        <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+          <MessageSquare className="w-16 h-16 text-gray-300" />
+          <p className="text-gray-500 text-center">No questions yet. Be the first to ask!</p>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white mt-2">
+                Ask a Question
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-white sm:max-w-[600px] p-0">
+              <DialogHeader className="pt-8 px-6 pb-4 border-b">
+                <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
+              </DialogHeader>
+              <div className="p-6">
+                <CreateQuestionForm onQuestionCreated={fetchQuestions} type="question" />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       ) : (
-        <div className="grid grid-rows-3 grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {questions.map((question) => (
-            <div key={question.id} className="bg-white rounded-lg shadow-sm p-6 space-y-4">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
+            <div 
+              key={question.id} 
+              className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 md:p-5 space-y-4 transition-all duration-200 hover:shadow-md"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold shrink-0">
                   {getInitials(question.user.first_name, question.user.last_name)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                     <div>
-                      <h3 className="font-semibold">
+                      <h3 className="font-semibold text-gray-900 line-clamp-1">
                         {question.user.first_name} {question.user.last_name}
                       </h3>
-                      <p className="text-sm text-gray-500">{question.user.role}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                          {question.user.role}
+                        </span>
+                        <time className="text-xs text-gray-500">
+                          {format(new Date(question.created_at), 'MMM d, yyyy')}
+                        </time>
+                      </div>
                     </div>
-                    <time className="text-sm text-gray-500">
-                      {format(new Date(question.created_at), 'MMM d, yyyy')}
-                    </time>
                   </div>
-                  <p className="mt-2 text-gray-700">{question.question}</p>
+                  <p className="mt-3 text-gray-700 line-clamp-3">{question.question}</p>
                   {question.file_url && (
-                    <div className="mt-4">
+                    <div className="mt-3 border rounded-md overflow-hidden">
                       <MediaPreview type={question.media_type} url={question.file_url} />
                     </div>
                   )}
-                  <div className="mt-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                  <div className="mt-4 flex items-center justify-between border-t pt-3">
+                    <div className="flex items-center gap-3">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-gray-600 hover:text-blue-600"
+                        className="text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full h-8 px-3"
                         onClick={() => handleLike(question.id)}
                       >
-                        <ThumbsUp className="w-4 h-4 mr-1" />
-                        {question.like_count}
+                        <ThumbsUp className="w-4 h-4 mr-1.5" />
+                        <span>{question.like_count}</span>
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-gray-600 hover:text-blue-600"
+                        className="text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full h-8 px-3"
                         onClick={() => handleCommentClick(question.id)}
                       >
-                        <MessageSquare className="w-4 h-4 mr-1" />
-                        {question.comment_count}
+                        <MessageSquare className="w-4 h-4 mr-1.5" />
+                        <span>{question.comment_count}</span>
                       </Button>
                     </div>
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="text-gray-600 hover:text-blue-600"
+                          className="text-blue-600 border-blue-200 hover:bg-blue-50"
                         >
                           Answer
                         </Button>

@@ -91,8 +91,8 @@ export default function LoginForm() {
         case 'Active':
           // Store user email using the session hook
           setUserEmail(user.email);
-          // Redirect to home page
-          router.push('/');
+          // Redirect to dashboard
+          router.push('/dashboard');
           break;
         case 'Validating':
           throw new Error('Your account is still pending validation');
