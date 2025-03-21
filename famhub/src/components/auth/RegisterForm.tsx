@@ -1,10 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { AirtableService, UserFields } from '@/services/airtableService';
+import { supabase } from '@/lib/supabase';
+import { User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import bcrypt from 'bcryptjs';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import bcrypt from 'bcryptjs';
+import { useSession } from '@/hooks/useSession';
 
 const Input = ({ 
   label, 
@@ -36,18 +41,74 @@ const Input = ({
   </div>
 );
 
+const SelectInput = ({
+  label,
+  error,
+  options,
+  ...props
+}: {
+  label: string;
+  error?: string;
+  options: string[];
+} & React.SelectHTMLAttributes<HTMLSelectElement>) => (
+  <div className="mb-4">
+    <label className="block text-sm font-medium text-gray-700 mb-1">
+      {label}
+    </label>
+    <select
+      {...props}
+      className={`
+        w-full px-4 py-2 rounded-lg border
+        ${error ? 'border-red-500' : 'border-gray-300'}
+        focus:outline-none focus:ring-2
+        ${error ? 'focus:ring-red-500' : 'focus:ring-blue-500'}
+        focus:border-transparent
+        transition duration-200 ease-in-out
+        bg-white
+      `}
+    >
+      <option value="">Select {label}</option>
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+    </select>
+    {error && (
+      <p className="mt-1 text-sm text-red-600">{error}</p>
+    )}
+  </div>
+);
+
+type UserRole = User['role'];
+type UserPersona = User['persona'];
+
+interface FormData {
+  first_name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  role: UserRole;
+  persona: UserPersona;
+}
+
 export default function RegisterForm() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    Name: '',
-    Email: '',
-    Password: '',
-    confirmPassword: ''
+  const { setUserEmail } = useSession();
+  const [formData, setFormData] = useState<FormData>({
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    role: 'Father',
+    persona: 'Parent'
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     if (errors[name]) {
@@ -55,31 +116,35 @@ export default function RegisterForm() {
     }
   };
 
-  const hashPassword = async (password: string): Promise<string> => {
-    // Generate a salt with 10 rounds
-    const salt = await bcrypt.genSalt(10);
-    // Hash the password with the salt
-    return bcrypt.hash(password, salt);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
     // Validate form
-    if (!formData.Name.trim()) newErrors.Name = 'Name is required';
-    if (!formData.Email.trim()) {
-      newErrors.Email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.Email)) {
-      newErrors.Email = 'Invalid email format';
+    if (!formData.first_name.trim()) {
+      newErrors.first_name = 'First name is required';
     }
-    if (!formData.Password) {
-      newErrors.Password = 'Password is required';
-    } else if (formData.Password.length < 6) {
-      newErrors.Password = 'Password must be at least 6 characters';
+    if (!formData.last_name.trim()) {
+      newErrors.last_name = 'Last name is required';
     }
-    if (formData.Password !== formData.confirmPassword) {
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Invalid email format';
+    }
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+    if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
+    }
+    if (!formData.role) {
+      newErrors.role = 'Role is required';
+    }
+    if (!formData.persona) {
+      newErrors.persona = 'Persona is required';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -89,136 +154,179 @@ export default function RegisterForm() {
 
     setLoading(true);
     try {
-      const userService = new AirtableService();
-      
-      // Hash the password before saving
-      const hashedPassword = await hashPassword(formData.Password);
-      
-      const userData: UserFields = {
-        Name: formData.Name,
-        Email: formData.Email,
-        Password: hashedPassword,
-        Confirm_Password: hashedPassword, 
-        Status: 'Active' // Set to Active for testing purposes
-      };
-      
-      // Create the new record
-      await userService.createRecord(userData);
-      
-      // Store user email in sessionStorage for the navbar to use
-      sessionStorage.setItem('userEmail', formData.Email);
-      
-      // Redirect to home page after successful registration
-      router.push('/');
-    } catch (err: any) {
+      // Check if user already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', formData.email)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw new Error(checkError.message);
+      }
+
+      if (existingUser) {
+        throw new Error('User with this email already exists');
+      }
+
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(formData.password, 10);
+
+      // Create user in the users table
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          email: formData.email,
+          password: hashedPassword,
+          role: formData.role,
+          persona: formData.persona,
+          status: 'Validating'
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      // Store email using the session hook
+      setUserEmail(formData.email);
+
+      // Show success message and redirect to login
+      alert('Registration successful! Please wait for your account to be validated.');
+      router.push('/login');
+    } catch (error) {
+      console.error('Registration error:', error);
       setErrors({
-        submit: err.message || 'Registration failed. Please try again.'
+        email: error instanceof Error ? error.message : 'An unexpected error occurred during registration'
       });
     } finally {
       setLoading(false);
     }
   };
 
+  const familyRoles = ['Father', 'Mother', 'Grandfather', 'Grandmother', 'Older Brother', 'Older Sister', 'Middle Brother', 'Middle Sister', 'Youngest Brother', 'Youngest Sister'];
+  const personaTypes = ['Parent', 'Children'];
+
   return (
-    <div className="w-full min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 p-4 md:p-6">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-6">
-        <div className="text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            Create Account
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="max-w-md w-full space-y-8 p-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Create your account
           </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Join our family community
-          </p>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 text-sm text-red-600">
-              {errors.submit}
-            </div>
-          )}
-
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="First Name"
+              name="first_name"
+              type="text"
+              autoComplete="given-name"
+              required
+              placeholder="Enter first name"
+              value={formData.first_name}
+              onChange={handleChange}
+              error={errors.first_name}
+              disabled={loading}
+            />
+            <Input
+              label="Last Name"
+              name="last_name"
+              type="text"
+              autoComplete="family-name"
+              required
+              placeholder="Enter last name"
+              value={formData.last_name}
+              onChange={handleChange}
+              error={errors.last_name}
+              disabled={loading}
+            />
+          </div>
           <Input
-            label="Name"
-            name="Name"
-            type="text"
-            required
-            value={formData.Name}
-            onChange={handleChange}
-            placeholder="Enter your name"
-            error={errors.Name}
-          />
-
-          <Input
-            label="Email"
-            name="Email"
+            label="Email Address"
+            name="email"
             type="email"
+            autoComplete="email"
             required
-            value={formData.Email}
-            onChange={handleChange}
             placeholder="Enter your email"
-            error={errors.Email}
+            value={formData.email}
+            onChange={handleChange}
+            error={errors.email}
+            disabled={loading}
           />
-
           <Input
             label="Password"
-            name="Password"
+            name="password"
             type="password"
+            autoComplete="new-password"
             required
-            value={formData.Password}
-            onChange={handleChange}
             placeholder="Create a password"
-            error={errors.Password}
+            value={formData.password}
+            onChange={handleChange}
+            error={errors.password}
+            disabled={loading}
           />
-
           <Input
             label="Confirm Password"
             name="confirmPassword"
             type="password"
+            autoComplete="new-password"
             required
+            placeholder="Confirm your password"
             value={formData.confirmPassword}
             onChange={handleChange}
-            placeholder="Confirm your password"
             error={errors.confirmPassword}
+            disabled={loading}
           />
-
-          <div className="pt-2">
-            <button
+          <SelectInput
+            label="Family Role"
+            name="role"
+            required
+            value={formData.role}
+            onChange={handleChange}
+            error={errors.role}
+            options={familyRoles}
+            disabled={loading}
+          />
+          <SelectInput
+            label="Persona"
+            name="persona"
+            required
+            value={formData.persona}
+            onChange={handleChange}
+            error={errors.persona}
+            options={personaTypes}
+            disabled={loading}
+          />
+          <div>
+            <Button
               type="submit"
+              className="w-full"
               disabled={loading}
-              className="
-                w-full py-3 px-4
-                bg-blue-600 hover:bg-blue-700
-                text-white font-medium rounded-lg
-                transition duration-200 ease-in-out
-                disabled:opacity-50 disabled:cursor-not-allowed
-                flex items-center justify-center
-              "
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating Account...
                 </>
               ) : (
                 'Create Account'
               )}
-            </button>
+            </Button>
           </div>
-          
-          <div className="text-center mt-4 text-sm">
-            <p className="text-gray-600">
-              Already have an account?{' '}
-              <Link href="/login" className="text-blue-600 hover:text-blue-800 font-medium">
-                Sign in
-              </Link>
-            </p>
+          <div className="text-sm text-center">
+            <Link
+              href="/login"
+              className="font-medium text-blue-600 hover:text-blue-500"
+            >
+              Already have an account? Sign in
+            </Link>
           </div>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }

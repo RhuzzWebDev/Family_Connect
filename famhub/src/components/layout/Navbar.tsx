@@ -8,7 +8,7 @@ import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { AirtableService } from '@/services/airtableService';
+import { supabase } from '@/lib/supabase';
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
@@ -18,24 +18,32 @@ export function Navbar() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Fetch user data from session cookie and Airtable
+  // Fetch user data from session
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         setIsLoading(true);
-        // Check if we have a user session (this would be set during login)
         const userEmail = sessionStorage.getItem('userEmail');
         
         if (userEmail) {
-          const airtableService = new AirtableService();
-          const filterFormula = `{Email} = '${userEmail}'`;
-          const users = await airtableService.getRecords(filterFormula);
-          
-          if (users.length > 0) {
-            const user = users[0];
+          const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('first_name, last_name, email, status')
+            .eq('email', userEmail)
+            .single();
+
+          if (userError) throw userError;
+
+          // If user is not active, log them out
+          if (user.status !== 'Active') {
+            handleLogout();
+            return;
+          }
+
+          if (user) {
             setUserData({
-              name: user.fields.Name as string || 'User',
-              email: user.fields.Email as string || ''
+              name: `${user.first_name} ${user.last_name}`,
+              email: user.email
             });
           }
         } else {
@@ -51,16 +59,28 @@ export function Navbar() {
     };
 
     fetchUserData();
+
+    // Set up event listener for storage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'userEmail') {
+        fetchUserData();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
-  // Close the menu when clicking outside
+  // Handle click outside of user menu to close it
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
       }
-    }
-    
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
@@ -68,21 +88,19 @@ export function Navbar() {
   }, []);
 
   const handleLogout = () => {
-    // Clear session data
     sessionStorage.removeItem('userEmail');
-    // Redirect to login page
+    setUserData({ name: 'Guest User', email: 'Not logged in' });
     router.push('/login');
   };
 
-  // Get first letter of name for avatar fallback
   const getInitial = () => {
     return userData.name ? userData.name.charAt(0).toUpperCase() : 'U';
   };
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between">
-        <div className="flex items-center gap-4 ml-4">
+      <div className="w-full px-4 flex h-16 items-center">
+        <div className="flex items-center gap-4">
           <Image
             src="/logo.svg"
             alt="FamilyConnect Logo"
@@ -92,8 +110,8 @@ export function Navbar() {
           />
           <span className="font-bold text-xl">FamilyConnect</span>
         </div>
-
-        <div className="flex items-center gap-4">
+        
+        <div className="ml-auto flex items-center gap-6 pr-8">
           <Button variant="ghost" size="icon" className="relative">
             <Bell className="h-5 w-5" />
             <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white flex items-center justify-center">

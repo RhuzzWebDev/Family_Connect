@@ -1,6 +1,7 @@
 'use client';
 
 import { FamilyMembers } from "@/components/family-members";
+import { AddFamilyMember } from "@/components/add-family-member";
 import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Home as HomeIcon, Users, Calendar, MessageSquare, Search, UserPlus } from "lucide-react";
@@ -50,15 +51,15 @@ export default function FamilyPage() {
                 className="w-full pl-9 pr-4 py-2 rounded-full border bg-background"
               />
             </div>
-            <Button className="w-full sm:w-auto gap-2">
-              <UserPlus className="w-5 h-5" />
-              Add Family Member
-            </Button>
+            {/* Removed duplicate Add Family Member button */}
           </div>
 
           {/* Family Members Grid */}
           <div className="space-y-6">
-            <h1 className="text-3xl font-bold">Family Members</h1>
+            <div className="flex justify-between items-center">
+              <h1 className="text-3xl font-bold">Family Members</h1>
+              <AddFamilyMember />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               <FamilyMembers />
             </div>

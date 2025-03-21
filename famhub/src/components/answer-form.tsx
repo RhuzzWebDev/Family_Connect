@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { FileUp, Mic, Video } from "lucide-react"
 
 interface AnswerFormProps {
-  questionId: number
+  questionId: string
 }
 
 export function AnswerForm({ questionId }: AnswerFormProps) {

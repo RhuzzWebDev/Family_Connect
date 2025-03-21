@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { AirtableService } from '@/services/airtableService';
+import { SupabaseService } from '@/services/supabaseService';
 import { useRouter } from 'next/navigation';
-import bcrypt from 'bcryptjs';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import { useSession } from '@/hooks/useSession';
 
 // Reusable input component with error handling
 const Input = ({ 
@@ -39,9 +42,10 @@ const Input = ({
 
 export default function LoginForm() {
   const router = useRouter();
+  const { setUserEmail } = useSession();
   const [formData, setFormData] = useState({
-    Email: '',
-    Password: ''
+    email: '',
+    password: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -59,13 +63,13 @@ export default function LoginForm() {
     const newErrors: Record<string, string> = {};
 
     // Validate form
-    if (!formData.Email.trim()) {
-      newErrors.Email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.Email)) {
-      newErrors.Email = 'Invalid email format';
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Invalid email format';
     }
-    if (!formData.Password) {
-      newErrors.Password = 'Password is required';
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -75,39 +79,32 @@ export default function LoginForm() {
 
     setLoading(true);
     try {
-      const userService = new AirtableService();
+      // Verify user credentials
+      const user = await SupabaseService.verifyUser(formData.email, formData.password);
       
-      // Find user by email
-      const filterFormula = `{Email} = '${formData.Email}'`;
-      const users = await userService.getRecords(filterFormula);
-      
-      if (users.length === 0) {
+      if (!user) {
         throw new Error('Invalid email or password');
       }
-      
-      const user = users[0];
-      const storedPassword = user.fields.Password as string;
-      
-      // Compare the provided password with the stored hash
-      const isPasswordValid = await bcrypt.compare(formData.Password, storedPassword);
-      
-      if (!isPasswordValid) {
-        throw new Error('Invalid email or password');
+
+      // Check user status
+      switch (user.status) {
+        case 'Active':
+          // Store user email using the session hook
+          setUserEmail(user.email);
+          // Redirect to dashboard
+          router.push('/dashboard');
+          break;
+        case 'Validating':
+          throw new Error('Your account is still pending validation');
+        case 'Not Active':
+          throw new Error('Your account has been deactivated');
+        default:
+          throw new Error('Invalid account status');
       }
-      
-      // Check if user is validated
-      if (user.fields.Status === 'Validating') {
-        throw new Error('Your account is still pending validation');
-      }
-      
-      // Store user email in sessionStorage for the navbar to use
-      sessionStorage.setItem('userEmail', formData.Email);
-      
-      // Successful login - redirect to home page
-      router.push('/');
-    } catch (err: any) {
+    } catch (error) {
+      console.error('Login error:', error);
       setErrors({
-        submit: err.message || 'Login failed. Please try again.'
+        email: error instanceof Error ? error.message : 'An unexpected error occurred during login'
       });
     } finally {
       setLoading(false);
@@ -115,83 +112,64 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="w-full min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 p-4 md:p-6">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-6">
-        <div className="text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            Welcome Back
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="max-w-md w-full space-y-8 p-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Sign in to your account
-          </p>
+          </h2>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 text-sm text-red-600">
-              {errors.submit}
-            </div>
-          )}
-
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <Input
-            label="Email"
-            name="Email"
+            label="Email Address"
+            name="email"
             type="email"
+            autoComplete="email"
             required
-            value={formData.Email}
-            onChange={handleChange}
             placeholder="Enter your email"
-            error={errors.Email}
+            value={formData.email}
+            onChange={handleChange}
+            error={errors.email}
+            disabled={loading}
           />
-
           <Input
             label="Password"
-            name="Password"
+            name="password"
             type="password"
+            autoComplete="current-password"
             required
-            value={formData.Password}
-            onChange={handleChange}
             placeholder="Enter your password"
-            error={errors.Password}
+            value={formData.password}
+            onChange={handleChange}
+            error={errors.password}
+            disabled={loading}
           />
-
-          <div className="pt-2">
-            <button
+          <div>
+            <Button
               type="submit"
+              className="w-full"
               disabled={loading}
-              className="
-                w-full py-3 px-4
-                bg-blue-600 hover:bg-blue-700
-                text-white font-medium rounded-lg
-                transition duration-200 ease-in-out
-                disabled:opacity-50 disabled:cursor-not-allowed
-                flex items-center justify-center
-              "
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Signing In...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
                 </>
               ) : (
-                'Sign In'
+                'Sign in'
               )}
-            </button>
+            </Button>
           </div>
-          
-          <div className="text-center mt-4 text-sm">
-            <p className="text-gray-600">
-              Don't have an account?{' '}
-              <Link href="/register" className="text-blue-600 hover:text-blue-800 font-medium">
-                Create an account
-              </Link>
-            </p>
+          <div className="text-sm text-center">
+            <Link
+              href="/register"
+              className="font-medium text-blue-600 hover:text-blue-500"
+            >
+              Don&apos;t have an account? Sign up
+            </Link>
           </div>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }
