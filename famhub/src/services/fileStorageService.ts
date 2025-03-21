@@ -1,11 +1,10 @@
-import { supabase } from '@/lib/supabase';
 import { SupabaseService } from './supabaseService';
 
 /**
- * Service for handling file uploads and storage using Supabase Storage
+ * Service for handling file uploads and storage in public folder
  */
 export class FileStorageService {
-  private readonly bucketName = 'uploads';
+  private readonly baseUploadPath = 'public/uploads';
 
   /**
    * Get the folder path for a user based on their role
@@ -35,34 +34,29 @@ export class FileStorageService {
   }
 
   /**
-   * Upload a file to Supabase Storage
+   * Upload a file to public/uploads directory via API
    * @param file File to upload
-   * @param folderPath Folder path within storage
-   * @returns URL of the uploaded file
+   * @param folderPath Folder path within uploads
+   * @returns URL path of the uploaded file
    */
   async uploadFile(file: File, folderPath: string): Promise<string> {
     try {
-      // Generate a unique filename with timestamp
-      const timestamp = new Date().getTime();
-      const fileName = `${timestamp}_${file.name}`;
-      const filePath = `${folderPath}/${fileName}`;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folderPath', folderPath);
 
-      // Upload file to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(this.bucketName)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to upload file');
+      }
 
-      // Get the public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from(this.bucketName)
-        .getPublicUrl(filePath);
-
-      return publicUrl;
+      const data = await response.json();
+      return data.url;
     } catch (error: any) {
       console.error('Failed to upload file:', error);
       throw new Error(`Failed to upload file: ${error.message}`);
@@ -76,7 +70,7 @@ export class FileStorageService {
    * @returns Full storage path
    */
   getStoragePath(folderPath: string, fileName: string): string {
-    return `${folderPath}/${fileName}`;
+    return `${this.baseUploadPath}/${folderPath}/${fileName}`;
   }
 
   /**

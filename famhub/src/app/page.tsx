@@ -6,7 +6,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Home as HomeIcon, Users, Calendar, MessageSquare, PlusCircle, Search } from 'lucide-react';
-import { CreateQuestionForm } from '@/components/question/CreateQuestionForm';
+import { default as CreateQuestionForm } from '@/components/dashboard/CreateQuestionForm';
 import Link from 'next/link';
 import { SupabaseService } from '@/services/supabaseService';
 import { QuestionWithUser } from '@/lib/supabase';
