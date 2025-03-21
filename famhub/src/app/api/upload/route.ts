@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    const folderPath = formData.get('folderPath') as string;
+    const uploadPath = formData.get('path') as string;
 
     if (!file) {
       return NextResponse.json(
@@ -15,16 +15,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create full folder path
-    const fullFolderPath = path.join(process.cwd(), 'public/uploads', folderPath);
+    // Create full folder path in public directory
+    const fullFolderPath = path.join(process.cwd(), 'public', path.dirname(uploadPath));
     
     // Ensure directory exists
     await mkdir(fullFolderPath, { recursive: true });
 
-    // Generate unique filename with timestamp
-    const timestamp = new Date().getTime();
-    const fileName = `${timestamp}_${file.name}`;
-    const filePath = path.join(fullFolderPath, fileName);
+    // Save file with provided name
+    const filePath = path.join(process.cwd(), 'public', uploadPath);
 
     // Convert File to Buffer and save
     const bytes = await file.arrayBuffer();
@@ -32,9 +30,7 @@ export async function POST(req: NextRequest) {
     await writeFile(filePath, buffer);
 
     // Return the public URL path
-    const publicPath = `/uploads/${folderPath}/${fileName}`;
-
-    return NextResponse.json({ url: publicPath });
+    return NextResponse.json({ url: `/${uploadPath}` });
   } catch (error) {
     console.error('Error uploading file:', error);
     return NextResponse.json(
