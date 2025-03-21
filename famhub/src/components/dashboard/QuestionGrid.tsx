@@ -8,6 +8,7 @@ import CreateQuestionForm from './CreateQuestionForm';
 import { format } from 'date-fns';
 import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X } from 'lucide-react';
 import Image from 'next/image';
+import { CommentSection } from '@/components/comment-section';
 
 interface Question {
   id: string;
@@ -45,16 +46,10 @@ interface Comment {
 
 export default function QuestionGrid() {
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingComments, setLoadingComments] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [commentError, setCommentError] = useState<string | null>(null);
-  const [newComment, setNewComment] = useState('');
-  const [submittingComment, setSubmittingComment] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
 
   const fetchQuestions = async () => {
     try {
@@ -73,29 +68,6 @@ export default function QuestionGrid() {
       setError('Failed to load questions');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchComments = async (questionId: string) => {
-    setLoadingComments(true);
-    setCommentError(null);
-    try {
-      const { data, error } = await supabase
-        .from('comments')
-        .select(`*, user:users!comments_user_id_fkey (first_name, last_name, role)`)
-        .eq('question_id', questionId)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        throw error;
-      }
-
-      setComments(data || []);
-    } catch (err) {
-      console.error('Error fetching comments:', err);
-      setCommentError('Failed to load comments. Please try again.');
-    } finally {
-      setLoadingComments(false);
     }
   };
 
@@ -118,28 +90,10 @@ export default function QuestionGrid() {
     }
   };
 
-  const handleCommentLike = async (commentId: string) => {
-    try {
-      const { error } = await supabase
-        .from('comments')
-        .update({ like_count: comments.find(c => c.id === commentId)?.like_count! + 1 })
-        .eq('id', commentId);
-
-      if (error) {
-        throw error;
-      }
-
-      setComments(comments.map(c =>
-        c.id === commentId ? { ...c, like_count: c.like_count + 1 } : c
-      ));
-    } catch (err) {
-      console.error('Error liking comment:', err);
-    }
-  };
-
   const handleCommentClick = (questionId: string) => {
+    const question = questions.find(q => q.id === questionId) || null;
     setSelectedQuestionId(questionId);
-    fetchComments(questionId);
+    setSelectedQuestion(question);
   };
 
   const getInitials = (firstName: string, lastName: string) => {
@@ -200,245 +154,6 @@ export default function QuestionGrid() {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file size (5MB limit from memories)
-    if (file.size > 5 * 1024 * 1024) {
-      setCommentError('File size must be less than 5MB');
-      return;
-    }
-
-    // Validate file type
-    const fileType = file.type.split('/')[0];
-    if (!['image', 'video', 'audio'].includes(fileType)) {
-      setCommentError('Only image, video, and audio files are allowed');
-      return;
-    }
-
-    setSelectedFile(file);
-    setCommentError(null);
-  };
-
-  const uploadFile = async (file: File, userId: string) => {
-    const fileType = file.type.split('/')[0];
-    const timestamp = Date.now();
-    const fileName = `${timestamp}_${file.name}`;
-    const folderPath = `public/uploads/comments/${userId}`;
-    const filePath = `${folderPath}/${fileName}`;
-
-    try {
-      // Create a custom upload handler with progress tracking
-      const { error: uploadError } = await new Promise<{ error: Error | null }>((resolve) => {
-        const xhr = new XMLHttpRequest();
-        xhr.upload.onprogress = (event: ProgressEvent) => {
-          if (event.lengthComputable) {
-            setUploadProgress((event.loaded / event.total) * 100);
-          }
-        };
-
-        xhr.onload = async () => {
-          if (xhr.status === 200) {
-            const { error } = await supabase.storage
-              .from('comments')
-              .upload(filePath, file);
-            resolve({ error });
-          } else {
-            resolve({ error: new Error('Upload failed') });
-          }
-        };
-
-        xhr.onerror = () => resolve({ error: new Error('Upload failed') });
-        xhr.open('POST', `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/comments/${filePath}`);
-        xhr.setRequestHeader('Authorization', `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`);
-        xhr.send(file);
-      });
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('comments')
-        .getPublicUrl(filePath);
-
-      return {
-        file_url: publicUrl,
-        media_type: fileType,
-        folder_path: folderPath,
-      };
-    } catch (err) {
-      console.error('Error uploading file:', err);
-      throw new Error('Failed to upload file');
-    }
-  };
-
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedQuestionId || (!newComment.trim() && !selectedFile)) {
-      setCommentError('Please add either a comment or media file');
-      return;
-    }
-
-    setSubmittingComment(true);
-    setCommentError(null);
-    setUploadProgress(0);
-
-    try {
-      // Get current session
-      const session = supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Please log in to comment');
-      }
-
-      const userEmail = sessionStorage.getItem('userEmail');
-      if (!userEmail) {
-        throw new Error('Please log in to comment');
-      }
-
-      // Get user data with debugging
-      console.log('Fetching user data for email:', userEmail);
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email')
-        .eq('email', userEmail)
-        .single();
-
-      if (userError) {
-        console.error('User fetch error:', userError);
-        throw new Error('Failed to verify user. Please try logging in again.');
-      }
-
-      if (!userData?.id) {
-        console.error('User not found for email:', userEmail);
-        throw new Error('User not found. Please try logging in again.');
-      }
-
-      console.log('Found user:', { id: userData.id, email: userData.email });
-
-      let fileData = null;
-      if (selectedFile) {
-        try {
-          console.log('Uploading file:', selectedFile.name);
-          fileData = await uploadFile(selectedFile, userData.id);
-          console.log('File upload successful:', fileData);
-        } catch (uploadError: any) {
-          console.error('File upload error:', uploadError);
-          throw new Error(uploadError?.message || 'Failed to upload file. Please try again.');
-        }
-      }
-
-      // Prepare comment data
-      const commentData = {
-        ...(newComment.trim() && { content: newComment.trim() }),
-        question_id: selectedQuestionId,
-        user_id: userData.id,
-        ...(fileData && {
-          file_url: fileData.file_url,
-          media_type: fileData.media_type,
-          folder_path: fileData.folder_path,
-        }),
-      };
-
-      console.log('Inserting comment:', commentData);
-
-      const { data: insertedComment, error: insertError } = await supabase
-        .from('comments')
-        .insert([commentData])
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Comment insert error details:', {
-          error: insertError,
-          code: insertError.code,
-          message: insertError.message,
-          details: insertError.details,
-          hint: insertError.hint
-        });
-        throw new Error(insertError.message || 'Failed to post comment. Please try again.');
-      }
-
-      console.log('Comment inserted successfully:', insertedComment);
-
-      // Update comment count
-      const { error: updateError } = await supabase
-        .from('questions')
-        .update({ comment_count: questions.find(q => q.id === selectedQuestionId)?.comment_count! + 1 })
-        .eq('id', selectedQuestionId);
-
-      if (updateError) {
-        console.error('Comment count update error:', updateError);
-        // Don't throw here, as the comment was already created
-      }
-
-      setNewComment('');
-      setSelectedFile(null);
-      await fetchComments(selectedQuestionId);
-      await fetchQuestions(); // Refresh questions to update comment count
-    } catch (err: any) {
-      console.error('Error submitting comment:', {
-        error: err,
-        message: err?.message,
-        details: err?.details,
-        code: err?.code
-      });
-      setCommentError(err?.message || 'Failed to post comment. Please try again.');
-    } finally {
-      setSubmittingComment(false);
-      setUploadProgress(0);
-    }
-  };
-
-  const handleDeleteComment = async (commentId: string, questionId: string) => {
-    setCommentError(null);
-    try {
-      const userEmail = sessionStorage.getItem('userEmail');
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', userEmail)
-        .single();
-
-      if (!userData) throw new Error('User not found');
-
-      // Get comment data for file cleanup
-      const comment = comments.find(c => c.id === commentId);
-      
-      const { error } = await supabase
-        .from('comments')
-        .delete()
-        .eq('id', commentId)
-        .eq('user_id', userData.id);
-
-      if (error) throw error;
-
-      // Clean up file if it exists
-      if (comment?.file_url) {
-        const filePath = comment.folder_path?.split('public/uploads/comments/')[1];
-        if (filePath) {
-          await supabase.storage
-            .from('comments')
-            .remove([filePath]);
-        }
-      }
-
-      // Update comment count
-      await supabase
-        .from('questions')
-        .update({ comment_count: questions.find(q => q.id === questionId)?.comment_count! - 1 })
-        .eq('id', questionId);
-
-      // Optimistically update UI
-      setComments(comments.filter(c => c.id !== commentId));
-      setQuestions(questions.map(q =>
-        q.id === questionId ? { ...q, comment_count: q.comment_count - 1 } : q
-      ));
-    } catch (err) {
-      console.error('Error deleting comment:', err);
-      setCommentError('Failed to delete comment. Please try again.');
-    }
-  };
-
   useEffect(() => {
     fetchQuestions();
 
@@ -472,43 +187,6 @@ export default function QuestionGrid() {
       supabase.removeChannel(channel);
     };
   }, []);
-
-  useEffect(() => {
-    if (selectedQuestionId) {
-      fetchComments(selectedQuestionId);
-
-      // Subscribe to new comments, updates, and deletions
-      const channel = supabase
-        .channel(`comments-${selectedQuestionId}`)
-        .on('postgres_changes', 
-          { 
-            event: '*', 
-            schema: 'public', 
-            table: 'comments',
-            filter: `question_id=eq.${selectedQuestionId}`
-          }, 
-          (payload) => {
-            if (payload.eventType === 'UPDATE') {
-              // Update the specific comment
-              setComments(prevComments => prevComments.map(comment => 
-                comment.id === payload.new.id 
-                  ? { ...comment, ...payload.new }
-                  : comment
-              ));
-            } else {
-              // For INSERT or DELETE, fetch all comments to ensure we have the latest state
-              // including any file uploads or deletions
-              fetchComments(selectedQuestionId);
-            }
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [selectedQuestionId]);
 
   if (loading) {
     return (
@@ -674,175 +352,43 @@ export default function QuestionGrid() {
       <Dialog open={!!selectedQuestionId} onOpenChange={(open) => {
         if (!open) {
           setSelectedQuestionId(null);
-          setNewComment('');
+          setSelectedQuestion(null);
         }
       }}>
         <DialogContent className="bg-white sm:max-w-[600px] p-0">
           <DialogHeader className="pt-8 px-6 pb-4 border-b">
             <DialogTitle className="text-lg font-semibold text-center">Comments</DialogTitle>
           </DialogHeader>
-          <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
-            {loadingComments ? (
-              <div className="flex flex-col items-center justify-center py-8 space-y-2">
-                <div className="w-6 h-6 border-2 border-t-blue-600 border-blue-200 rounded-full animate-spin"></div>
-                <p className="text-sm text-gray-500">Loading comments...</p>
-              </div>
-            ) : commentError ? (
-              <div className="text-center py-8">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-3">
-                  <AlertTriangle className="w-6 h-6 text-red-600" />
-                </div>
-                <p className="text-red-600">{commentError}</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 text-blue-600"
-                  onClick={() => {
-                    setCommentError(null);
-                    if (selectedQuestionId) fetchComments(selectedQuestionId);
-                  }}
-                >
-                  Try Again
-                </Button>
-              </div>
-            ) : comments.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageSquare className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-                <p className="text-gray-500">No comments yet. Start the conversation!</p>
-              </div>
-            ) : (
-              comments.map((comment) => (
-                <div key={comment.id} className="flex gap-4 hover:bg-gray-50 p-3 rounded-lg transition-colors">
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
-                    {getInitials(comment.user.first_name, comment.user.last_name)}
+          <div className="p-6 max-h-[60vh] overflow-y-auto">
+            {selectedQuestion && (
+              <div className="mb-6 border rounded-lg p-4 bg-gray-50">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+                    {getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="font-semibold text-sm">
-                        {comment.user.first_name} {comment.user.last_name}
-                      </h4>
-                      <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">
-                        {comment.user.role}
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold">
+                        {selectedQuestion.user.first_name} {selectedQuestion.user.last_name}
+                      </h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                        {selectedQuestion.user.role}
                       </span>
                       <time className="text-xs text-gray-500 ml-auto">
-                        {format(new Date(comment.created_at), 'MMM d, yyyy')}
+                        {format(new Date(selectedQuestion.created_at), 'MMM d, yyyy')}
                       </time>
-                      {comment.user_id === comments.find(c => c.id === comment.id)?.user_id && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-gray-400 hover:text-red-600 h-auto py-1 px-1 ml-2"
-                          onClick={() => handleDeleteComment(comment.id, selectedQuestionId!)}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      )}
                     </div>
-                    <p className="mt-1 text-sm text-gray-700 break-words">{comment.content}</p>
-                    {comment.file_url && (
-                      <div className="mt-2">
-                        <MediaPreview type={comment.media_type} url={comment.file_url} />
+                    <p className="mt-2 text-gray-700">{selectedQuestion.question}</p>
+                    {selectedQuestion.file_url && (
+                      <div className="mt-3 border rounded-md overflow-hidden">
+                        <MediaPreview type={selectedQuestion.media_type} url={selectedQuestion.file_url} />
                       </div>
                     )}
-                    <div className="mt-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-gray-600 hover:text-blue-600 h-auto py-1"
-                        onClick={() => handleCommentLike(comment.id)}
-                      >
-                        <ThumbsUp className="w-3 h-3 mr-1" />
-                        <span className="text-xs">{comment.like_count}</span>
-                      </Button>
-                    </div>
                   </div>
                 </div>
-              ))
+              </div>
             )}
-          </div>
-          <div className="p-4 border-t bg-gray-50">
-            <form onSubmit={handleSubmitComment} className="space-y-4">
-              {commentError && (
-                <div className="text-sm text-red-600 bg-red-50 p-2 rounded-md">
-                  {commentError}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Write a comment or add media..."
-                  className="flex-1 min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                  disabled={submittingComment}
-                />
-                <Button 
-                  type="submit" 
-                  disabled={(!newComment.trim() && !selectedFile) || submittingComment}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 disabled:bg-blue-400"
-                  size="sm"
-                >
-                  {submittingComment ? 'Posting...' : 'Post'}
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  id="commentFile"
-                  className="hidden"
-                  accept="image/*,video/*,audio/*"
-                  onChange={handleFileSelect}
-                  disabled={submittingComment}
-                />
-                <label
-                  htmlFor="commentFile"
-                  className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 cursor-pointer disabled:opacity-50"
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    disabled={submittingComment}
-                  >
-                    {selectedFile?.type.startsWith('image/') ? (
-                      <ImageIcon className="w-4 h-4" />
-                    ) : selectedFile?.type.startsWith('video/') ? (
-                      <Video className="w-4 h-4" />
-                    ) : selectedFile?.type.startsWith('audio/') ? (
-                      <Music className="w-4 h-4" />
-                    ) : (
-                      <PlusCircle className="w-4 h-4" />
-                    )}
-                    Add Media
-                  </Button>
-                </label>
-                {selectedFile && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">
-                      {selectedFile.name}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedFile(null)}
-                      disabled={submittingComment}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              {uploadProgress > 0 && uploadProgress < 100 && (
-                <div className="w-full bg-gray-200 rounded-full h-1.5">
-                  <div
-                    className="bg-blue-600 h-1.5 rounded-full transition-all"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              )}
-            </form>
+            {selectedQuestionId && <CommentSection questionId={selectedQuestionId} />}
           </div>
         </DialogContent>
       </Dialog>
