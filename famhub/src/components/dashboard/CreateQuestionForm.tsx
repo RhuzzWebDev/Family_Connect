@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { supabase } from '@/lib/supabase';
-import { Camera, ImageIcon, Mic, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Camera, ImageIcon, Mic, X, CheckCircle2, AlertCircle, FileIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,7 +26,8 @@ interface MediaDevice {
 const SUPPORTED_FILE_TYPES = {
   image: ['.jpg', '.jpeg', '.png', '.gif'],
   video: ['.mp4', '.webm', '.mov'],
-  audio: ['.mp3', '.wav', '.ogg']
+  audio: ['.mp3', '.wav', '.ogg'],
+  document: ['.pdf', '.doc', '.docx', '.txt', '.rtf']
 };
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
@@ -37,7 +38,7 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
   const [isRecording, setIsRecording] = useState(false);
   const [recordingType, setRecordingType] = useState<"audio" | "video" | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<"image" | "audio" | "video" | null>(null);
+  const [mediaType, setMediaType] = useState<"image" | "audio" | "video" | "document" | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -341,21 +342,29 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
     }
 
     // Check file type
-    const fileExtension = selectedFile.name.toLowerCase().match(/\.[^.]*$/)?.[0];
-    const isValidType = fileExtension && Object.values(SUPPORTED_FILE_TYPES)
-      .flat()
-      .includes(fileExtension);
-
-    if (!isValidType) {
-      setError(`Unsupported file type. Allowed types:\nImages: ${SUPPORTED_FILE_TYPES.image.join(', ')}\nVideos: ${SUPPORTED_FILE_TYPES.video.join(', ')}\nAudio: ${SUPPORTED_FILE_TYPES.audio.join(', ')}`);
+    const fileExtension = selectedFile.name.toLowerCase().match(/\.[^.]*$/)?.[0] || '';
+    
+    // More reliable media type detection
+    let detectedMediaType: "image" | "audio" | "video" | "document" | null = null;
+    
+    if (SUPPORTED_FILE_TYPES.image.some(ext => fileExtension.endsWith(ext))) {
+      detectedMediaType = "image";
+    } else if (SUPPORTED_FILE_TYPES.audio.some(ext => fileExtension.endsWith(ext))) {
+      detectedMediaType = "audio";
+    } else if (SUPPORTED_FILE_TYPES.video.some(ext => fileExtension.endsWith(ext))) {
+      detectedMediaType = "video";
+    } else if (SUPPORTED_FILE_TYPES.document.some(ext => fileExtension.endsWith(ext))) {
+      detectedMediaType = "document";
+    }
+    
+    if (!detectedMediaType) {
+      setError(`Unsupported file type. Allowed types:\nImages: ${SUPPORTED_FILE_TYPES.image.join(', ')}\nVideos: ${SUPPORTED_FILE_TYPES.video.join(', ')}\nAudio: ${SUPPORTED_FILE_TYPES.audio.join(', ')}\nDocuments: ${SUPPORTED_FILE_TYPES.document.join(', ')}`);
       return;
     }
 
     // Set file and preview
     setFile(selectedFile);
-    setMediaType(selectedFile.type.startsWith("image/") ? "image" : 
-                 selectedFile.type.startsWith("audio/") ? "audio" : 
-                 selectedFile.type.startsWith("video/") ? "video" : null);
+    setMediaType(detectedMediaType);
     const previewUrl = URL.createObjectURL(selectedFile);
     setMediaPreview(previewUrl);
     setError(null);
@@ -376,27 +385,29 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
         throw new Error("User not authenticated");
       }
 
+      // First, get user details from Supabase
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, role')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) {
+        console.error("Error fetching user data:", userError);
+        throw new Error("Could not retrieve user information");
+      }
+
+      if (!userData) {
+        throw new Error("User data not found");
+      }
+
+      console.log("Found user data:", userData);
+
       let fileUrl = '';
       let folderPath = '';
       
       if (file) {
         try {
-          // Get user details for folder path
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('first_name, last_name, role')
-            .eq('email', userEmail)
-            .single();
-
-          if (userError) {
-            console.error("Error fetching user data:", userError);
-            throw new Error("Could not retrieve user information");
-          }
-
-          if (!userData) {
-            throw new Error("User data not found");
-          }
-
           // Determine folder path based on role following the established pattern
           const persona = userData.role === 'Father' || userData.role === 'Mother' || 
                          userData.role === 'Grandfather' || userData.role === 'Grandmother' 
@@ -443,72 +454,47 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
         }
       }
 
-      console.log("Creating question record with data:", {
-        user_id: userEmail,
+      // Prepare the question data
+      const questionData = {
+        user_id: userData.id,
         question: text,
-        file_url: fileUrl,
-        folder_path: folderPath,
-        media_type: mediaType
-      });
+        file_url: fileUrl || null,
+        folder_path: folderPath || null,
+        media_type: mediaType === "document" ? "image" : mediaType || null,
+        like_count: 0,
+        comment_count: 0,
+        created_at: new Date().toISOString()
+      };
+      
+      // Add more detailed logging for debugging
+      console.log("Inserting question with data:", JSON.stringify(questionData, null, 2));
 
-      // Create question record
       try {
-        // First, try to get the user's UUID from the database
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', userEmail)
-          .single();
-
-        if (userError) {
-          console.error("Error fetching user ID:", userError);
-          throw new Error(`Could not retrieve user ID: ${userError.message || JSON.stringify(userError)}`);
-        }
-
-        if (!userData || !userData.id) {
-          console.error("User not found or ID missing:", userEmail);
-          throw new Error(`User not found or ID missing for email: ${userEmail}`);
-        }
-
-        console.log("Found user ID:", userData.id);
-
         // Now insert the question with the proper user_id (UUID)
-        const { error: insertError, data: insertData } = await supabase
+        const { error: insertError } = await supabase
           .from('questions')
-          .insert({
-            user_id: userData.id, // Use the UUID from the users table
-            question: text,
-            file_url: fileUrl,
-            folder_path: folderPath,
-            media_type: mediaType,
-            like_count: 0,
-            comment_count: 0,
-            created_at: new Date().toISOString()
-          })
-          .select();
-
+          .insert(questionData);
+        
         if (insertError) {
-          console.error("Database insertion error:", insertError);
+          console.error("Database insertion error details:", insertError);
           throw new Error(`Database error: ${insertError.message || JSON.stringify(insertError)}`);
         }
-
-        console.log("Question created successfully:", insertData);
+        
+        console.log("Question created successfully");
         
         // Clean up after successful submission
         setText("");
         handleClearMedia();
         
         // Notify parent component that a question was created
-        // This should trigger the modal to close and refresh the question list
         onQuestionCreated();
-      } catch (dbError) {
-        console.error("Database operation failed:", dbError);
-        throw new Error(`Database operation failed: ${dbError instanceof Error ? dbError.message : JSON.stringify(dbError)}`);
+      } catch (insertErr) {
+        console.error("Insert operation failed:", insertErr);
+        throw new Error(`Insert operation failed: ${insertErr instanceof Error ? insertErr.message : JSON.stringify(insertErr)}`);
       }
     } catch (err) {
       console.error("Error creating question:", err);
       setError(`Failed to create question: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      // Don't close the modal on error
     } finally {
       setIsSubmitting(false);
     }
@@ -540,6 +526,12 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
             <audio src={mediaPreview} controls className="w-full" />
           </div>
         )}
+        {mediaType === "document" && (
+          <div className="flex items-center justify-center p-4">
+            <FileIcon className="h-6 w-6" />
+            <span className="ml-2">{file?.name}</span>
+          </div>
+        )}
       </div>
     );
   };
@@ -554,10 +546,11 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
       />
 
       <Tabs defaultValue="image" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-4">
+        <TabsList className="grid w-full grid-cols-4 mb-4">
           <TabsTrigger value="image">Image</TabsTrigger>
           <TabsTrigger value="audio">Audio</TabsTrigger>
           <TabsTrigger value="video">Video</TabsTrigger>
+          <TabsTrigger value="document">Document</TabsTrigger>
         </TabsList>
         <TabsContent value="image" className="space-y-4">
           <div className="flex flex-col items-center justify-center rounded-md border border-dashed p-8">
@@ -773,6 +766,22 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
               </div>
             </div>
           ) : null}
+        </TabsContent>
+        <TabsContent value="document" className="space-y-4">
+          <div className="flex flex-col items-center justify-center rounded-md border border-dashed p-8">
+            <FileIcon className="mb-2 h-8 w-8 text-muted-foreground" />
+            <p className="mb-2 text-sm text-muted-foreground">Drag and drop a document or click to browse</p>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept={SUPPORTED_FILE_TYPES.document.join(',')} 
+              onChange={handleFileUpload} 
+            />
+            <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
+              Choose Document
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
 
