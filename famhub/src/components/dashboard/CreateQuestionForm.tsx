@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useSession } from '@/hooks/useSession';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 
@@ -587,28 +586,22 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
             <div className="flex flex-col items-center justify-center rounded-md border border-dashed p-8 space-y-4">
               <Mic className="mb-2 h-8 w-8 text-muted-foreground" />
               <p className="mb-2 text-sm text-muted-foreground">Upload audio or record</p>
-              <div className="w-full max-w-sm space-y-4">
-                <RadioGroup
-                  value={selectedAudioDevice}
-                  onValueChange={(value) => {
-                    setSelectedAudioDevice(value);
-                    testDevice(value, 'audio');
-                  }}
-                >
-                  <div className="space-y-2">
+              <div className="w-full max-w-sm space-y-4 overflow-hidden">
+                <div className="mb-2">
+                  <h3 className="text-sm font-medium mb-2">Select microphone:</h3>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
                     {audioDevices.map(device => (
-                      <Card key={device.deviceId} className="relative p-4">
-                        <RadioGroupItem
-                          value={device.deviceId}
-                          id={`audio-${device.deviceId}`}
-                          className="absolute right-4 top-4"
-                        />
-                        <Label
-                          htmlFor={`audio-${device.deviceId}`}
-                          className="flex items-center gap-2 cursor-pointer"
-                        >
-                          <Mic className="h-4 w-4" />
-                          <span className="flex-1">{device.label}</span>
+                      <div 
+                        key={device.deviceId} 
+                        className={`flex items-center p-2 border rounded-md hover:bg-gray-50 cursor-pointer ${selectedAudioDevice === device.deviceId ? 'bg-blue-50 border-blue-200' : ''}`}
+                        onClick={() => {
+                          setSelectedAudioDevice(device.deviceId);
+                          testDevice(device.deviceId, 'audio');
+                        }}
+                      >
+                        <Mic className="h-4 w-4 flex-shrink-0 mr-2" />
+                        <span className="flex-1 truncate text-sm">{device.label}</span>
+                        <span className="flex-shrink-0 ml-2">
                           {device.status === 'ready' && (
                             <CheckCircle2 className="h-4 w-4 text-green-500" />
                           )}
@@ -618,11 +611,11 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
                           {device.status === 'testing' && (
                             <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
                           )}
-                        </Label>
-                      </Card>
+                        </span>
+                      </div>
                     ))}
                   </div>
-                </RadioGroup>
+                </div>
                 {audioDevices.length === 0 && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
@@ -660,28 +653,22 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
             <div className="flex flex-col items-center justify-center rounded-md border border-dashed p-8 space-y-4">
               <Camera className="mb-2 h-8 w-8 text-muted-foreground" />
               <p className="mb-2 text-sm text-muted-foreground">Upload video or record</p>
-              <div className="w-full max-w-sm space-y-4">
-                <RadioGroup
-                  value={selectedVideoDevice}
-                  onValueChange={(value) => {
-                    setSelectedVideoDevice(value);
-                    testDevice(value, 'video');
-                  }}
-                >
-                  <div className="space-y-2">
+              <div className="w-full max-w-sm space-y-4 overflow-hidden">
+                <div className="mb-2">
+                  <h3 className="text-sm font-medium mb-2">Select camera:</h3>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
                     {videoDevices.map(device => (
-                      <Card key={device.deviceId} className="relative p-4">
-                        <RadioGroupItem
-                          value={device.deviceId}
-                          id={`video-${device.deviceId}`}
-                          className="absolute right-4 top-4"
-                        />
-                        <Label
-                          htmlFor={`video-${device.deviceId}`}
-                          className="flex items-center gap-2 cursor-pointer"
-                        >
-                          <Camera className="h-4 w-4" />
-                          <span className="flex-1">{device.label}</span>
+                      <div 
+                        key={device.deviceId} 
+                        className={`flex items-center p-2 border rounded-md hover:bg-gray-50 cursor-pointer ${selectedVideoDevice === device.deviceId ? 'bg-blue-50 border-blue-200' : ''}`}
+                        onClick={() => {
+                          setSelectedVideoDevice(device.deviceId);
+                          testDevice(device.deviceId, 'video');
+                        }}
+                      >
+                        <Camera className="h-4 w-4 flex-shrink-0 mr-2" />
+                        <span className="flex-1 truncate text-sm">{device.label}</span>
+                        <span className="flex-shrink-0 ml-2">
                           {device.status === 'ready' && (
                             <CheckCircle2 className="h-4 w-4 text-green-500" />
                           )}
@@ -691,11 +678,11 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
                           {device.status === 'testing' && (
                             <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
                           )}
-                        </Label>
-                      </Card>
+                        </span>
+                      </div>
                     ))}
                   </div>
-                </RadioGroup>
+                </div>
                 {videoDevices.length === 0 && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
