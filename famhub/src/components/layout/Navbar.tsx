@@ -9,7 +9,6 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { SupabaseService } from '@/services/supabaseService';
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
@@ -19,21 +18,27 @@ export function Navbar() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Fetch user data from Supabase session
+  // Fetch user data from session
   useEffect(() => {
     const fetchUserData = async () => {
       try {
         setIsLoading(true);
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const userEmail = sessionStorage.getItem('userEmail');
         
-        if (session?.user) {
+        if (userEmail) {
           const { data: user, error: userError } = await supabase
             .from('users')
-            .select('first_name, last_name, email')
-            .eq('id', session.user.id)
+            .select('first_name, last_name, email, status')
+            .eq('email', userEmail)
             .single();
 
           if (userError) throw userError;
+
+          // If user is not active, log them out
+          if (user.status !== 'Active') {
+            handleLogout();
+            return;
+          }
 
           if (user) {
             setUserData({
@@ -55,17 +60,16 @@ export function Navbar() {
 
     fetchUserData();
 
-    // Set up real-time subscription for user data changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        setUserData({ name: 'Guest User', email: 'Not logged in' });
-      } else if (session?.user) {
+    // Set up event listener for storage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'userEmail') {
         fetchUserData();
       }
-    });
+    };
 
+    window.addEventListener('storage', handleStorageChange);
     return () => {
-      authListener?.subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
@@ -83,8 +87,9 @@ export function Navbar() {
     };
   }, []);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    sessionStorage.removeItem('userEmail');
+    setUserData({ name: 'Guest User', email: 'Not logged in' });
     router.push('/login');
   };
 

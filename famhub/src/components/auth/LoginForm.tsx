@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { SupabaseService } from '@/services/supabaseService';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -77,36 +77,32 @@ export default function LoginForm() {
 
     setLoading(true);
     try {
-      // Sign in with Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      if (error) throw error;
-      if (!data.user) throw new Error('No user data returned');
-
-      // Get user details to check status
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('status')
-        .eq('id', data.user.id)
-        .single();
-
-      if (userError) throw userError;
-
-      // Check if user is validated
-      if (userData.status === 'Validating') {
-        await supabase.auth.signOut(); // Sign out if not validated
-        throw new Error('Your account is still pending validation');
+      // Verify user credentials
+      const user = await SupabaseService.verifyUser(formData.email, formData.password);
+      
+      if (!user) {
+        throw new Error('Invalid email or password');
       }
 
-      // Redirect to home page
-      router.push('/');
+      // Check user status
+      switch (user.status) {
+        case 'Active':
+          // Store user email in session
+          sessionStorage.setItem('userEmail', user.email);
+          // Redirect to home page
+          router.push('/');
+          break;
+        case 'Validating':
+          throw new Error('Your account is still pending validation');
+        case 'Not Active':
+          throw new Error('Your account has been deactivated');
+        default:
+          throw new Error('Invalid account status');
+      }
     } catch (error) {
       console.error('Login error:', error);
       setErrors({
-        email: (error as Error).message || 'Failed to sign in'
+        email: error instanceof Error ? error.message : 'An unexpected error occurred during login'
       });
     } finally {
       setLoading(false);

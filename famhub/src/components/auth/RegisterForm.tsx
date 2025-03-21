@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import bcrypt from 'bcryptjs';
 
 const Input = ({ 
   label, 
@@ -151,47 +152,45 @@ export default function RegisterForm() {
 
     setLoading(true);
     try {
-      // First, create the auth user with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: undefined,  // Disable email confirmation
-          data: {
-            first_name: formData.first_name,
-            last_name: formData.last_name,
-            role: formData.role,
-            persona: formData.persona,
-            status: 'Validating'
-          }
-        }
-      });
+      // Check if user already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', formData.email)
+        .single();
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Failed to create user');
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw new Error(checkError.message);
+      }
 
-      // Then, create the user profile in our users table using the service role
-      const { error: profileError } = await fetch('/api/auth/create-profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: authData.user.id,
+      if (existingUser) {
+        throw new Error('User with this email already exists');
+      }
+
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(formData.password, 10);
+
+      // Create user in the users table
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
           first_name: formData.first_name,
           last_name: formData.last_name,
           email: formData.email,
+          password: hashedPassword,
           role: formData.role,
           persona: formData.persona,
           status: 'Validating'
         })
-      }).then(res => res.json());
+        .select()
+        .single();
 
-      if (profileError) {
-        // If profile creation fails, we should clean up the auth user
-        await supabase.auth.signOut();
-        throw profileError;
+      if (createError) {
+        throw new Error(createError.message);
       }
+
+      // Store email in session
+      sessionStorage.setItem('userEmail', formData.email);
 
       // Show success message and redirect to login
       alert('Registration successful! Please wait for your account to be validated.');
@@ -199,14 +198,14 @@ export default function RegisterForm() {
     } catch (error) {
       console.error('Registration error:', error);
       setErrors({
-        email: (error as Error).message || 'Failed to create account'
+        email: error instanceof Error ? error.message : 'An unexpected error occurred during registration'
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const familyRoles = ['Father', 'Mother', 'Son', 'Daughter', 'Grandparent', 'Other'];
+  const familyRoles = ['Father', 'Mother', 'Grandfather', 'Grandmother', 'Older Brother', 'Older Sister', 'Middle Brother', 'Middle Sister', 'Youngest Brother', 'Youngest Sister'];
   const personaTypes = ['Parent', 'Children'];
 
   return (
