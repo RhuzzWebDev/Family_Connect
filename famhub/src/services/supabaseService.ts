@@ -15,6 +15,8 @@ type SupabaseQuestionResponse = {
     id: string
     first_name: string
     last_name: string
+    role: string
+    persona: 'Parent' | 'Children'
   }>
 }
 
@@ -119,29 +121,24 @@ export class SupabaseService {
   static async createQuestion(questionData: Omit<Question, 'id' | 'created_at' | 'like_count' | 'comment_count'>) {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
-      const user = await this.verifyUserStatus(userEmail);
+      const currentUser = await this.verifyUserStatus(userEmail);
 
       const { data, error } = await supabase
         .from('questions')
         .insert({
           ...questionData,
-          user_id: user.id,
+          user_id: currentUser.id,
           like_count: 0,
           comment_count: 0
         })
         .select(`
-          id,
-          question,
-          file_url,
-          like_count,
-          comment_count,
-          media_type,
-          folder_path,
-          created_at,
+          *,
           user:users!inner(
             id,
             first_name,
-            last_name
+            last_name,
+            role,
+            persona
           )
         `)
         .single();
@@ -157,6 +154,7 @@ export class SupabaseService {
 
       return {
         id: response.id,
+        user_id: response.user[0].id,
         question: response.question,
         file_url: response.file_url,
         like_count: response.like_count,
@@ -164,7 +162,12 @@ export class SupabaseService {
         media_type: response.media_type,
         folder_path: response.folder_path,
         created_at: response.created_at,
-        user: response.user[0]
+        user: {
+          first_name: response.user[0].first_name,
+          last_name: response.user[0].last_name,
+          role: response.user[0].role,
+          persona: response.user[0].persona
+        }
       } as QuestionWithUser;
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
@@ -179,18 +182,13 @@ export class SupabaseService {
       const { data, error } = await supabase
         .from('questions')
         .select(`
-          id,
-          question,
-          file_url,
-          like_count,
-          comment_count,
-          media_type,
-          folder_path,
-          created_at,
+          *,
           user:users!inner(
             id,
             first_name,
-            last_name
+            last_name,
+            role,
+            persona
           )
         `)
         .order('created_at', { ascending: false });
@@ -199,19 +197,24 @@ export class SupabaseService {
         throw new Error(error.message);
       }
 
-      if (!data) return [];
-
       const response = data as SupabaseQuestionResponse[];
-      return response.map(question => ({
-        id: question.id,
-        question: question.question,
-        file_url: question.file_url,
-        like_count: question.like_count,
-        comment_count: question.comment_count,
-        media_type: question.media_type,
-        folder_path: question.folder_path,
-        created_at: question.created_at,
-        user: question.user[0]
+      
+      return response.map(item => ({
+        id: item.id,
+        user_id: item.user[0].id,
+        question: item.question,
+        file_url: item.file_url,
+        like_count: item.like_count,
+        comment_count: item.comment_count,
+        media_type: item.media_type,
+        folder_path: item.folder_path,
+        created_at: item.created_at,
+        user: {
+          first_name: item.user[0].first_name,
+          last_name: item.user[0].last_name,
+          role: item.user[0].role,
+          persona: item.user[0].persona
+        }
       })) as QuestionWithUser[];
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
@@ -257,7 +260,9 @@ export class SupabaseService {
           user:users!inner(
             id,
             first_name,
-            last_name
+            last_name,
+            role,
+            persona
           )
         `)
         .single();
@@ -273,6 +278,7 @@ export class SupabaseService {
 
       return {
         id: response.id,
+        user_id: response.user[0].id,
         question: response.question,
         file_url: response.file_url,
         like_count: response.like_count,
@@ -280,8 +286,123 @@ export class SupabaseService {
         media_type: response.media_type,
         folder_path: response.folder_path,
         created_at: response.created_at,
-        user: response.user[0]
+        user: {
+          first_name: response.user[0].first_name,
+          last_name: response.user[0].last_name,
+          role: response.user[0].role,
+          persona: response.user[0].persona
+        }
       } as QuestionWithUser;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Get all family members
+  static async getFamilyMembers() {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      const currentUser = await this.verifyUserStatus(userEmail);
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data || [];
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Get current user
+  static async getCurrentUser() {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      return await this.verifyUserStatus(userEmail);
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Add family member
+  static async addFamilyMember(userData: Omit<User, 'id' | 'created_at'>) {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      await this.verifyUserStatus(userEmail);
+      
+      return await this.createUser(userData);
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Update family member
+  static async updateFamilyMember(userId: string, userData: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: string;
+    phone_number?: string;
+    bio?: string;
+    status: 'Active' | 'Validating' | 'Not Active';
+  }) {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      await this.verifyUserStatus(userEmail);
+      
+      const { data, error } = await supabase
+        .from('users')
+        .update({
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          email: userData.email,
+          role: userData.role,
+          phone_number: userData.phone_number,
+          bio: userData.bio,
+          status: userData.status
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') { // Unique violation
+          throw new Error('User with this email already exists');
+        }
+        throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error('Failed to update user');
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Delete family member
+  static async deleteFamilyMember(userId: string) {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      await this.verifyUserStatus(userEmail);
+      
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return true;
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }
