@@ -44,6 +44,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
   const [liked, setLiked] = useState(false)
   const [likeCount, setLikeCount] = useState(question.like_count)
   const [commentCount, setCommentCount] = useState(question.comment_count)
+  const [isLikeLoading, setIsLikeLoading] = useState(false)
   const userEmail = sessionStorage.getItem('userEmail')
 
   useEffect(() => {
@@ -119,26 +120,70 @@ export function QuestionCard({ question }: QuestionCardProps) {
   }, [question.id]);
 
   const handleLike = async () => {
-    if (!userEmail) return;
+    if (!userEmail || isLikeLoading) return;
 
     try {
+      setIsLikeLoading(true);
+      
+      // Optimistic UI update
       const newLikeCount = liked ? likeCount - 1 : likeCount + 1;
       setLikeCount(newLikeCount);
       setLiked(!liked);
 
-      const { error } = await supabase
+      if (liked) {
+        // Unlike: Remove the like record
+        const { error: deleteError } = await supabase
+          .from('question_likes')
+          .delete()
+          .eq('question_id', question.id)
+          .eq('user_email', userEmail);
+
+        if (deleteError) {
+          console.error('Error removing like:', deleteError);
+          // Revert optimistic update on error
+          setLikeCount(likeCount);
+          setLiked(liked);
+          setIsLikeLoading(false);
+          return;
+        }
+      } else {
+        // Like: Add a new like record
+        const { error: insertError } = await supabase
+          .from('question_likes')
+          .insert({
+            question_id: question.id,
+            user_email: userEmail
+          });
+
+        if (insertError) {
+          console.error('Error adding like:', insertError);
+          // Revert optimistic update on error
+          setLikeCount(likeCount);
+          setLiked(liked);
+          setIsLikeLoading(false);
+          return;
+        }
+      }
+
+      // Update the question's like_count
+      const { error: updateError } = await supabase
         .from('questions')
         .update({ like_count: newLikeCount })
         .eq('id', question.id);
 
-      if (error) {
-        // Revert optimistic update
-        setLikeCount(likeCount);
-        setLiked(liked);
-        console.error('Error updating like count:', error);
+      if (updateError) {
+        console.error('Error updating like count:', updateError);
+        // We don't revert here since the like/unlike operation succeeded
+        // Only the count update failed
       }
+      
+      setIsLikeLoading(false);
     } catch (error) {
       console.error('Error handling like:', error);
+      // Revert optimistic update on unexpected error
+      setLikeCount(likeCount);
+      setLiked(liked);
+      setIsLikeLoading(false);
     }
   };
 
@@ -233,6 +278,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
           size="sm"
           className="gap-1"
           onClick={handleLike}
+          disabled={isLikeLoading}
         >
           <Heart className={cn("h-4 w-4", { "fill-current text-red-500": liked })} />
           <span>{likeCount.toString()}</span>
