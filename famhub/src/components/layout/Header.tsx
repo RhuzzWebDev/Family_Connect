@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ModeToggle } from "@/components/mode-toggle"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 import { Sidebar } from "@/components/sidebar"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -18,11 +18,36 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
+import { createClient } from '@supabase/supabase-js'
 
 export default function Header() {
   const [notificationCount, setNotificationCount] = useState(3)
   const router = useRouter();
   const userEmail = sessionStorage.getItem('userEmail');
+  const [userData, setUserData] = useState({ first_name: '', last_name: '' });
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (userEmail) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('first_name, last_name')
+          .eq('email', userEmail)
+          .single();
+
+        if (data && !error) {
+          setUserData(data);
+        }
+      }
+    };
+
+    fetchUserData();
+  }, [userEmail]);
 
   const handleLogout = () => {
     sessionStorage.removeItem('userEmail');
@@ -32,9 +57,9 @@ export default function Header() {
   if (!userEmail) return null;
 
   const getInitials = () => {
-    const [firstName, lastName] = userEmail.split('@')[0].split('.');
-    if (firstName && lastName) {
-      return `${firstName[0]}${lastName[0]}`.toUpperCase();
+    const { first_name, last_name } = userData;
+    if (first_name && last_name) {
+      return `${first_name[0]}${last_name[0]}`.toUpperCase();
     }
     return 'FC';
   };
@@ -77,8 +102,13 @@ export default function Header() {
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none">{`${userData.first_name} ${userData.last_name}`}</p>
+                  <p className="text-xs leading-none text-muted-foreground">{userEmail}</p>
+                </div>
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem>Profile</DropdownMenuItem>
               <DropdownMenuItem>Settings</DropdownMenuItem>
