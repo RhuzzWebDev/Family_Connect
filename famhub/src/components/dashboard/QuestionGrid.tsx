@@ -551,7 +551,13 @@ export default function QuestionGrid() {
               <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
             </DialogHeader>
             <div className="p-6">
-              <CreateQuestionForm onQuestionCreated={fetchQuestions} type="question" />
+              <CreateQuestionForm 
+                onQuestionCreated={() => {
+                  // Refresh the page after creating a question
+                  window.location.reload();
+                }} 
+                type="question" 
+              />
             </div>
           </DialogContent>
         </Dialog>
@@ -559,7 +565,7 @@ export default function QuestionGrid() {
 
       {questions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-          <MessageSquare className="w-16 h-16 text-gray-300" />
+          <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
           <p className="text-gray-500 text-center">No questions yet. Be the first to ask!</p>
           <Dialog>
             <DialogTrigger asChild>
@@ -572,7 +578,13 @@ export default function QuestionGrid() {
                 <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
               </DialogHeader>
               <div className="p-6">
-                <CreateQuestionForm onQuestionCreated={fetchQuestions} type="question" />
+                <CreateQuestionForm 
+                  onQuestionCreated={() => {
+                    // Refresh the page after creating a question
+                    window.location.reload();
+                  }} 
+                  type="question" 
+                />
               </div>
             </DialogContent>
           </Dialog>

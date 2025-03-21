@@ -35,7 +35,7 @@ export function Layout({ children }: LayoutProps) {
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
-            <Link href="/members">
+            <Link href="/family">
               <Users className="w-5 h-5" />
               Family Members
             </Link>

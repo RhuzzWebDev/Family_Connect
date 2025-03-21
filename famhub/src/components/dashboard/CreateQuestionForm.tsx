@@ -30,7 +30,7 @@ const SUPPORTED_FILE_TYPES = {
   audio: ['.mp3', '.wav', '.ogg']
 };
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 export default function CreateQuestionForm({ onQuestionCreated, type = 'question' }: CreateQuestionFormProps) {
   const { isClient, userEmail } = useSession();
@@ -49,6 +49,7 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
   const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>("");
   const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>("");
   const [isTestingDevice, setIsTestingDevice] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chunksRef = useRef<Blob[]>([]);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
@@ -336,7 +337,7 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
 
     // Check file size
     if (selectedFile.size > MAX_FILE_SIZE) {
-      setError('File size must be less than 5MB');
+      setError('File size must be less than 25MB');
       return;
     }
 
@@ -380,59 +381,135 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
       let folderPath = '';
       
       if (file) {
-        // Get user details for folder path
+        try {
+          // Get user details for folder path
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('first_name, last_name, role')
+            .eq('email', userEmail)
+            .single();
+
+          if (userError) {
+            console.error("Error fetching user data:", userError);
+            throw new Error("Could not retrieve user information");
+          }
+
+          if (!userData) {
+            throw new Error("User data not found");
+          }
+
+          // Determine folder path based on role following the established pattern
+          const persona = userData.role === 'Father' || userData.role === 'Mother' || 
+                         userData.role === 'Grandfather' || userData.role === 'Grandmother' 
+                         ? 'Parent' : 'Children';
+          
+          const timestamp = Date.now();
+          const fileName = `${timestamp}_${file.name}`;
+          
+          console.log("Preparing file upload with user data:", {
+            lastName: userData.last_name,
+            firstName: userData.first_name,
+            role: userData.role,
+            persona
+          });
+          
+          // Create FormData for native file upload
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('lastName', userData.last_name);
+          formData.append('firstName', userData.first_name);
+          formData.append('role', userData.role);
+          formData.append('persona', persona);
+          formData.append('fileName', fileName);
+          
+          // Use fetch to upload to your API endpoint
+          const uploadResponse = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            console.error("File upload error:", errorData);
+            throw new Error(`File upload failed: ${JSON.stringify(errorData)}`);
+          }
+          
+          const uploadResult = await uploadResponse.json();
+          // Get the URL and folderPath from the response
+          fileUrl = uploadResult.url;
+          folderPath = uploadResult.folderPath;
+        } catch (fileError) {
+          console.error("File handling error:", fileError);
+          throw new Error(`File processing failed: ${fileError instanceof Error ? fileError.message : JSON.stringify(fileError)}`);
+        }
+      }
+
+      console.log("Creating question record with data:", {
+        user_id: userEmail,
+        question: text,
+        file_url: fileUrl,
+        folder_path: folderPath,
+        media_type: mediaType
+      });
+
+      // Create question record
+      try {
+        // First, try to get the user's UUID from the database
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('first_name, last_name, role')
+          .select('id')
           .eq('email', userEmail)
           .single();
 
-        if (userError) throw userError;
+        if (userError) {
+          console.error("Error fetching user ID:", userError);
+          throw new Error(`Could not retrieve user ID: ${userError.message || JSON.stringify(userError)}`);
+        }
 
-        // Determine folder path based on role following the established pattern
-        folderPath = userData.role === 'Parent' 
-          ? `${userData.last_name}/${userData.first_name}`
-          : `other/${userData.first_name}`;
+        if (!userData || !userData.id) {
+          console.error("User not found or ID missing:", userEmail);
+          throw new Error(`User not found or ID missing for email: ${userEmail}`);
+        }
 
-        const timestamp = Date.now();
-        const fileName = `${timestamp}_${file.name}`;
-        const fullPath = `public/upload/${folderPath}/${fileName}`;
+        console.log("Found user ID:", userData.id);
+
+        // Now insert the question with the proper user_id (UUID)
+        const { error: insertError, data: insertData } = await supabase
+          .from('questions')
+          .insert({
+            user_id: userData.id, // Use the UUID from the users table
+            question: text,
+            file_url: fileUrl,
+            folder_path: folderPath,
+            media_type: mediaType,
+            like_count: 0,
+            comment_count: 0,
+            created_at: new Date().toISOString()
+          })
+          .select();
+
+        if (insertError) {
+          console.error("Database insertion error:", insertError);
+          throw new Error(`Database error: ${insertError.message || JSON.stringify(insertError)}`);
+        }
+
+        console.log("Question created successfully:", insertData);
         
-        const { error: uploadError } = await supabase.storage
-          .from('family-connect')
-          .upload(fullPath, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('family-connect')
-          .getPublicUrl(fullPath);
-
-        fileUrl = publicUrl;
+        // Clean up after successful submission
+        setText("");
+        handleClearMedia();
+        
+        // Notify parent component that a question was created
+        // This should trigger the modal to close and refresh the question list
+        onQuestionCreated();
+      } catch (dbError) {
+        console.error("Database operation failed:", dbError);
+        throw new Error(`Database operation failed: ${dbError instanceof Error ? dbError.message : JSON.stringify(dbError)}`);
       }
-
-      // Create question record
-      const { error: insertError } = await supabase
-        .from('questions')
-        .insert({
-          user_id: userEmail,
-          question: text,
-          file_url: fileUrl,
-          folder_path: folderPath,
-          media_type: mediaType,
-          like_count: 0,
-          comment_count: 0
-        });
-
-      if (insertError) throw insertError;
-
-      // Clean up after successful submission
-      setText("");
-      handleClearMedia();
-      onQuestionCreated();
     } catch (err) {
       console.error("Error creating question:", err);
-      setError("Failed to create question. Please try again.");
+      setError(`Failed to create question: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Don't close the modal on error
     } finally {
       setIsSubmitting(false);
     }
@@ -440,6 +517,9 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
 
   const renderMediaPreview = () => {
     if (!mediaPreview) return null;
+
+    // Don't render video preview here since it's handled in the video tab
+    if (mediaType === "video") return null;
 
     return (
       <div className="relative mt-2 rounded-md border">
@@ -459,11 +539,6 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
         {mediaType === "audio" && (
           <div className="flex items-center justify-center p-4">
             <audio src={mediaPreview} controls className="w-full" />
-          </div>
-        )}
-        {mediaType === "video" && (
-          <div className="relative h-[200px] w-full overflow-hidden rounded-md">
-            <video src={mediaPreview} controls className="w-full h-full object-cover" />
           </div>
         )}
       </div>
