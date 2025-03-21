@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import bcrypt from 'bcryptjs';
+import { useSession } from '@/hooks/useSession';
 
 const Input = ({ 
   label, 
@@ -94,6 +95,7 @@ interface FormData {
 
 export default function RegisterForm() {
   const router = useRouter();
+  const { setUserEmail } = useSession();
   const [formData, setFormData] = useState<FormData>({
     first_name: '',
     last_name: '',
@@ -189,8 +191,8 @@ export default function RegisterForm() {
         throw new Error(createError.message);
       }
 
-      // Store email in session
-      sessionStorage.setItem('userEmail', formData.email);
+      // Store email using the session hook
+      setUserEmail(formData.email);
 
       // Show success message and redirect to login
       alert('Registration successful! Please wait for your account to be validated.');

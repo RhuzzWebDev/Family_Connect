@@ -19,11 +19,12 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { createClient } from '@supabase/supabase-js'
+import { useSession } from "@/hooks/useSession"
 
 export function Header() {
   const [notificationCount, setNotificationCount] = useState(3)
   const router = useRouter();
-  const userEmail = sessionStorage.getItem('userEmail');
+  const { isClient, userEmail, setUserEmail } = useSession();
   const [userData, setUserData] = useState({ first_name: '', last_name: '' });
 
   const supabase = createClient(
@@ -46,11 +47,17 @@ export function Header() {
       }
     };
 
-    fetchUserData();
-  }, [userEmail]);
+    if (isClient && userEmail) {
+      fetchUserData();
+    }
+  }, [userEmail, isClient]);
+
+  if (!isClient) {
+    return null;
+  }
 
   const handleLogout = () => {
-    sessionStorage.removeItem('userEmail');
+    setUserEmail(null);
     router.push('/login');
   };
 

@@ -2,13 +2,18 @@
 
 import { Header } from "./Header";
 import { Sidebar } from "@/components/sidebar";
+import { useSession } from "@/hooks/useSession";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 export function Layout({ children }: LayoutProps) {
-  const userEmail = sessionStorage.getItem('userEmail');
+  const { isClient, userEmail } = useSession();
+
+  if (!isClient) {
+    return <>{children}</>;
+  }
 
   if (!userEmail) {
     return <>{children}</>;

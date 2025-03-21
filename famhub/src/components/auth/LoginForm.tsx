@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import { useSession } from '@/hooks/useSession';
 
 // Reusable input component with error handling
 const Input = ({ 
@@ -41,6 +42,7 @@ const Input = ({
 
 export default function LoginForm() {
   const router = useRouter();
+  const { setUserEmail } = useSession();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -87,8 +89,8 @@ export default function LoginForm() {
       // Check user status
       switch (user.status) {
         case 'Active':
-          // Store user email in session
-          sessionStorage.setItem('userEmail', user.email);
+          // Store user email using the session hook
+          setUserEmail(user.email);
           // Redirect to home page
           router.push('/');
           break;

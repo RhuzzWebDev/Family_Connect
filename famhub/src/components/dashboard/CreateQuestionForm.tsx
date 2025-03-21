@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { useSession } from '@/hooks/useSession';
 
 interface CreateQuestionFormProps {
   onQuestionCreated: () => void;
@@ -24,6 +25,7 @@ const SUPPORTED_FILE_TYPES = {
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 export default function CreateQuestionForm({ onQuestionCreated, type = 'question' }: CreateQuestionFormProps) {
+  const { isClient, userEmail } = useSession();
   const [text, setText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingType, setRecordingType] = useState<"audio" | "video" | null>(null);
@@ -103,7 +105,10 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
     setError(null);
 
     try {
-      const userEmail = sessionStorage.getItem('userEmail');
+      if (!isClient) {
+        throw new Error('Client-side only');
+      }
+      
       if (!userEmail) {
         throw new Error('Please log in first');
       }

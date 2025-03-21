@@ -3,18 +3,19 @@
 import QuestionGrid from '@/components/dashboard/QuestionGrid';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { useSession } from '@/hooks/useSession';
 
 export default function Home() {
   const router = useRouter();
-  const userEmail = sessionStorage.getItem('userEmail');
+  const { isClient, userEmail } = useSession();
 
   useEffect(() => {
-    if (!userEmail) {
+    if (isClient && !userEmail) {
       router.push('/login');
     }
-  }, [userEmail, router]);
+  }, [isClient, userEmail, router]);
 
-  if (!userEmail) {
+  if (!isClient || !userEmail) {
     return null;
   }
 
