@@ -1,43 +1,47 @@
 import { NextResponse } from 'next/server';
-import { base, hasAirtableConfig } from '@/lib/airtable';
+import { supabase } from '@/lib/supabase';
 
 export async function GET(
   request: Request,
   { params }: { params: { email: string } }
 ) {
   try {
-    if (!hasAirtableConfig || !base) {
-      return NextResponse.json({
-        success: false,
-        message: 'Airtable is not configured'
-      }, { status: 503 });
-    }
-
     const userEmail = params.email;
     
-    // Find user by email
-    const records = await base('Users').select({
-      filterByFormula: `{Email} = '${userEmail}'`,
-      maxRecords: 1
-    }).all();
+    // Find user by email using Supabase
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, role, persona')
+      .eq('email', userEmail)
+      .single();
 
-    if (records.length === 0) {
+    if (error) {
+      if (error.code === 'PGRST116') { // Not found error code
+        return NextResponse.json({
+          success: false,
+          message: 'User not found'
+        }, { status: 404 });
+      }
+      
+      throw error;
+    }
+
+    if (!user) {
       return NextResponse.json({
         success: false,
         message: 'User not found'
       }, { status: 404 });
     }
 
-    const user = records[0];
     return NextResponse.json({
       success: true,
       user: {
         id: user.id,
-        email: user.fields.Email,
-        first_name: user.fields.first_name,
-        last_name: user.fields.last_name,
-        role: user.fields.role,
-        persona: user.fields.persona
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        role: user.role,
+        persona: user.persona
       }
     });
 
