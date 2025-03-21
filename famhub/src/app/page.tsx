@@ -3,7 +3,6 @@
 import QuestionGrid from '@/components/dashboard/QuestionGrid';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import Header from '@/components/layout/Header';
 
 export default function Home() {
   const router = useRouter();
@@ -19,12 +18,5 @@ export default function Home() {
     return null;
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="container mx-auto p-6">
-        <QuestionGrid />
-      </main>
-    </div>
-  );
+  return <QuestionGrid />;
 }

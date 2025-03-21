@@ -3,7 +3,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Sidebar } from "@/components/sidebar";
+import { Layout } from "@/components/layout/Layout";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -29,14 +29,7 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <div className="flex h-screen">
-              <div className="hidden md:flex w-64 border-r">
-                <Sidebar />
-              </div>
-              <main className="flex-1 overflow-y-auto">
-                {children}
-              </main>
-            </div>
+            <Layout>{children}</Layout>
           </ThemeProvider>
         </Providers>
       </body>

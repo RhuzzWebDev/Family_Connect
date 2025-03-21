@@ -10,7 +10,6 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AnswerForm } from "@/components/answer-form"
 import { CommentSection } from "@/components/comment-section"
-import { QuestionWithUser } from "@/lib/supabase"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import { RealtimeChannel } from '@supabase/supabase-js'
@@ -36,26 +35,15 @@ interface DatabaseQuestion {
   user: User;
 }
 
-interface Question extends Omit<DatabaseQuestion, 'like_count' | 'comment_count'> {
-  like_count: string | number;
-  comment_count: string | number;
-}
-
 interface QuestionCardProps {
-  question: Question;
+  question: DatabaseQuestion;
 }
 
 export function QuestionCard({ question }: QuestionCardProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [liked, setLiked] = useState(false)
-  const [likeCount, setLikeCount] = useState(() => {
-    const count = question.like_count;
-    return typeof count === 'string' ? parseInt(count, 10) : count ?? 0;
-  })
-  const [commentCount, setCommentCount] = useState(() => {
-    const count = question.comment_count;
-    return typeof count === 'string' ? parseInt(count, 10) : count ?? 0;
-  })
+  const [likeCount, setLikeCount] = useState(question.like_count)
+  const [commentCount, setCommentCount] = useState(question.comment_count)
   const userEmail = sessionStorage.getItem('userEmail')
 
   useEffect(() => {
@@ -104,10 +92,10 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
   useEffect(() => {
     // Subscribe to real-time updates for this question
-    const channel = supabase.channel(`question:${question.id}`)
+    const channel = supabase.channel(`question:${question.id}`);
     
     const subscription = channel
-      .on<{ new: DatabaseQuestion }>(
+      .on(
         'postgres_changes',
         {
           event: 'UPDATE',
@@ -116,9 +104,10 @@ export function QuestionCard({ question }: QuestionCardProps) {
           filter: `id=eq.${question.id}`
         },
         (payload) => {
-          if (payload.new) {
-            setLikeCount(Number(payload.new.like_count));
-            setCommentCount(Number(payload.new.comment_count));
+          const updatedQuestion = payload.new as DatabaseQuestion;
+          if (updatedQuestion) {
+            setLikeCount(updatedQuestion.like_count);
+            setCommentCount(updatedQuestion.comment_count);
           }
         }
       )
@@ -133,58 +122,23 @@ export function QuestionCard({ question }: QuestionCardProps) {
     if (!userEmail) return;
 
     try {
-      if (!liked) {
-        // Add like
-        const { error: likeError } = await supabase
-          .from('question_likes')
-          .insert([
-            { 
-              question_id: question.id,
-              user_email: userEmail
-            }
-          ]);
+      const newLikeCount = liked ? likeCount - 1 : likeCount + 1;
+      setLikeCount(newLikeCount);
+      setLiked(!liked);
 
-        if (likeError) throw likeError;
+      const { error } = await supabase
+        .from('questions')
+        .update({ like_count: newLikeCount })
+        .eq('id', question.id);
 
-        // Update question like count
-        const newLikeCount = likeCount + 1;
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: newLikeCount })
-          .eq('id', question.id)
-          .select<'like_count', number>('like_count')
-          .single();
-
-        if (updateError) throw updateError;
-
-        setLikeCount(newLikeCount);
-        setLiked(true);
-      } else {
-        // Remove like
-        const { error: unlikeError } = await supabase
-          .from('question_likes')
-          .delete()
-          .eq('question_id', question.id)
-          .eq('user_email', userEmail);
-
-        if (unlikeError) throw unlikeError;
-
-        // Update question like count
-        const newLikeCount = Math.max(0, likeCount - 1); // Ensure count doesn't go below 0
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: newLikeCount })
-          .eq('id', question.id)
-          .select<'like_count', number>('like_count')
-          .single();
-
-        if (updateError) throw updateError;
-
-        setLikeCount(newLikeCount);
-        setLiked(false);
+      if (error) {
+        // Revert optimistic update
+        setLikeCount(likeCount);
+        setLiked(liked);
+        console.error('Error updating like count:', error);
       }
     } catch (error) {
-      console.error('Error updating like:', error);
+      console.error('Error handling like:', error);
     }
   };
 

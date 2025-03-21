@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
 interface CommentSectionProps {
-  questionId: number
+  questionId: string
 }
 
 export function CommentSection({ questionId }: CommentSectionProps) {

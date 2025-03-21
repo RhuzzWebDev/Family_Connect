@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { createClient } from '@supabase/supabase-js'
 
-export default function Header() {
+export function Header() {
   const [notificationCount, setNotificationCount] = useState(3)
   const router = useRouter();
   const userEmail = sessionStorage.getItem('userEmail');
