@@ -55,10 +55,8 @@ export function Layout({ children }: LayoutProps) {
         </aside>
 
         {/* Main content */}
-        <main>
-          <div className="max-w-5xl mx-auto">
-            {children}
-          </div>
+        <main className="flex-1">
+          {children}
         </main>
       </div>
     </div>

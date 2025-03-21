@@ -1,9 +1,10 @@
 'use client';
 
-import QuestionGrid from '@/components/dashboard/QuestionGrid';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useSession } from '@/hooks/useSession';
+import { Layout } from '@/components/layout/Layout';
+import QuestionGrid from '@/components/dashboard/QuestionGrid';
 
 export default function Home() {
   const router = useRouter();
@@ -19,5 +20,14 @@ export default function Home() {
     return null;
   }
 
-  return <QuestionGrid />;
+  return (
+    <Layout>
+      <div className="pl-6 pr-6 md:pl-8">
+        <div className="mb-6 pt-6">
+          <h1 className="text-3xl font-bold">Family Feed</h1>
+        </div>
+        <QuestionGrid />
+      </div>
+    </Layout>
+  );
 }

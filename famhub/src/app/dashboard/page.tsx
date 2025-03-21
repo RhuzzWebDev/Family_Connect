@@ -2,10 +2,7 @@
 
 import { useEffect } from 'react';
 import QuestionGrid from '@/components/dashboard/QuestionGrid';
-import { Navbar } from '@/components/layout/Navbar';
-import { Button } from '@/components/ui/button';
-import { Home as HomeIcon, Users, Calendar, MessageSquare } from 'lucide-react';
-import Link from 'next/link';
+import { Layout } from '@/components/layout/Layout';
 
 export default function DashboardPage() {
   useEffect(() => {
@@ -16,22 +13,13 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
-     
-      <div className="flex">
-       
-
-        {/* Main content */}
-        <main className="flex-1 p-6">
-          <div className="max-w-5xl mx-auto">
-            <div className="mb-6">
-              <h1 className="text-3xl font-bold">Family Feed</h1>
-            </div>
-            <QuestionGrid />
-          </div>
-        </main>
+    <Layout>
+      <div className="pl-6 pr-6 md:pl-8">
+        <div className="mb-6 pt-6">
+          <h1 className="text-3xl font-bold">Family Feed</h1>
+        </div>
+        <QuestionGrid />
       </div>
-    </div>
+    </Layout>
   );
 }
-

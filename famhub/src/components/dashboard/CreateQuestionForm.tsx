@@ -582,29 +582,79 @@ export default function CreateQuestionForm({ onQuestionCreated, type = 'question
         </TabsContent>
         <TabsContent value="video" className="space-y-4">
           {!isRecording && !mediaPreview ? (
-            <div className="space-y-4">
-              <RadioGroup value={selectedVideoDevice} onValueChange={setSelectedVideoDevice}>
-                {videoDevices.map((device) => (
-                  <div key={device.deviceId} className="flex items-center space-x-2">
-                    <RadioGroupItem value={device.deviceId} id={device.deviceId} />
-                    <Label htmlFor={device.deviceId}>{device.label}</Label>
-                    {device.status === 'ready' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                    {device.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
+            <div className="flex flex-col items-center justify-center rounded-md border border-dashed p-8 space-y-4">
+              <Camera className="mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="mb-2 text-sm text-muted-foreground">Upload video or record</p>
+              <div className="w-full max-w-sm space-y-4">
+                <RadioGroup
+                  value={selectedVideoDevice}
+                  onValueChange={(value) => {
+                    setSelectedVideoDevice(value);
+                    testDevice(value, 'video');
+                  }}
+                >
+                  <div className="space-y-2">
+                    {videoDevices.map(device => (
+                      <Card key={device.deviceId} className="relative p-4">
+                        <RadioGroupItem
+                          value={device.deviceId}
+                          id={`video-${device.deviceId}`}
+                          className="absolute right-4 top-4"
+                        />
+                        <Label
+                          htmlFor={`video-${device.deviceId}`}
+                          className="flex items-center gap-2 cursor-pointer"
+                        >
+                          <Camera className="h-4 w-4" />
+                          <span className="flex-1">{device.label}</span>
+                          {device.status === 'ready' && (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          )}
+                          {device.status === 'error' && (
+                            <AlertCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          {device.status === 'testing' && (
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                          )}
+                        </Label>
+                      </Card>
+                    ))}
                   </div>
-                ))}
-              </RadioGroup>
-              <Button 
-                onClick={() => handleStartRecording("video")} 
-                disabled={isTestingDevice || !selectedVideoDevice}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Start Recording
-              </Button>
+                </RadioGroup>
+                {videoDevices.length === 0 && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      No video devices found. Please check your camera connection.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept={SUPPORTED_FILE_TYPES.video.join(',')} 
+                onChange={handleFileUpload} 
+              />
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                  Upload Video
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => handleStartRecording("video")}
+                  disabled={!selectedVideoDevice || isTestingDevice}
+                >
+                  Record Video
+                </Button>
+              </div>
             </div>
           ) : null}
 
           {isRecording && recordingType === "video" ? (
-            <div className="space-y-4">
+            <div className="flex flex-col items-center space-y-4 rounded-md border p-4">
               <Card className="p-4">
                 <div className="relative bg-black rounded-lg overflow-hidden">
                   <video 
