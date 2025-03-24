@@ -324,7 +324,9 @@ export default function AdminUsersPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="sysAdmin">System Admin</SelectItem>
+                          {isSysAdmin && (
+                            <SelectItem value="sysAdmin">System Admin</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -469,7 +471,9 @@ export default function AdminUsersPage() {
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="admin">Admin</SelectItem>
-                                        <SelectItem value="sysAdmin">System Admin</SelectItem>
+                                        {isSysAdmin && (
+                                          <SelectItem value="sysAdmin">System Admin</SelectItem>
+                                        )}
                                       </SelectContent>
                                     </Select>
                                   </div>

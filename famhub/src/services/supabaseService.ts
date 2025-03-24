@@ -407,7 +407,6 @@ export class SupabaseService {
     }
   }
 
-  // Update family member
   static async updateFamilyMember(userId: string, userData: {
     first_name: string;
     last_name: string;
@@ -453,7 +452,6 @@ export class SupabaseService {
     }
   }
 
-  // Delete family member
   static async deleteFamilyMember(userId: string) {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
@@ -475,8 +473,73 @@ export class SupabaseService {
   }
 
   // Admin methods
+  static async getAdminById(id: string) {
+    try {
+      const { data, error } = await supabase
+        .from('admins')
+        .select()
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return null;
+        }
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async adminLogin(email: string, password: string) {
+    try {
+      // First, check if the admin exists
+      const { data: admin, error: adminError } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (adminError) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Verify password
+      const passwordMatch = await bcrypt.compare(password, admin.password);
+      if (!passwordMatch) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Store admin info in session
+      sessionStorage.setItem('adminEmail', admin.email);
+      sessionStorage.setItem('adminRole', admin.role);
+      sessionStorage.setItem('adminId', admin.id);
+      sessionStorage.setItem('adminName', `${admin.first_name} ${admin.last_name}`);
+
+      return admin;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
   static async createAdmin(adminData: Omit<Admin, 'id' | 'created_at'>) {
     try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+      
+      // Get current admin to check permissions
+      const currentAdmin = await this.getAdminByEmail(adminEmail);
+      
+      // Client-side permission check
+      if (currentAdmin && currentAdmin.role !== 'sysAdmin' && adminData.role === 'sysAdmin') {
+        throw new Error('You do not have permission to create system admin accounts');
+      }
+      
       const hashedPassword = await bcrypt.hash(adminData.password, 10);
       
       const { data, error } = await supabase
@@ -562,28 +625,56 @@ export class SupabaseService {
     }
   }
 
-  static async updateAdmin(id: string, adminData: Partial<Omit<Admin, 'id' | 'created_at' | 'password'>>) {
+  static async updateAdmin(adminId: string, adminData: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: string;
+  }) {
     try {
       const adminEmail = sessionStorage.getItem('adminEmail');
       if (!adminEmail) {
         throw new Error('Not authenticated as admin');
       }
-
-      // Check if the current admin is a sysAdmin
+      
+      // Get current admin to check permissions
       const currentAdmin = await this.getAdminByEmail(adminEmail);
-      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
-        throw new Error('Only system administrators can update admin accounts');
+      if (!currentAdmin) {
+        throw new Error('Admin not found');
       }
-
+      
+      // Regular admins can only update to regular admin role
+      if (currentAdmin.role !== 'sysAdmin' && adminData.role === 'sysAdmin') {
+        throw new Error('You do not have permission to assign system admin role');
+      }
+      
+      // Get the admin being updated to check if attempting to downgrade a sysAdmin
+      const targetAdmin = await this.getAdminById(adminId);
+      if (targetAdmin && targetAdmin.role === 'sysAdmin' && adminData.role === 'admin' && currentAdmin.role !== 'sysAdmin') {
+        throw new Error('You do not have permission to change a system admin\'s role');
+      }
+      
       const { data, error } = await supabase
         .from('admins')
-        .update(adminData)
-        .eq('id', id)
+        .update({
+          first_name: adminData.first_name,
+          last_name: adminData.last_name,
+          email: adminData.email,
+          role: adminData.role
+        })
+        .eq('id', adminId)
         .select()
         .single();
 
       if (error) {
+        if (error.code === '23505') { // Unique violation
+          throw new Error('Admin with this email already exists');
+        }
         throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error('Failed to update admin');
       }
 
       return data;
@@ -592,7 +683,7 @@ export class SupabaseService {
     }
   }
 
-  static async updateAdminPassword(id: string, newPassword: string) {
+  static async updateAdminPassword(adminId: string, newPassword: string) {
     try {
       const adminEmail = sessionStorage.getItem('adminEmail');
       if (!adminEmail) {
@@ -610,7 +701,7 @@ export class SupabaseService {
       const { data, error } = await supabase
         .from('admins')
         .update({ password: hashedPassword })
-        .eq('id', id)
+        .eq('id', adminId)
         .select()
         .single();
 
@@ -624,28 +715,29 @@ export class SupabaseService {
     }
   }
 
-  static async deleteAdmin(id: string) {
+  static async deleteAdmin(adminId: string) {
     try {
       const adminEmail = sessionStorage.getItem('adminEmail');
       if (!adminEmail) {
         throw new Error('Not authenticated as admin');
       }
 
-      // Check if the current admin is a sysAdmin
+      // Get current admin to check permissions
       const currentAdmin = await this.getAdminByEmail(adminEmail);
-      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
-        throw new Error('Only system administrators can delete admin accounts');
+      if (!currentAdmin) {
+        throw new Error('Admin not found');
       }
 
-      // Prevent deleting your own account
-      if (currentAdmin.id === id) {
-        throw new Error('You cannot delete your own admin account');
+      // Get the admin being deleted to check if attempting to delete a sysAdmin
+      const targetAdmin = await this.getAdminById(adminId);
+      if (targetAdmin && targetAdmin.role === 'sysAdmin' && currentAdmin.role !== 'sysAdmin') {
+        throw new Error('You do not have permission to delete a system admin');
       }
 
       const { error } = await supabase
         .from('admins')
         .delete()
-        .eq('id', id);
+        .eq('id', adminId);
 
       if (error) {
         throw new Error(error.message);
