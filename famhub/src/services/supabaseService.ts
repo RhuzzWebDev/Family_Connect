@@ -454,22 +454,31 @@ export class SupabaseService {
     phone_number?: string;
     bio?: string;
     status: 'Active' | 'Validating' | 'Not Active';
+    password?: string;
   }) {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
       await this.verifyUserStatus(userEmail);
       
+      // Prepare update data
+      const updateData: any = {
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        role: userData.role,
+        phone_number: userData.phone_number,
+        bio: userData.bio,
+        status: userData.status
+      };
+      
+      // Hash password if provided
+      if (userData.password) {
+        updateData.password = await bcrypt.hash(userData.password, 10);
+      }
+      
       const { data, error } = await supabase
         .from('users')
-        .update({
-          first_name: userData.first_name,
-          last_name: userData.last_name,
-          email: userData.email,
-          role: userData.role,
-          phone_number: userData.phone_number,
-          bio: userData.bio,
-          status: userData.status
-        })
+        .update(updateData)
         .eq('id', userId)
         .select()
         .single();

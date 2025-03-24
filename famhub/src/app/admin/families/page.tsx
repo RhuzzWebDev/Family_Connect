@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { SupabaseService } from '@/services/supabaseService';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
   Users, 
@@ -14,7 +14,9 @@ import {
   Trash2,
   Edit,
   Eye,
-  RefreshCw
+  RefreshCw,
+  Key,
+  Copy
 } from 'lucide-react';
 import Link from 'next/link';
 import { User } from '@/lib/supabase';
@@ -50,6 +52,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AddFamilyMemberModal } from "@/components/add-family-member-modal";
+import { cn, generatePassword } from '@/lib/utils';
 
 type Family = {
   id: string;
@@ -94,7 +97,12 @@ export default function AdminFamiliesPage() {
   });
 
   const [editMemberData, setEditMemberData] = useState({
-    status: '' as 'Active' | 'Validating' | 'Not Active'
+    status: '' as 'Active' | 'Validating' | 'Not Active',
+    password: '',
+    first_name: '',
+    last_name: '',
+    email: '',
+    role: '' as 'Father' | 'Mother' | 'Grandfather' | 'Grandmother' | 'Older Brother' | 'Older Sister' | 'Middle Brother' | 'Middle Sister' | 'Youngest Brother' | 'Youngest Sister'
   });
 
   useEffect(() => {
@@ -212,12 +220,24 @@ export default function AdminFamiliesPage() {
     }
   };
 
-  const handleUpdateMemberStatus = async () => {
+  const handleUpdateMember = async () => {
     if (!selectedMember) return;
     
     try {
       setLoading(true);
-      await SupabaseService.updateUserStatus(selectedMember.id, editMemberData.status);
+      
+      // Create update data object
+      const updateData = {
+        first_name: editMemberData.first_name,
+        last_name: editMemberData.last_name,
+        email: editMemberData.email,
+        role: editMemberData.role,
+        status: editMemberData.status,
+        password: editMemberData.password || undefined
+      };
+      
+      // Update the user with all data including password if provided
+      await SupabaseService.updateFamilyMember(selectedMember.id, updateData);
       
       // Refresh the families list
       handleRefreshFamilies();
@@ -225,8 +245,8 @@ export default function AdminFamiliesPage() {
       // Close dialog
       setIsEditMemberOpen(false);
     } catch (err) {
-      console.error('Error updating member status:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update member status');
+      console.error('Error updating member:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update member');
     } finally {
       setLoading(false);
     }
@@ -290,7 +310,7 @@ export default function AdminFamiliesPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">Family Accounts</h1>
+            <h2 className="text-2xl font-bold">Families</h2>
             <Button 
               variant="ghost" 
               size="icon" 
@@ -302,128 +322,170 @@ export default function AdminFamiliesPage() {
             </Button>
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex items-center gap-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
               <Input
+                type="search"
                 placeholder="Search families..."
-                className="pl-9"
+                className="pl-8 w-[200px] rounded-lg"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            
-            <Dialog open={isAddFamilyOpen} onOpenChange={setIsAddFamilyOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Family
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add New Family</DialogTitle>
-                  <DialogDescription>
-                    Create a new family account with a primary member.
-                  </DialogDescription>
-                </DialogHeader>
-                
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="familyName">Family Name</Label>
-                    <Input 
-                      id="familyName" 
-                      value={newFamilyData.familyName} 
-                      onChange={(e) => setNewFamilyData({...newFamilyData, familyName: e.target.value})}
-                    />
+            <Button onClick={() => setIsAddFamilyOpen(true)} className="rounded-lg">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Family
+            </Button>
+          </div>
+        </div>
+        
+        {/* Add Family Dialog */}
+        <Dialog open={isAddFamilyOpen} onOpenChange={setIsAddFamilyOpen}>
+          <DialogContent className="sm:max-w-md bg-white border border-gray-200 shadow-lg rounded-xl p-0 overflow-hidden" style={{ backdropFilter: 'none' }}>
+            <Card className="border-0 shadow-none">
+              <CardContent className="p-0">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <DialogTitle className="text-xl font-semibold">
+                      Add New Family
+                    </DialogTitle>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="firstName">First Name</Label>
+                      <Label htmlFor="familyName">Family Name</Label>
                       <Input 
-                        id="firstName" 
-                        value={newFamilyData.firstName} 
-                        onChange={(e) => setNewFamilyData({...newFamilyData, firstName: e.target.value})}
+                        id="familyName" 
+                        value={newFamilyData.familyName} 
+                        onChange={(e) => setNewFamilyData({...newFamilyData, familyName: e.target.value})}
+                        className="rounded-lg"
                       />
                     </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="firstName">First Name</Label>
+                        <Input 
+                          id="firstName" 
+                          value={newFamilyData.firstName} 
+                          onChange={(e) => setNewFamilyData({...newFamilyData, firstName: e.target.value})}
+                          className="rounded-lg"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="lastName">Last Name</Label>
+                        <Input 
+                          id="lastName" 
+                          value={newFamilyData.lastName} 
+                          onChange={(e) => setNewFamilyData({...newFamilyData, lastName: e.target.value})}
+                          className="rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    
                     <div className="space-y-2">
-                      <Label htmlFor="lastName">Last Name</Label>
+                      <Label htmlFor="email">Email</Label>
                       <Input 
-                        id="lastName" 
-                        value={newFamilyData.lastName} 
-                        onChange={(e) => setNewFamilyData({...newFamilyData, lastName: e.target.value})}
+                        id="email" 
+                        type="email"
+                        value={newFamilyData.email} 
+                        onChange={(e) => setNewFamilyData({...newFamilyData, email: e.target.value})}
+                        className="rounded-lg"
                       />
                     </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
-                    <Input 
-                      id="email" 
-                      type="email"
-                      value={newFamilyData.email} 
-                      onChange={(e) => setNewFamilyData({...newFamilyData, email: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input 
-                      id="password" 
-                      type="password"
-                      value={newFamilyData.password} 
-                      onChange={(e) => setNewFamilyData({...newFamilyData, password: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
+                    
                     <div className="space-y-2">
-                      <Label htmlFor="role">Role</Label>
-                      <Select 
-                        value={newFamilyData.role} 
-                        onValueChange={(value: 'Father' | 'Mother' | 'Grandfather' | 'Grandmother') => setNewFamilyData({...newFamilyData, role: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Father">Father</SelectItem>
-                          <SelectItem value="Mother">Mother</SelectItem>
-                          <SelectItem value="Grandfather">Grandfather</SelectItem>
-                          <SelectItem value="Grandmother">Grandmother</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="password">Password</Label>
+                      <div className="flex items-center space-x-2">
+                        <div className="relative flex-1">
+                          <Input 
+                            id="password" 
+                            type="text"
+                            value={newFamilyData.password} 
+                            onChange={(e) => setNewFamilyData({...newFamilyData, password: e.target.value})}
+                            className="rounded-lg pr-10"
+                          />
+                          {newFamilyData.password && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-full px-3 text-gray-400 hover:text-gray-600"
+                              onClick={() => {
+                                navigator.clipboard.writeText(newFamilyData.password);
+                                alert('Password copied to clipboard!');
+                              }}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-lg"
+                          onClick={() => {
+                            const newPassword = generatePassword(10);
+                            setNewFamilyData({...newFamilyData, password: newPassword});
+                          }}
+                          title="Generate random password"
+                        >
+                          <Key className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-500">Leave empty to keep current password</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="status">Status</Label>
-                      <Select 
-                        value={newFamilyData.status} 
-                        onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => setNewFamilyData({...newFamilyData, status: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Active">Active</SelectItem>
-                          <SelectItem value="Validating">Validating</SelectItem>
-                          <SelectItem value="Not Active">Not Active</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="role">Role</Label>
+                        <Select 
+                          value={newFamilyData.role} 
+                          onValueChange={(value: 'Father' | 'Mother' | 'Grandfather' | 'Grandmother') => setNewFamilyData({...newFamilyData, role: value})}
+                        >
+                          <SelectTrigger className="rounded-lg">
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Father">Father</SelectItem>
+                            <SelectItem value="Mother">Mother</SelectItem>
+                            <SelectItem value="Grandfather">Grandfather</SelectItem>
+                            <SelectItem value="Grandmother">Grandmother</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="status">Status</Label>
+                        <Select 
+                          value={newFamilyData.status} 
+                          onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => setNewFamilyData({...newFamilyData, status: value})}
+                        >
+                          <SelectTrigger className="rounded-lg">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Active">Active</SelectItem>
+                            <SelectItem value="Validating">Validating</SelectItem>
+                            <SelectItem value="Not Active">Not Active</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 </div>
                 
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddFamilyOpen(false)}>Cancel</Button>
-                  <Button onClick={handleAddFamily} disabled={loading}>
+                <DialogFooter className="p-4 pt-0">
+                  <Button variant="outline" onClick={() => setIsAddFamilyOpen(false)} className="rounded-lg">Cancel</Button>
+                  <Button onClick={handleAddFamily} disabled={loading} className="rounded-lg">
                     {loading ? 'Adding...' : 'Add Family'}
                   </Button>
                 </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+              </CardContent>
+            </Card>
+          </DialogContent>
+        </Dialog>
         
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
@@ -488,98 +550,107 @@ export default function AdminFamiliesPage() {
         
         {/* View Family Members Dialog */}
         <Dialog open={isViewMembersOpen} onOpenChange={setIsViewMembersOpen}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>
-                {selectedFamily?.familyName} Family Members
-              </DialogTitle>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <p className="text-sm text-gray-500">
-                  {selectedFamily?.members.length} members
-                </p>
-                
-                {selectedFamily && selectedFamily.members.length > 0 && (
-                  <AddFamilyMemberModal 
-                    buttonLabel="Add Member"
-                    isAdmin={true}
-                    onMemberAdded={handleMemberAdded}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                    familyId={selectedFamily.id}
-                  />
-                )}
+          <DialogContent className="sm:max-w-[90%] lg:max-w-[80%] bg-white border border-gray-200 shadow-lg rounded-xl p-0" style={{ backdropFilter: 'none' }}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <DialogTitle className="text-xl font-semibold">
+                  {selectedFamily?.familyName} Family Members
+                </DialogTitle>
               </div>
               
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableCell className="font-medium">Name</TableCell>
-                      <TableCell className="font-medium">Email</TableCell>
-                      <TableCell className="font-medium">Role</TableCell>
-                      <TableCell className="font-medium">Status</TableCell>
-                      <TableCell className="text-right font-medium">Actions</TableCell>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedFamily?.members.map((member) => (
-                      <TableRow key={member.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                              {member.first_name.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="font-medium">{member.first_name} {member.last_name}</p>
-                              <p className="text-xs text-gray-500">{member.persona}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{member.email}</TableCell>
-                        <TableCell>{member.role}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            member.status === 'Active' ? 'bg-green-100 text-green-800' :
-                            member.status === 'Validating' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {member.status}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <ChevronRight className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setSelectedMember(member);
-                                  setEditMemberData({ status: member.status });
-                                  setIsEditMemberOpen(true);
-                                }}
-                              >
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit Status
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDeleteMember(member.id)}
-                                className="text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-gray-500">
+                    {selectedFamily?.members.length} members
+                  </p>
+                  
+                  {selectedFamily && selectedFamily.members.length > 0 && (
+                    <AddFamilyMemberModal 
+                      buttonLabel="Add Member"
+                      isAdmin={true}
+                      onMemberAdded={handleMemberAdded}
+                      className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                      familyId={selectedFamily.id}
+                    />
+                  )}
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableCell className="font-medium">Name</TableCell>
+                        <TableCell className="font-medium">Email</TableCell>
+                        <TableCell className="font-medium">Role</TableCell>
+                        <TableCell className="font-medium">Status</TableCell>
+                        <TableCell className="text-right font-medium">Actions</TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedFamily?.members.map((member) => (
+                        <TableRow key={member.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                                {member.first_name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-medium">{member.first_name} {member.last_name}</p>
+                                <p className="text-xs text-gray-500">{member.persona}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{member.email}</TableCell>
+                          <TableCell>{member.role}</TableCell>
+                          <TableCell>
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              member.status === 'Active' ? 'bg-green-100 text-green-800' :
+                              member.status === 'Validating' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {member.status}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="rounded-full">
+                                  <ChevronRight className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedMember(member);
+                                    setEditMemberData({ 
+                                      status: member.status, 
+                                      password: '', 
+                                      first_name: member.first_name, 
+                                      last_name: member.last_name, 
+                                      email: member.email, 
+                                      role: member.role as 'Father' | 'Mother' | 'Grandfather' | 'Grandmother' | 'Older Brother' | 'Older Sister' | 'Middle Brother' | 'Middle Sister' | 'Youngest Brother' | 'Youngest Sister'
+                                    });
+                                    setIsEditMemberOpen(true);
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit User
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteMember(member.id)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </div>
           </DialogContent>
@@ -587,46 +658,153 @@ export default function AdminFamiliesPage() {
         
         {/* Edit Member Status Dialog */}
         <Dialog open={isEditMemberOpen} onOpenChange={setIsEditMemberOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Member Status</DialogTitle>
-            </DialogHeader>
-            
-            <div className="space-y-4 py-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                  {selectedMember?.first_name.charAt(0)}
+          <DialogContent className="sm:max-w-md bg-white border border-gray-200 shadow-lg rounded-xl p-0 overflow-hidden" style={{ backdropFilter: 'none' }}>
+            <Card className="border-0 shadow-none">
+              <CardContent className="p-0">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <DialogTitle className="text-xl font-semibold">
+                      Edit User
+                    </DialogTitle>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                        {selectedMember?.first_name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-medium">{selectedMember?.first_name} {selectedMember?.last_name}</p>
+                        <p className="text-xs text-gray-500">{selectedMember?.email}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="memberStatus">Status</Label>
+                      <Select 
+                        value={editMemberData.status} 
+                        onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => setEditMemberData({...editMemberData, status: value})}
+                      >
+                        <SelectTrigger className="rounded-lg">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Validating">Validating</SelectItem>
+                          <SelectItem value="Not Active">Not Active</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="memberPassword">Password</Label>
+                      <div className="flex items-center space-x-2">
+                        <div className="relative flex-1">
+                          <Input 
+                            id="memberPassword" 
+                            type="text"
+                            value={editMemberData.password} 
+                            onChange={(e) => setEditMemberData({...editMemberData, password: e.target.value})}
+                            className="rounded-lg pr-10"
+                          />
+                          {editMemberData.password && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0 top-0 h-full px-3 text-gray-400 hover:text-gray-600"
+                              onClick={() => {
+                                navigator.clipboard.writeText(editMemberData.password);
+                                alert('Password copied to clipboard!');
+                              }}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-lg"
+                          onClick={() => {
+                            const newPassword = generatePassword(10);
+                            setEditMemberData({...editMemberData, password: newPassword});
+                          }}
+                          title="Generate random password"
+                        >
+                          <Key className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-500">Leave empty to keep current password</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="memberFirstName">First Name</Label>
+                        <Input 
+                          id="memberFirstName" 
+                          value={editMemberData.first_name} 
+                          onChange={(e) => setEditMemberData({...editMemberData, first_name: e.target.value})}
+                          className="rounded-lg"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="memberLastName">Last Name</Label>
+                        <Input 
+                          id="memberLastName" 
+                          value={editMemberData.last_name} 
+                          onChange={(e) => setEditMemberData({...editMemberData, last_name: e.target.value})}
+                          className="rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="memberEmail">Email</Label>
+                      <Input 
+                        id="memberEmail" 
+                        type="email"
+                        value={editMemberData.email} 
+                        onChange={(e) => setEditMemberData({...editMemberData, email: e.target.value})}
+                        className="rounded-lg"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="memberRole">Role</Label>
+                      <Select 
+                        value={editMemberData.role} 
+                        onValueChange={(value: 'Father' | 'Mother' | 'Grandfather' | 'Grandmother' | 'Older Brother' | 'Older Sister' | 'Middle Brother' | 'Middle Sister' | 'Youngest Brother' | 'Youngest Sister') => setEditMemberData({...editMemberData, role: value})}
+                      >
+                        <SelectTrigger className="rounded-lg">
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Father">Father</SelectItem>
+                          <SelectItem value="Mother">Mother</SelectItem>
+                          <SelectItem value="Grandfather">Grandfather</SelectItem>
+                          <SelectItem value="Grandmother">Grandmother</SelectItem>
+                          <SelectItem value="Older Brother">Older Brother</SelectItem>
+                          <SelectItem value="Older Sister">Older Sister</SelectItem>
+                          <SelectItem value="Middle Brother">Middle Brother</SelectItem>
+                          <SelectItem value="Middle Sister">Middle Sister</SelectItem>
+                          <SelectItem value="Youngest Brother">Youngest Brother</SelectItem>
+                          <SelectItem value="Youngest Sister">Youngest Sister</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium">{selectedMember?.first_name} {selectedMember?.last_name}</p>
-                  <p className="text-sm text-gray-500">{selectedMember?.email}</p>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
-                <Select 
-                  value={editMemberData.status} 
-                  onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => setEditMemberData({...editMemberData, status: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Validating">Validating</SelectItem>
-                    <SelectItem value="Not Active">Not Active</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditMemberOpen(false)}>Cancel</Button>
-              <Button onClick={handleUpdateMemberStatus} disabled={loading}>
-                {loading ? 'Updating...' : 'Update Status'}
-              </Button>
-            </DialogFooter>
+                
+                <DialogFooter className="p-4 pt-0">
+                  <Button variant="outline" onClick={() => setIsEditMemberOpen(false)} className="rounded-lg">Cancel</Button>
+                  <Button onClick={handleUpdateMember} disabled={loading} className="rounded-lg">
+                    {loading ? 'Updating...' : 'Update'}
+                  </Button>
+                </DialogFooter>
+              </CardContent>
+            </Card>
           </DialogContent>
         </Dialog>
       </div>
