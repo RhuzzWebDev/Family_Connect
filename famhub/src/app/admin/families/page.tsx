@@ -67,9 +67,12 @@ export default function AdminFamiliesPage() {
   const [isViewMembersOpen, setIsViewMembersOpen] = useState(false);
   const [isEditMemberOpen, setIsEditMemberOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<User | null>(null);
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   
   // Form states
   const [newFamilyData, setNewFamilyData] = useState({
+    familyName: '',
     firstName: '',
     lastName: '',
     email: '',
@@ -78,6 +81,15 @@ export default function AdminFamiliesPage() {
     status: 'Active' as 'Active' | 'Validating' | 'Not Active'
   });
   
+  const [newMemberData, setNewMemberData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    role: 'Mother',
+    status: 'Active' as 'Active' | 'Validating' | 'Not Active'
+  });
+
   const [editMemberData, setEditMemberData] = useState({
     status: '' as 'Active' | 'Validating' | 'Not Active'
   });
@@ -106,16 +118,19 @@ export default function AdminFamiliesPage() {
     try {
       setLoading(true);
       
-      // Create the parent user
-      await SupabaseService.createUser({
-        first_name: newFamilyData.firstName,
-        last_name: newFamilyData.lastName,
-        email: newFamilyData.email,
-        password: newFamilyData.password,
-        status: newFamilyData.status,
-        role: newFamilyData.role,
-        persona: 'Parent'
-      });
+      // Create the family with the parent member
+      await SupabaseService.createFamilyWithMember(
+        newFamilyData.familyName,
+        {
+          first_name: newFamilyData.firstName,
+          last_name: newFamilyData.lastName,
+          email: newFamilyData.email,
+          password: newFamilyData.password,
+          status: newFamilyData.status,
+          role: newFamilyData.role,
+          persona: 'Parent'
+        }
+      );
       
       // Refresh the families list
       const updatedFamilies = await SupabaseService.getAllFamilies();
@@ -123,6 +138,7 @@ export default function AdminFamiliesPage() {
       
       // Reset form and close dialog
       setNewFamilyData({
+        familyName: '',
         firstName: '',
         lastName: '',
         email: '',
@@ -134,6 +150,58 @@ export default function AdminFamiliesPage() {
     } catch (err) {
       console.error('Error adding family:', err);
       setError(err instanceof Error ? err.message : 'Failed to add family');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedFamilyId) return;
+    
+    try {
+      setLoading(true);
+      
+      // Get the selected family's last name
+      const selectedFamily = families.find(f => {
+        const members = f.members || [];
+        return members.length > 0 && members[0].family_id === selectedFamilyId;
+      });
+      
+      if (!selectedFamily) {
+        throw new Error('Selected family not found');
+      }
+      
+      // Add the member to the family
+      await SupabaseService.addMemberToFamily(
+        selectedFamilyId,
+        {
+          first_name: newMemberData.firstName,
+          last_name: selectedFamily.familyName, // Use the family name as last name
+          email: newMemberData.email,
+          password: newMemberData.password,
+          status: newMemberData.status,
+          role: newMemberData.role,
+          persona: 'Children'
+        }
+      );
+      
+      // Refresh the families list
+      const updatedFamilies = await SupabaseService.getAllFamilies();
+      setFamilies(updatedFamilies);
+      
+      // Reset form and close dialog
+      setNewMemberData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        password: '',
+        role: 'Mother',
+        status: 'Active' as 'Active' | 'Validating' | 'Not Active'
+      });
+      setIsAddMemberOpen(false);
+    } catch (err) {
+      console.error('Error adding family member:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add family member');
     } finally {
       setLoading(false);
     }
@@ -189,19 +257,14 @@ export default function AdminFamiliesPage() {
     }).format(date);
   };
 
-  const viewFamilyMembers = async (lastName: string) => {
-    try {
-      setLoading(true);
-      const members = await SupabaseService.getFamilyMembersByLastName(lastName);
-      // setFamilyMembers(members);
-      // setSelectedFamily(lastName);
-      // setShowMembersDialog(true);
-    } catch (error) {
-      console.error('Error fetching family members:', error);
-      setError('Failed to load family members. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+  const viewFamilyMembers = (family: Family) => {
+    setSelectedFamily(family);
+    setIsViewMembersOpen(true);
+  };
+  
+  const openAddMemberDialog = (familyId: string) => {
+    setSelectedFamilyId(familyId);
+    setIsAddMemberOpen(true);
   };
 
   if (loading && families.length === 0) {
@@ -238,96 +301,112 @@ export default function AdminFamiliesPage() {
                   Add Family
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
+              <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                   <DialogTitle>Add New Family</DialogTitle>
                   <DialogDescription>
-                    Create a new family by adding a parent user.
+                    Create a new family with the first family member. Additional members can be added later.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="firstName">First Name</Label>
-                      <Input
-                        id="firstName"
-                        value={newFamilyData.firstName}
-                        onChange={(e) => setNewFamilyData({...newFamilyData, firstName: e.target.value})}
-                        placeholder="John"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="lastName">Last Name</Label>
-                      <Input
-                        id="lastName"
-                        value={newFamilyData.lastName}
-                        onChange={(e) => setNewFamilyData({...newFamilyData, lastName: e.target.value})}
-                        placeholder="Smith"
-                      />
-                    </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="familyName" className="text-right">
+                      Family Name
+                    </Label>
+                    <Input
+                      id="familyName"
+                      value={newFamilyData.familyName}
+                      onChange={(e) => setNewFamilyData({...newFamilyData, familyName: e.target.value})}
+                      className="col-span-3"
+                    />
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="email">Email</Label>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="firstName" className="text-right">
+                      First Name
+                    </Label>
+                    <Input
+                      id="firstName"
+                      value={newFamilyData.firstName}
+                      onChange={(e) => setNewFamilyData({...newFamilyData, firstName: e.target.value})}
+                      className="col-span-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="lastName" className="text-right">
+                      Last Name
+                    </Label>
+                    <Input
+                      id="lastName"
+                      value={newFamilyData.lastName}
+                      onChange={(e) => setNewFamilyData({...newFamilyData, lastName: e.target.value})}
+                      className="col-span-3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="email" className="text-right">
+                      Email
+                    </Label>
                     <Input
                       id="email"
                       type="email"
                       value={newFamilyData.email}
                       onChange={(e) => setNewFamilyData({...newFamilyData, email: e.target.value})}
-                      placeholder="john.smith@example.com"
+                      className="col-span-3"
                     />
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="password">Password</Label>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="password" className="text-right">
+                      Password
+                    </Label>
                     <Input
                       id="password"
                       type="password"
                       value={newFamilyData.password}
                       onChange={(e) => setNewFamilyData({...newFamilyData, password: e.target.value})}
-                      placeholder="••••••••"
+                      className="col-span-3"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="role">Role</Label>
-                      <Select
-                        value={newFamilyData.role}
-                        onValueChange={(value) => setNewFamilyData({...newFamilyData, role: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Father">Father</SelectItem>
-                          <SelectItem value="Mother">Mother</SelectItem>
-                          <SelectItem value="Grandfather">Grandfather</SelectItem>
-                          <SelectItem value="Grandmother">Grandmother</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="status">Status</Label>
-                      <Select
-                        value={newFamilyData.status}
-                        onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => 
-                          setNewFamilyData({...newFamilyData, status: value})
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Active">Active</SelectItem>
-                          <SelectItem value="Validating">Validating</SelectItem>
-                          <SelectItem value="Not Active">Not Active</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="role" className="text-right">
+                      Role
+                    </Label>
+                    <Select
+                      value={newFamilyData.role}
+                      onValueChange={(value) => setNewFamilyData({...newFamilyData, role: value})}
+                    >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Father">Father</SelectItem>
+                        <SelectItem value="Mother">Mother</SelectItem>
+                        <SelectItem value="Grandfather">Grandfather</SelectItem>
+                        <SelectItem value="Grandmother">Grandmother</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="status" className="text-right">
+                      Status
+                    </Label>
+                    <Select
+                      value={newFamilyData.status}
+                      onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => 
+                        setNewFamilyData({...newFamilyData, status: value})
+                      }
+                    >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Validating">Validating</SelectItem>
+                        <SelectItem value="Not Active">Not Active</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsAddFamilyOpen(false)}>
-                    Cancel
-                  </Button>
                   <Button onClick={handleAddFamily} disabled={loading}>
                     {loading ? 'Creating...' : 'Create Family'}
                   </Button>
@@ -505,6 +584,105 @@ export default function AdminFamiliesPage() {
             </div>
           )}
         </div>
+        
+        {/* Add Member Dialog */}
+        <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Add Family Member</DialogTitle>
+              <DialogDescription>
+                Add a new member to the selected family.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="memberFirstName" className="text-right">
+                  First Name
+                </Label>
+                <Input
+                  id="memberFirstName"
+                  value={newMemberData.firstName}
+                  onChange={(e) => setNewMemberData({...newMemberData, firstName: e.target.value})}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="memberEmail" className="text-right">
+                  Email
+                </Label>
+                <Input
+                  id="memberEmail"
+                  type="email"
+                  value={newMemberData.email}
+                  onChange={(e) => setNewMemberData({...newMemberData, email: e.target.value})}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="memberPassword" className="text-right">
+                  Password
+                </Label>
+                <Input
+                  id="memberPassword"
+                  type="password"
+                  value={newMemberData.password}
+                  onChange={(e) => setNewMemberData({...newMemberData, password: e.target.value})}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="memberRole" className="text-right">
+                  Role
+                </Label>
+                <Select
+                  value={newMemberData.role}
+                  onValueChange={(value) => setNewMemberData({...newMemberData, role: value})}
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Mother">Mother</SelectItem>
+                    <SelectItem value="Father">Father</SelectItem>
+                    <SelectItem value="Grandfather">Grandfather</SelectItem>
+                    <SelectItem value="Grandmother">Grandmother</SelectItem>
+                    <SelectItem value="Older Brother">Older Brother</SelectItem>
+                    <SelectItem value="Older Sister">Older Sister</SelectItem>
+                    <SelectItem value="Middle Brother">Middle Brother</SelectItem>
+                    <SelectItem value="Middle Sister">Middle Sister</SelectItem>
+                    <SelectItem value="Youngest Brother">Youngest Brother</SelectItem>
+                    <SelectItem value="Youngest Sister">Youngest Sister</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="memberStatus" className="text-right">
+                  Status
+                </Label>
+                <Select
+                  value={newMemberData.status}
+                  onValueChange={(value: 'Active' | 'Validating' | 'Not Active') => 
+                    setNewMemberData({...newMemberData, status: value})
+                  }
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Validating">Validating</SelectItem>
+                    <SelectItem value="Not Active">Not Active</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleAddMember} disabled={loading}>
+                {loading ? 'Adding...' : 'Add Member'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

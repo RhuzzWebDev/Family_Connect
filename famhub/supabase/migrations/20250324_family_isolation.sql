@@ -142,3 +142,98 @@ BEGIN
     ORDER BY created_at ASC;
 END;
 $$;
+
+-- Create stored procedure to create a family with a member in a single transaction
+DROP FUNCTION IF EXISTS public.create_family_with_member;
+CREATE OR REPLACE FUNCTION public.create_family_with_member(
+    p_family_name TEXT,
+    p_first_name TEXT,
+    p_last_name TEXT,
+    p_email TEXT,
+    p_password TEXT,
+    p_role TEXT,
+    p_persona TEXT,
+    p_status TEXT
+)
+RETURNS SETOF public.users
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_family_id UUID;
+    v_user_id UUID;
+BEGIN
+    -- Create the family
+    INSERT INTO public.families (family_name)
+    VALUES (p_family_name)
+    RETURNING id INTO v_family_id;
+    
+    -- Create the user with the family_id
+    INSERT INTO public.users (
+        first_name,
+        last_name,
+        email,
+        password,
+        role,
+        persona,
+        status,
+        family_id
+    )
+    VALUES (
+        p_first_name,
+        p_last_name,
+        p_email,
+        p_password,
+        p_role::user_role,
+        p_persona::user_persona,
+        p_status::user_status,
+        v_family_id
+    )
+    RETURNING id INTO v_user_id;
+    
+    -- Update the family with the created_by user
+    UPDATE public.families
+    SET created_by = v_user_id
+    WHERE id = v_family_id;
+    
+    -- Return the created user
+    RETURN QUERY
+    SELECT * FROM public.users
+    WHERE id = v_user_id;
+END;
+$$;
+
+-- Create admin policy to bypass RLS for families table
+DROP POLICY IF EXISTS "Admin bypass for families" ON public.families;
+CREATE POLICY "Admin bypass for families"
+    ON public.families
+    USING (current_setting('app.is_admin', true)::boolean = true);
+
+-- Create admin policy to bypass RLS for users table
+DROP POLICY IF EXISTS "Admin bypass for users" ON public.users;
+CREATE POLICY "Admin bypass for users"
+    ON public.users
+    USING (current_setting('app.is_admin', true)::boolean = true);
+
+-- Create admin policy to bypass RLS for questions table
+DROP POLICY IF EXISTS "Admin bypass for questions" ON public.questions;
+CREATE POLICY "Admin bypass for questions"
+    ON public.questions
+    USING (current_setting('app.is_admin', true)::boolean = true);
+
+-- Create admin policy to bypass RLS for comments table
+DROP POLICY IF EXISTS "Admin bypass for comments" ON public.comments;
+CREATE POLICY "Admin bypass for comments"
+    ON public.comments
+    USING (current_setting('app.is_admin', true)::boolean = true);
+
+-- Create function to set admin flag for bypassing RLS
+CREATE OR REPLACE FUNCTION public.set_admin_flag(admin BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    PERFORM set_config('app.is_admin', admin::TEXT, false);
+END;
+$$;
