@@ -73,8 +73,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const navItems = [
     { href: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5 mr-2" /> },
-    { href: '/admin/families', label: 'Families', icon: <Users className="h-5 w-5 mr-2" /> },
-    { href: '/admin/admins', label: 'Admin Users', icon: <User className="h-5 w-5 mr-2" /> },
+    { href: '/admin/families', label: 'Families Management', icon: <Users className="h-5 w-5 mr-2" /> },
+    { href: '/admin/admins', label: 'Admin Management', icon: <User className="h-5 w-5 mr-2" /> },
   ];
 
   return (
