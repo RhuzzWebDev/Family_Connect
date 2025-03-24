@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { User, Question, QuestionWithUser } from '@/lib/supabase'
+import { User, Question, QuestionWithUser, Admin } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
 
 type SupabaseQuestionResponse = {
@@ -298,6 +298,72 @@ export class SupabaseService {
     }
   }
 
+  static async getAllQuestionsWithUserDetails() {
+    try {
+      const { data, error } = await supabase
+        .from('questions')
+        .select(`
+          *,
+          user:user_id (
+            id,
+            first_name,
+            last_name,
+            email,
+            role,
+            persona,
+            status,
+            created_at
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      return data || [];
+    } catch (error) {
+      console.error('Error getting questions with user details:', error);
+      throw error;
+    }
+  }
+
+  static async deleteQuestion(questionId: string) {
+    try {
+      // First, get the question to check if it has a file
+      const { data: question, error: getError } = await supabase
+        .from('questions')
+        .select('file_url, folder_path')
+        .eq('id', questionId)
+        .single();
+      
+      if (getError) throw getError;
+      
+      // Delete the file from storage if it exists
+      if (question?.file_url) {
+        const { error: storageError } = await supabase.storage
+          .from('public')
+          .remove([question.folder_path]);
+        
+        if (storageError) {
+          console.error('Error deleting file from storage:', storageError);
+          // Continue with question deletion even if file deletion fails
+        }
+      }
+      
+      // Delete the question from the database
+      const { error: deleteError } = await supabase
+        .from('questions')
+        .delete()
+        .eq('id', questionId);
+      
+      if (deleteError) throw deleteError;
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting question:', error);
+      throw error;
+    }
+  }
+
   // Get all family members
   static async getFamilyMembers() {
     try {
@@ -403,6 +469,400 @@ export class SupabaseService {
       }
 
       return true;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Admin methods
+  static async createAdmin(adminData: Omit<Admin, 'id' | 'created_at'>) {
+    try {
+      const hashedPassword = await bcrypt.hash(adminData.password, 10);
+      
+      const { data, error } = await supabase
+        .from('admins')
+        .insert({
+          ...adminData,
+          password: hashedPassword
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') { // Unique violation
+          throw new Error('Admin with this email already exists');
+        }
+        throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error('Failed to create admin');
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async getAdminByEmail(email: string) {
+    try {
+      const { data, error } = await supabase
+        .from('admins')
+        .select()
+        .eq('email', email)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return null;
+        }
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async verifyAdmin(email: string, password: string) {
+    try {
+      const admin = await this.getAdminByEmail(email);
+      if (!admin) return null;
+
+      const isValid = await bcrypt.compare(password, admin.password);
+      if (!isValid) return null;
+
+      return admin;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async getAllAdmins() {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      const { data, error } = await supabase
+        .from('admins')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async updateAdmin(id: string, adminData: Partial<Omit<Admin, 'id' | 'created_at' | 'password'>>) {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      // Check if the current admin is a sysAdmin
+      const currentAdmin = await this.getAdminByEmail(adminEmail);
+      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
+        throw new Error('Only system administrators can update admin accounts');
+      }
+
+      const { data, error } = await supabase
+        .from('admins')
+        .update(adminData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async updateAdminPassword(id: string, newPassword: string) {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      // Check if the current admin is a sysAdmin
+      const currentAdmin = await this.getAdminByEmail(adminEmail);
+      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
+        throw new Error('Only system administrators can update admin accounts');
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      
+      const { data, error } = await supabase
+        .from('admins')
+        .update({ password: hashedPassword })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async deleteAdmin(id: string) {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      // Check if the current admin is a sysAdmin
+      const currentAdmin = await this.getAdminByEmail(adminEmail);
+      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
+        throw new Error('Only system administrators can delete admin accounts');
+      }
+
+      // Prevent deleting your own account
+      if (currentAdmin.id === id) {
+        throw new Error('You cannot delete your own admin account');
+      }
+
+      const { error } = await supabase
+        .from('admins')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return true;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Family management methods
+  static async getAllFamilies() {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      // Get all users with Parent persona
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('persona', 'Parent')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // Group users by last_name to form families
+      const families = data.reduce((acc: Record<string, User[]>, user) => {
+        if (!acc[user.last_name]) {
+          acc[user.last_name] = [];
+        }
+        acc[user.last_name].push(user);
+        return acc;
+      }, {});
+
+      // Format the families for display
+      const formattedFamilies = Object.entries(families).map(([familyName, members]) => {
+        // Find the oldest member to determine when the family was created
+        const oldestMember = members.reduce((oldest, current) => {
+          return new Date(current.created_at) < new Date(oldest.created_at) ? current : oldest;
+        }, members[0]);
+
+        return {
+          familyName,
+          members,
+          memberCount: members.length,
+          createdAt: oldestMember.created_at
+        };
+      });
+
+      return formattedFamilies;
+    } catch (error) {
+      console.error('Error getting families:', error);
+      throw error;
+    }
+  }
+
+  static async getFamilyMembersByLastName(lastName: string) {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('last_name', lastName)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async updateUserStatus(userId: string, status: 'Active' | 'Validating' | 'Not Active') {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      const { data, error } = await supabase
+        .from('users')
+        .update({ status })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async deleteUser(userId: string) {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      // First delete all questions by this user
+      const { error: questionsError } = await supabase
+        .from('questions')
+        .delete()
+        .eq('user_id', userId);
+
+      if (questionsError) {
+        throw new Error(`Error deleting user's questions: ${questionsError.message}`);
+      }
+
+      // Then delete the user
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return true;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Dashboard statistics methods
+  static async getDashboardStats() {
+    try {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Not authenticated as admin');
+      }
+
+      // Get total families (unique last names of parent users)
+      const { data: parentUsers, error: parentsError } = await supabase
+        .from('users')
+        .select('last_name')
+        .eq('persona', 'Parent');
+
+      if (parentsError) {
+        throw new Error(parentsError.message);
+      }
+
+      const uniqueFamilies = new Set(parentUsers.map(user => user.last_name));
+      
+      // Get total active users
+      const { count: activeUsers, error: activeError } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'Active');
+
+      if (activeError) {
+        throw new Error(activeError.message);
+      }
+
+      // Get total questions
+      const { count: totalQuestions, error: questionsError } = await supabase
+        .from('questions')
+        .select('*', { count: 'exact', head: true });
+
+      if (questionsError) {
+        throw new Error(questionsError.message);
+      }
+
+      // Get recent activity (last 5 users and questions)
+      const { data: recentUsers, error: recentUsersError } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentUsersError) {
+        throw new Error(recentUsersError.message);
+      }
+
+      const { data: recentQuestions, error: recentQuestionsError } = await supabase
+        .from('questions')
+        .select(`
+          *,
+          user:users!inner(
+            id,
+            first_name,
+            last_name,
+            role,
+            persona
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentQuestionsError) {
+        throw new Error(recentQuestionsError.message);
+      }
+
+      return {
+        totalFamilies: uniqueFamilies.size,
+        totalUsers: activeUsers,
+        totalQuestions,
+        recentUsers,
+        recentQuestions
+      };
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }

@@ -35,6 +35,11 @@ export interface Database {
         Insert: Omit<User, 'id' | 'created_at'>;
         Update: Partial<Omit<User, 'id' | 'created_at'>>;
       };
+      admins: {
+        Row: Admin;
+        Insert: Omit<Admin, 'id' | 'created_at'>;
+        Update: Partial<Omit<Admin, 'id' | 'created_at'>>;
+      };
     };
   };
 }
@@ -52,6 +57,17 @@ export type User = {
   status: 'Active' | 'Validating' | 'Not Active';
   role: string;
   persona: 'Parent' | 'Children';
+  created_at: string;
+};
+
+// Admin type definition
+export type Admin = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  role: 'admin' | 'sysAdmin';
   created_at: string;
 };
 
