@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { User, Question, QuestionWithUser, Admin } from '@/lib/supabase'
+import { User, Question, QuestionWithUser, Admin, Family } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
 
 type SupabaseQuestionResponse = {
@@ -179,6 +179,8 @@ export class SupabaseService {
       const userEmail = sessionStorage.getItem('userEmail');
       await this.verifyUserStatus(userEmail);
 
+      // This will automatically filter questions to only show those from the same family
+      // due to the RLS policy we created
       const { data, error } = await supabase
         .from('questions')
         .select(`
@@ -199,15 +201,19 @@ export class SupabaseService {
 
       const response = data as SupabaseQuestionResponse[];
       
+      if (!response) {
+        return [];
+      }
+
       return response.map(item => ({
         id: item.id,
         user_id: item.user[0].id,
         question: item.question,
-        file_url: item.file_url,
+        file_url: item.file_url || null,
         like_count: item.like_count,
         comment_count: item.comment_count,
-        media_type: item.media_type,
-        folder_path: item.folder_path,
+        media_type: item.media_type || null,
+        folder_path: item.folder_path || null,
         created_at: item.created_at,
         user: {
           first_name: item.user[0].first_name,
@@ -365,15 +371,13 @@ export class SupabaseService {
   }
 
   // Get all family members
-  static async getFamilyMembers() {
+  static async getFamilyMembers(): Promise<Omit<User, 'password'>[]> {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
-      const currentUser = await this.verifyUserStatus(userEmail);
+      await this.verifyUserStatus(userEmail);
 
       const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: true });
+        .rpc('get_family_members', { p_user_email: userEmail });
 
       if (error) {
         throw new Error(error.message);
@@ -955,6 +959,100 @@ export class SupabaseService {
         recentUsers,
         recentQuestions
       };
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  // Family methods
+  static async getFamilyDetails(): Promise<Family | null> {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      const currentUser = await this.verifyUserStatus(userEmail);
+
+      if (!currentUser.family_id) {
+        return null;
+      }
+
+      const { data, error } = await supabase
+        .from('families')
+        .select('*')
+        .eq('id', currentUser.family_id)
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async generateFamilyInviteCode(): Promise<string> {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      const currentUser = await this.verifyUserStatus(userEmail);
+
+      if (!currentUser.family_id) {
+        throw new Error('You do not belong to a family');
+      }
+
+      // Generate a random 8-character code
+      const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let code = '';
+      for (let i = 0; i < 8; i++) {
+        code += characters.charAt(Math.floor(Math.random() * characters.length));
+      }
+
+      // Update the family with the new invite code
+      const { error } = await supabase
+        .from('families')
+        .update({ invite_code: code })
+        .eq('id', currentUser.family_id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return code;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  static async joinFamilyWithCode(inviteCode: string): Promise<boolean> {
+    try {
+      const userEmail = sessionStorage.getItem('userEmail');
+      const currentUser = await this.verifyUserStatus(userEmail);
+
+      if (currentUser.family_id) {
+        throw new Error('You already belong to a family');
+      }
+
+      // Find the family with the given invite code
+      const { data: family, error: familyError } = await supabase
+        .from('families')
+        .select('id')
+        .eq('invite_code', inviteCode)
+        .single();
+
+      if (familyError || !family) {
+        throw new Error('Invalid family invite code');
+      }
+
+      // Update the user's family_id
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ family_id: family.id })
+        .eq('id', currentUser.id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return true;
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }

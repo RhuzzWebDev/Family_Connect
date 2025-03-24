@@ -40,6 +40,11 @@ export interface Database {
         Insert: Omit<Admin, 'id' | 'created_at'>;
         Update: Partial<Omit<Admin, 'id' | 'created_at'>>;
       };
+      families: {
+        Row: Family;
+        Insert: Omit<Family, 'id' | 'created_at'>;
+        Update: Partial<Omit<Family, 'id' | 'created_at'>>;
+      };
     };
   };
 }
@@ -58,6 +63,15 @@ export type User = {
   role: string;
   persona: 'Parent' | 'Children';
   created_at: string;
+  family_id?: string;
+};
+
+// Family type definition
+export type Family = {
+  id: string;
+  family_name: string;
+  created_at: string;
+  created_by: string;
 };
 
 // Admin type definition
