@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { SupabaseService } from '@/services/supabaseService';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Copy, Check, UserPlus } from 'lucide-react';
+import { Loader2, Copy, Check, UserPlus, RefreshCw, Mail, Calendar, Badge } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
@@ -13,6 +13,7 @@ import {
   DialogTrigger 
 } from '@/components/ui/dialog';
 import { User, Family } from '@/lib/supabase';
+import { AddFamilyMemberModal } from '@/components/add-family-member-modal';
 
 type FamilyMember = Omit<User, 'password'>;
 
@@ -24,31 +25,36 @@ export default function FamilyHub() {
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
-    async function loadFamilyData() {
-      try {
-        setLoading(true);
-        
-        // Load family members
-        const members = await SupabaseService.getFamilyMembers();
-        setFamilyMembers(members);
-        
-        // Load family details
-        const details = await SupabaseService.getFamilyDetails();
-        setFamilyDetails(details);
-        
-        setError(null);
-      } catch (err) {
-        console.error('Error loading family data:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load family data');
-      } finally {
-        setLoading(false);
-      }
+    fetchFamilyMembers();
+  }, [refreshTrigger]);
+
+  async function fetchFamilyMembers() {
+    try {
+      setLoading(true);
+      
+      // Load family members
+      const members = await SupabaseService.getFamilyMembers();
+      setFamilyMembers(members);
+      
+      // Load family details
+      const details = await SupabaseService.getFamilyDetails();
+      setFamilyDetails(details);
+      
+      setError(null);
+    } catch (err) {
+      console.error('Error loading family data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load family data');
+    } finally {
+      setLoading(false);
     }
-    
-    loadFamilyData();
-  }, []);
+  }
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   const generateInviteCode = async () => {
     try {
@@ -69,6 +75,11 @@ export default function FamilyHub() {
     }
   };
 
+  const handleMemberAdded = () => {
+    // Refresh family members list when a new member is added
+    handleRefresh();
+  };
+
   const getRoleColor = (role: string) => {
     const roleColors: Record<string, string> = {
       'Father': 'bg-blue-100 text-blue-800',
@@ -86,7 +97,16 @@ export default function FamilyHub() {
     return roleColors[role] || 'bg-gray-100 text-gray-800';
   };
 
-  if (loading) {
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }).format(date);
+  };
+
+  if (loading && !familyMembers.length) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -106,39 +126,98 @@ export default function FamilyHub() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight">
-          {familyDetails ? `${familyDetails.family_name} Family Hub` : 'Your Family Hub'}
-        </h2>
-        <Button onClick={generateInviteCode} className="flex items-center gap-2">
-          <UserPlus className="h-4 w-4" />
-          Invite Family Member
-        </Button>
+        <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold tracking-tight">
+            {familyDetails ? `${familyDetails.family_name} Family Hub` : 'Your Family Hub'}
+          </h2>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleRefresh} 
+            className="h-8 w-8"
+            title="Refresh family members"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex gap-2">
+          <AddFamilyMemberModal 
+            buttonLabel="Add Family Member" 
+            isAdmin={false} 
+            onMemberAdded={handleMemberAdded}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          />
+          <Button onClick={generateInviteCode} variant="outline" className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4" />
+            Invite via Code
+          </Button>
+        </div>
       </div>
 
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Family Members</h3>
-        {familyMembers.length > 0 ? (
-          <div className="space-y-4">
-            {familyMembers.map((member) => (
-              <div key={member.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                    {member.first_name.charAt(0)}{member.last_name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="font-medium">{member.first_name} {member.last_name}</p>
-                    <p className="text-sm text-gray-500">{member.email}</p>
-                  </div>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleColor(member.role)}`}>
-                  {member.role}
-                </div>
-              </div>
-            ))}
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>Family Members</CardTitle>
+            <span className="text-sm text-gray-500">{familyMembers.length} members</span>
           </div>
-        ) : (
-          <p className="text-gray-500 text-center py-4">No family members found</p>
-        )}
+          <CardDescription>
+            View and manage your family members
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {familyMembers.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {familyMembers.map((member) => (
+                <Card key={member.id} className="overflow-hidden border">
+                  <CardHeader className={`${getRoleColor(member.role)} py-3`}>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-blue-600 font-semibold">
+                        {member.first_name.charAt(0)}{member.last_name.charAt(0)}
+                      </div>
+                      {member.first_name} {member.last_name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="h-4 w-4 text-gray-500" />
+                      <span className="text-gray-700">{member.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge className="h-4 w-4 text-gray-500" />
+                      <span className="text-gray-700">Role: {member.role}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4 text-gray-500" />
+                      <span className="text-gray-700">Joined: {formatDate(member.created_at)}</span>
+                    </div>
+                    <div className="mt-2">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        ${member.status === 'Active' ? 'bg-green-100 text-green-800' : 
+                          member.status === 'Validating' ? 'bg-yellow-100 text-yellow-800' : 
+                          'bg-red-100 text-red-800'}`}>
+                        {member.status}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <UserPlus className="h-12 w-12 mx-auto text-gray-400" />
+              <h3 className="mt-4 text-lg font-medium text-gray-900">No family members yet</h3>
+              <p className="mt-2 text-sm text-gray-500">
+                Get started by adding your first family member.
+              </p>
+              <AddFamilyMemberModal 
+                buttonLabel="Add Family Member" 
+                isAdmin={false} 
+                onMemberAdded={handleMemberAdded}
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white"
+              />
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>

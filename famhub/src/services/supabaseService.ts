@@ -403,7 +403,42 @@ export class SupabaseService {
   static async addFamilyMember(userData: Omit<User, 'id' | 'created_at'>) {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
-      await this.verifyUserStatus(userEmail);
+      const currentUser = await this.verifyUserStatus(userEmail);
+      
+      // If family_id is not provided, use the current user's family_id
+      if (!userData.family_id && currentUser.family_id) {
+        userData.family_id = currentUser.family_id;
+      }
+      
+      // If still no family_id, create a new family using the last name
+      if (!userData.family_id) {
+        // Create a new family
+        const { data: family, error: familyError } = await supabase
+          .from('families')
+          .insert({
+            family_name: userData.last_name,
+            created_by: currentUser.id
+          })
+          .select()
+          .single();
+          
+        if (familyError) {
+          console.error('Error creating family:', familyError);
+          throw new Error('Failed to create family: ' + familyError.message);
+        }
+        
+        if (family) {
+          userData.family_id = family.id;
+          
+          // Also update the current user with the new family_id if they don't have one
+          if (!currentUser.family_id) {
+            await supabase
+              .from('users')
+              .update({ family_id: family.id })
+              .eq('id', currentUser.id);
+          }
+        }
+      }
       
       return await this.createUser(userData);
     } catch (error) {
@@ -761,40 +796,67 @@ export class SupabaseService {
         throw new Error('Not authenticated as admin');
       }
 
-      // Get all users with Parent persona
-      const { data, error } = await supabase
-        .from('users')
+      console.log('Getting all families...');
+      
+      // Set admin flag to bypass RLS
+      await supabase.rpc('set_admin_flag', { admin: true });
+
+      // Get all families
+      const { data: familiesData, error: familiesError } = await supabase
+        .from('families')
         .select('*')
-        .eq('persona', 'Parent')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        throw new Error(error.message);
+      if (familiesError) {
+        console.error('Error fetching families:', familiesError);
+        throw new Error(familiesError.message);
       }
 
-      // Group users by last_name to form families
-      const families = data.reduce((acc: Record<string, User[]>, user) => {
-        if (!acc[user.last_name]) {
-          acc[user.last_name] = [];
+      console.log('Families data:', familiesData);
+
+      // Get all users
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      // Reset admin flag
+      await supabase.rpc('set_admin_flag', { admin: false });
+
+      if (usersError) {
+        console.error('Error fetching users:', usersError);
+        throw new Error(usersError.message);
+      }
+
+      console.log('Users data:', usersData);
+
+      // Group users by family_id
+      const usersByFamilyId = usersData.reduce((acc: Record<string, User[]>, user) => {
+        if (user.family_id) {
+          if (!acc[user.family_id]) {
+            acc[user.family_id] = [];
+          }
+          acc[user.family_id].push(user);
         }
-        acc[user.last_name].push(user);
         return acc;
       }, {});
 
-      // Format the families for display
-      const formattedFamilies = Object.entries(families).map(([familyName, members]) => {
-        // Find the oldest member to determine when the family was created
-        const oldestMember = members.reduce((oldest, current) => {
-          return new Date(current.created_at) < new Date(oldest.created_at) ? current : oldest;
-        }, members[0]);
+      console.log('Users grouped by family_id:', usersByFamilyId);
 
+      // Format the families for display
+      const formattedFamilies = familiesData.map(family => {
+        const members = usersByFamilyId[family.id] || [];
+        
         return {
-          familyName,
+          id: family.id,
+          familyName: family.family_name,
           members,
           memberCount: members.length,
-          createdAt: oldestMember.created_at
+          createdAt: family.created_at
         };
       });
+
+      console.log('Formatted families:', formattedFamilies);
 
       return formattedFamilies;
     } catch (error) {
@@ -1076,33 +1138,62 @@ export class SupabaseService {
     status: 'Active' | 'Validating' | 'Not Active';
   }) {
     try {
+      console.log('Creating family with name:', familyName);
+      console.log('First member data:', { ...userData, password: '[REDACTED]' });
+      
       // Hash the password before storing it
       const hashedPassword = await bcrypt.hash(userData.password, 10);
       
       // Set the is_admin flag to true to bypass RLS
       await supabase.rpc('set_admin_flag', { admin: true });
       
-      // Call the stored procedure to create a family with a member
-      const { data, error } = await supabase.rpc('create_family_with_member', {
-        p_family_name: familyName,
-        p_first_name: userData.first_name,
-        p_last_name: userData.last_name,
-        p_email: userData.email,
-        p_password: hashedPassword,
-        p_role: userData.role,
-        p_persona: userData.persona,
-        p_status: userData.status
-      });
+      // First create the family
+      const { data: family, error: familyError } = await supabase
+        .from('families')
+        .insert({
+          family_name: familyName
+        })
+        .select()
+        .single();
+      
+      if (familyError) {
+        console.error('Error creating family:', familyError);
+        await supabase.rpc('set_admin_flag', { admin: false });
+        throw familyError;
+      }
+      
+      console.log('Created family:', family);
+      
+      // Then create the user with the family_id
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .insert({
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          email: userData.email,
+          password: hashedPassword,
+          role: userData.role,
+          persona: userData.persona,
+          status: userData.status,
+          family_id: family.id
+        })
+        .select()
+        .single();
       
       // Reset the is_admin flag
       await supabase.rpc('set_admin_flag', { admin: false });
       
-      if (error) {
-        console.error('Error creating family with member:', error);
-        throw error;
+      if (userError) {
+        console.error('Error creating user:', userError);
+        throw userError;
       }
       
-      return data;
+      console.log('Created user:', user);
+      
+      return {
+        family,
+        user
+      };
     } catch (error) {
       console.error('Error creating family with member:', error);
       throw error;
@@ -1125,20 +1216,45 @@ export class SupabaseService {
     status: 'Active' | 'Validating' | 'Not Active';
   }) {
     try {
+      console.log('Adding member to family with ID:', familyId);
+      
       // Hash the password before storing it
       const hashedPassword = await bcrypt.hash(userData.password, 10);
       
       // Set the is_admin flag to true to bypass RLS
       await supabase.rpc('set_admin_flag', { admin: true });
       
+      // First verify the family exists
+      const { data: family, error: familyError } = await supabase
+        .from('families')
+        .select('id, family_name')
+        .eq('id', familyId)
+        .single();
+        
+      if (familyError || !family) {
+        console.error('Family not found:', familyError);
+        throw new Error(`Family with ID ${familyId} not found`);
+      }
+      
+      console.log('Found family:', family);
+      
       // Create the user with the family_id
+      const userData_with_family = {
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        password: hashedPassword,
+        role: userData.role,
+        persona: userData.persona,
+        status: userData.status,
+        family_id: familyId
+      };
+      
+      console.log('Creating user with data:', { ...userData_with_family, password: '[REDACTED]' });
+      
       const { data, error } = await supabase
         .from('users')
-        .insert({
-          ...userData,
-          password: hashedPassword,
-          family_id: familyId
-        })
+        .insert(userData_with_family)
         .select()
         .single();
       
@@ -1150,6 +1266,7 @@ export class SupabaseService {
         throw error;
       }
       
+      console.log('Successfully added member to family:', data);
       return data;
     } catch (error) {
       console.error('Error adding member to family:', error);

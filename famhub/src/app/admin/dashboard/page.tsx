@@ -9,9 +9,12 @@ import {
   Home, 
   MessageSquare, 
   UserCheck,
-  Calendar
+  Calendar,
+  UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
+import { AddFamilyMemberModal } from '@/components/add-family-member-modal';
+import { Button } from '@/components/ui/button';
 
 interface DashboardStats {
   totalFamilies: number;
@@ -41,6 +44,24 @@ export default function AdminDashboardPage() {
 
     fetchDashboardStats();
   }, []);
+
+  const handleMemberAdded = () => {
+    // Refresh dashboard stats after adding a member
+    fetchDashboardStats();
+  };
+
+  const fetchDashboardStats = async () => {
+    try {
+      setLoading(true);
+      const data = await SupabaseService.getDashboardStats();
+      setStats(data);
+    } catch (err) {
+      console.error('Error fetching dashboard stats:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -87,7 +108,15 @@ export default function AdminDashboardPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+          <AddFamilyMemberModal 
+            buttonLabel="Add Family Member" 
+            isAdmin={true} 
+            onMemberAdded={handleMemberAdded}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          />
+        </div>
         
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
