@@ -2,10 +2,29 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create enum types
-CREATE TYPE user_status AS ENUM ('Active', 'Validating', 'Not Active');
-CREATE TYPE user_role AS ENUM ('Father', 'Mother', 'Grandfather', 'Grandmother', 'Older Brother', 'Older Sister', 'Middle Brother', 'Middle Sister', 'Youngest Brother', 'Youngest Sister');
-CREATE TYPE user_persona AS ENUM ('Parent', 'Children');
-CREATE TYPE media_type AS ENUM ('image', 'video', 'audio');
+DO $$ BEGIN
+    CREATE TYPE user_status AS ENUM ('Active', 'Validating', 'Not Active');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('Father', 'Mother', 'Grandfather', 'Grandmother', 'Older Brother', 'Older Sister', 'Middle Brother', 'Middle Sister', 'Youngest Brother', 'Youngest Sister');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE user_persona AS ENUM ('Parent', 'Children');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE media_type AS ENUM ('image', 'video', 'audio');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- Create users table
 CREATE TABLE users (
@@ -18,7 +37,17 @@ CREATE TABLE users (
     role user_role NOT NULL,
     persona user_persona NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    family_id UUID,
     CONSTRAINT email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+);
+
+-- Create families table
+CREATE TABLE families (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    family_name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    admin_id UUID,
+    user_ref UUID
 );
 
 -- Create questions table
@@ -34,13 +63,22 @@ CREATE TABLE questions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Add foreign key constraints
+ALTER TABLE users ADD CONSTRAINT fk_family_id FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE SET NULL;
+ALTER TABLE families ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE SET NULL;
+ALTER TABLE families ADD CONSTRAINT fk_user_ref FOREIGN KEY (user_ref) REFERENCES users(id) ON DELETE SET NULL;
+
 -- Create index for faster user lookups
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_questions_user_id ON questions(user_id);
+CREATE INDEX idx_users_family_id ON users(family_id);
+CREATE INDEX idx_families_admin_id ON families(admin_id);
+CREATE INDEX idx_families_user_ref ON families(user_ref);
 
 -- Row Level Security Policies
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE families ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies first
 DROP POLICY IF EXISTS "Users can view their own data" ON users;
@@ -51,6 +89,8 @@ DROP POLICY IF EXISTS "Users can update their own questions" ON questions;
 DROP POLICY IF EXISTS "Users can delete their own questions" ON questions;
 DROP POLICY IF EXISTS "Allow public registration and login" ON users;
 DROP POLICY IF EXISTS "Allow public registration" ON users;
+DROP POLICY IF EXISTS "Allow family access" ON families;
+DROP POLICY IF EXISTS "Allow admin access to families" ON families;
 
 -- Users policies for native authentication
 CREATE POLICY "Allow public registration and login"
@@ -109,3 +149,29 @@ CREATE POLICY "Users can delete their own questions"
             AND users.id = questions.user_id
         )
     );
+
+-- Families policies
+CREATE POLICY "Allow family access"
+    ON families
+    FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM users
+            WHERE email = current_setting('app.user_email', true)
+            AND users.family_id = families.id
+        ) OR 
+        current_setting('app.is_admin', true)::boolean = true
+    );
+
+CREATE POLICY "Allow admin access to families"
+    ON families
+    FOR ALL
+    USING (current_setting('app.is_admin', true)::boolean = true);
+
+-- Create admin function to bypass RLS
+CREATE OR REPLACE FUNCTION set_admin_flag(admin BOOLEAN)
+RETURNS VOID AS $$
+BEGIN
+  PERFORM set_config('app.is_admin', admin::TEXT, FALSE);
+END;
+$$ LANGUAGE plpgsql;

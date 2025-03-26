@@ -1063,80 +1063,42 @@ export class SupabaseService {
     }
   }
 
+  /**
+   * Generates a family invite code
+   * @returns The generated invite code
+   */
   static async generateFamilyInviteCode(): Promise<string> {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
       const currentUser = await this.verifyUserStatus(userEmail);
-
+      
       if (!currentUser.family_id) {
         throw new Error('You do not belong to a family');
       }
-
-      // Generate a random 8-character code
-      const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      let code = '';
-      for (let i = 0; i < 8; i++) {
-        code += characters.charAt(Math.floor(Math.random() * characters.length));
-      }
-
-      // Update the family with the new invite code
-      const { error } = await supabase
-        .from('families')
-        .update({ invite_code: code })
-        .eq('id', currentUser.family_id);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return code;
+      
+      // Since we're removing invite code functionality, just return a placeholder
+      // This method is kept for backward compatibility but is no longer functional
+      return 'INVITE_CODE_REMOVED';
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }
   }
-
+  
+  /**
+   * Joins a family with an invite code
+   * @param inviteCode The invite code to join with
+   * @returns Whether the join was successful
+   */
   static async joinFamilyWithCode(inviteCode: string): Promise<boolean> {
     try {
-      const userEmail = sessionStorage.getItem('userEmail');
-      const currentUser = await this.verifyUserStatus(userEmail);
-
-      if (currentUser.family_id) {
-        throw new Error('You already belong to a family');
-      }
-
-      // Find the family with the given invite code
-      const { data: family, error: familyError } = await supabase
-        .from('families')
-        .select('id')
-        .eq('invite_code', inviteCode)
-        .single();
-
-      if (familyError || !family) {
-        throw new Error('Invalid family invite code');
-      }
-
-      // Update the user's family_id
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ family_id: family.id })
-        .eq('id', currentUser.id);
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
-
-      return true;
+      // Since we're removing invite code functionality, this method is no longer functional
+      // Kept for backward compatibility
+      throw new Error('Invite code functionality has been removed');
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }
   }
 
-  /**
-   * Creates a family and adds the first member to it
-   * @param familyName The name of the family
-   * @param userData The data for the first family member
-   * @returns The created user
-   */
   static async createFamilyWithMember(familyName: string, userData: {
     first_name: string;
     last_name: string;
@@ -1156,11 +1118,28 @@ export class SupabaseService {
       // Set the is_admin flag to true to bypass RLS
       await supabase.rpc('set_admin_flag', { admin: true });
       
+      // Get the admin ID from the session
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      let adminId = null;
+      
+      if (adminEmail) {
+        const { data: admin } = await supabase
+          .from('admins')
+          .select('id')
+          .eq('email', adminEmail)
+          .single();
+          
+        if (admin) {
+          adminId = admin.id;
+        }
+      }
+      
       // First create the family
       const { data: family, error: familyError } = await supabase
         .from('families')
         .insert({
-          family_name: familyName
+          family_name: familyName,
+          admin_id: adminId
         })
         .select()
         .single();
@@ -1189,15 +1168,27 @@ export class SupabaseService {
         .select()
         .single();
       
-      // Reset the is_admin flag
-      await supabase.rpc('set_admin_flag', { admin: false });
-      
       if (userError) {
         console.error('Error creating user:', userError);
+        await supabase.rpc('set_admin_flag', { admin: false });
         throw userError;
       }
       
       console.log('Created user:', user);
+      
+      // Update the family with the user_ref
+      const { error: updateError } = await supabase
+        .from('families')
+        .update({ user_ref: user.id })
+        .eq('id', family.id);
+      
+      if (updateError) {
+        console.error('Error updating family with user_ref:', updateError);
+        // Continue even if this fails, as the core functionality is still working
+      }
+      
+      // Reset the is_admin flag
+      await supabase.rpc('set_admin_flag', { admin: false });
       
       return {
         family,

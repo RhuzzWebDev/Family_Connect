@@ -71,7 +71,8 @@ export type Family = {
   id: string;
   family_name: string;
   created_at: string;
-  created_by: string;
+  admin_id?: string;
+  user_ref?: string;
 };
 
 // Admin type definition
