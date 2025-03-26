@@ -1,11 +1,10 @@
 'use client';
 
-import { FamilyMembers } from "@/components/family-members";
-import { AddFamilyMember } from "@/components/add-family-member";
 import { Navbar } from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
-import { Home as HomeIcon, Users, Calendar, MessageSquare, Search, UserPlus } from "lucide-react";
+import { Home as HomeIcon, Users, Calendar, MessageSquare, Search } from "lucide-react";
 import Link from "next/link";
+import FamilyHub from "@/components/family/FamilyHub";
 
 export default function FamilyPage() {
   return (
@@ -23,47 +22,26 @@ export default function FamilyPage() {
           <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
             <Link href="/family">
               <Users className="w-5 h-5" />
-              Family Members
+              Family
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
-            <Link href="/events">
-              <Calendar className="w-5 h-5" />
-              Events
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
-            <Link href="/messages">
+            <Link href="/questions">
               <MessageSquare className="w-5 h-5" />
-              Messages
+              Questions
+            </Link>
+          </Button>
+          <Button variant="ghost" className="justify-start gap-2" size="lg" asChild>
+            <Link href="/search">
+              <Search className="w-5 h-5" />
+              Search
             </Link>
           </Button>
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 container py-6 px-4">
-          {/* Header and Actions */}
-          <div className="mb-8 flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <div className="relative w-full sm:w-96">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                placeholder="Search family members..."
-                className="w-full pl-9 pr-4 py-2 rounded-full border bg-background"
-              />
-            </div>
-            {/* Removed duplicate Add Family Member button */}
-          </div>
-
-          {/* Family Members Grid */}
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h1 className="text-3xl font-bold">Family Members</h1>
-              <AddFamilyMember />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              <FamilyMembers />
-            </div>
-          </div>
+        <main className="flex-1 p-6">
+          <FamilyHub />
         </main>
       </div>
     </div>
