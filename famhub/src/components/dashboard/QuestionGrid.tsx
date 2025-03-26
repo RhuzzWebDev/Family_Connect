@@ -217,38 +217,12 @@ export default function QuestionGrid() {
     <div className="space-y-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
-              <PlusCircle className="w-4 h-4" />
-              Ask Question
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="bg-white sm:max-w-[600px] p-0">
-            <DialogHeader className="pt-8 px-6 pb-4 border-b">
-              <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
-            </DialogHeader>
-            <div className="p-6">
-              <CreateQuestionForm 
-                onQuestionCreated={() => {
-                  // Refresh the page after creating a question
-                  window.location.reload();
-                }} 
-                type="question" 
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {questions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-          <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
-          <p className="text-gray-500 text-center">No questions yet. Be the first to ask!</p>
+        {false && (
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white mt-2">
-                Ask a Question
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
+                <PlusCircle className="w-4 h-4" />
+                Ask Question
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-white sm:max-w-[600px] p-0">
@@ -266,6 +240,36 @@ export default function QuestionGrid() {
               </div>
             </DialogContent>
           </Dialog>
+        )}
+      </div>
+
+      {questions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+          <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
+          <p className="text-gray-500 text-center">No questions yet!</p>
+          {false && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white mt-2">
+                  Ask a Question
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-white sm:max-w-[600px] p-0">
+                <DialogHeader className="pt-8 px-6 pb-4 border-b">
+                  <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
+                </DialogHeader>
+                <div className="p-6">
+                  <CreateQuestionForm 
+                    onQuestionCreated={() => {
+                      // Refresh the page after creating a question
+                      window.location.reload();
+                    }} 
+                    type="question" 
+                  />
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
