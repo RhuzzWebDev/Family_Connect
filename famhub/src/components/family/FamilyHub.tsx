@@ -170,10 +170,7 @@ export default function FamilyHub() {
             onMemberAdded={handleMemberAdded}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           />
-          <Button onClick={generateInviteCode} variant="outline" className="flex items-center gap-2">
-            <UserPlus className="h-4 w-4" />
-            Invite via Code
-          </Button>
+          
         </div>
       </div>
 

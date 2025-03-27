@@ -563,6 +563,12 @@ export class SupabaseService {
         throw new Error('Invalid email or password');
       }
 
+      // Set the admin email in the session
+      await supabase.rpc('set_claim', {
+        claim: 'app.user_email',
+        value: email
+      });
+
       // Store admin info in session
       sessionStorage.setItem('adminEmail', admin.email);
       sessionStorage.setItem('adminRole', admin.role);
@@ -577,21 +583,27 @@ export class SupabaseService {
 
   static async createAdmin(adminData: Omit<Admin, 'id' | 'created_at'>) {
     try {
-      const adminEmail = sessionStorage.getItem('adminEmail');
-      if (!adminEmail) {
-        throw new Error('Not authenticated as admin');
-      }
-      
-      // Get current admin to check permissions
-      const currentAdmin = await this.getAdminByEmail(adminEmail);
-      
-      // Client-side permission check
-      if (currentAdmin && currentAdmin.role !== 'sysAdmin' && adminData.role === 'sysAdmin') {
-        throw new Error('You do not have permission to create system admin accounts');
-      }
-      
+      // Hash the password
       const hashedPassword = await bcrypt.hash(adminData.password, 10);
-      
+
+      // Get the current admin's email from sessionStorage
+      const currentAdminEmail = sessionStorage.getItem('adminEmail');
+      if (!currentAdminEmail) {
+        throw new Error('No admin session found');
+      }
+
+      // Get the current admin's role
+      const currentAdmin = await this.getAdminByEmail(currentAdminEmail);
+      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
+        throw new Error('Only system administrators can create new admin accounts');
+      }
+
+      // Set the admin email in the session
+      await supabase.rpc('set_claim', {
+        claim: 'app.user_email',
+        value: currentAdminEmail
+      });
+
       const { data, error } = await supabase
         .from('admins')
         .insert({
@@ -1268,54 +1280,37 @@ export class SupabaseService {
       console.log('Created family:', family);
       
       // Then create the user with the family_id
-      const { data: user, error: userError } = await supabase
+      const userData_with_family = {
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        password: hashedPassword,
+        role: userData.role,
+        persona: userData.persona,
+        status: userData.status,
+        family_id: family.id
+      };
+      
+      console.log('Creating user with data:', { ...userData_with_family, password: '[REDACTED]' });
+      
+      const { data, error } = await supabase
         .from('users')
-        .insert({
-          first_name: userData.first_name,
-          last_name: userData.last_name,
-          email: userData.email,
-          password: hashedPassword,
-          role: userData.role,
-          persona: userData.persona,
-          status: userData.status,
-          family_id: family.id
-        })
+        .insert(userData_with_family)
         .select()
         .single();
-      
-      if (userError) {
-        console.error('Error creating user:', userError);
-        await supabase.rpc('set_admin_flag', { admin: false });
-        throw userError;
-      }
-      
-      console.log('Created user:', user);
-      
-      // Update the family with the user_ref
-      const { error: updateError } = await supabase
-        .from('families')
-        .update({ user_ref: user.id })
-        .eq('id', family.id);
-      
-      if (updateError) {
-        console.error('Error updating family with user_ref:', updateError);
-        // Continue even if this fails, as the core functionality is still working
-      }
-      
-      // Create default questions for the new family
-      try {
-        await this.createDefaultQuestions(user.id);
-      } catch (error) {
-        console.error('Error creating default questions:', error);
-        // Continue even if creating default questions fails
-      }
       
       // Reset the is_admin flag
       await supabase.rpc('set_admin_flag', { admin: false });
       
+      if (error) {
+        console.error('Error adding member to family:', error);
+        throw error;
+      }
+      
+      console.log('Successfully added member to family:', data);
       return {
         family,
-        user
+        user: data
       };
     } catch (error) {
       console.error('Error creating family with member:', error);
