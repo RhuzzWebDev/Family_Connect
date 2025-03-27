@@ -26,18 +26,39 @@ export default function FamilyHub() {
   const [copied, setCopied] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [currentUser, setCurrentUser] = useState<FamilyMember | null>(null);
 
   useEffect(() => {
-    fetchFamilyMembers();
+    fetchFamilyData();
   }, [refreshTrigger]);
 
-  async function fetchFamilyMembers() {
+  async function fetchFamilyData() {
     try {
       setLoading(true);
       
-      // Load family members
-      const members = await SupabaseService.getFamilyMembers();
-      setFamilyMembers(members);
+      // Load current user first
+      const user = await SupabaseService.getCurrentUser();
+      setCurrentUser(user);
+      
+      // Load all users
+      const allUsers = await SupabaseService.getFamilyMembers();
+      
+      // Filter users to only include those from the same family
+      let filteredMembers: FamilyMember[] = [];
+      
+      if (user.family_id) {
+        // If user has a family_id, filter by that
+        filteredMembers = allUsers.filter(member => 
+          member.family_id === user.family_id
+        );
+      } else {
+        // Otherwise, filter by last name
+        filteredMembers = allUsers.filter(member => 
+          member.last_name === user.last_name
+        );
+      }
+      
+      setFamilyMembers(filteredMembers);
       
       // Load family details
       const details = await SupabaseService.getFamilyDetails();
@@ -123,12 +144,14 @@ export default function FamilyHub() {
     );
   }
 
+  const familyName = currentUser?.last_name || (familyDetails?.family_name || 'Your');
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-2xl font-bold tracking-tight">
-            {familyDetails ? `${familyDetails.family_name} Family Hub` : 'Your Family Hub'}
+            {`${familyName} Family Hub`}
           </h2>
           <Button 
             variant="ghost" 

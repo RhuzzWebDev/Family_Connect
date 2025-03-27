@@ -374,10 +374,12 @@ export class SupabaseService {
   static async getFamilyMembers(): Promise<Omit<User, 'password'>[]> {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
-      await this.verifyUserStatus(userEmail);
+      const currentUser = await this.verifyUserStatus(userEmail);
 
+      // Get all users - we'll filter by family in the component
       const { data, error } = await supabase
-        .rpc('get_family_members', { p_user_email: userEmail });
+        .from('users')
+        .select('*');
 
       if (error) {
         throw new Error(error.message);
