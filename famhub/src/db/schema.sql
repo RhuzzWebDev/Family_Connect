@@ -124,6 +124,7 @@ CREATE POLICY "Users can insert their own questions"
             AND status = 'Active'
             AND users.id = questions.user_id
         )
+        OR current_setting('app.is_admin', true)::boolean = true
     );
 
 CREATE POLICY "Users can update their own questions"
@@ -136,6 +137,7 @@ CREATE POLICY "Users can update their own questions"
             AND status = 'Active'
             AND users.id = questions.user_id
         )
+        OR current_setting('app.is_admin', true)::boolean = true
     );
 
 CREATE POLICY "Users can delete their own questions"
@@ -148,6 +150,7 @@ CREATE POLICY "Users can delete their own questions"
             AND status = 'Active'
             AND users.id = questions.user_id
         )
+        OR current_setting('app.is_admin', true)::boolean = true
     );
 
 -- Families policies
