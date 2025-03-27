@@ -110,12 +110,6 @@ export default function AdminDashboardPage() {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold">Dashboard Overview</h1>
-          <AddFamilyMemberModal 
-            buttonLabel="Add Family Member" 
-            isAdmin={true} 
-            onMemberAdded={handleMemberAdded}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          />
         </div>
         
         {/* Stats Cards */}
