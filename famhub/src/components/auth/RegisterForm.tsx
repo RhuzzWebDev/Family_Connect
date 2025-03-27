@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import bcrypt from 'bcryptjs';
 import { useSession } from '@/hooks/useSession';
+import { SupabaseService } from '@/services/supabaseService';
 
 const Input = ({ 
   label, 
@@ -250,6 +251,15 @@ export default function RegisterForm() {
           .from('families')
           .update({ created_by: newUser.id })
           .eq('id', familyId);
+          
+        // Create default questions for the new family
+        try {
+          await SupabaseService.createDefaultQuestions(newUser.id);
+          console.log('Default questions created successfully');
+        } catch (error) {
+          console.error('Error creating default questions:', error);
+          // Continue even if creating default questions fails
+        }
       }
 
       // Store email using the session hook

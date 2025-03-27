@@ -23,6 +23,7 @@ interface Question {
     last_name: string;
     role: string;
     persona: string;
+    family_id: string;
   };
 }
 
@@ -53,16 +54,77 @@ export default function QuestionGrid() {
 
   const fetchQuestions = async () => {
     try {
+      // Get the current user's email from sessionStorage
+      const userEmail = sessionStorage.getItem('userEmail');
+      
+      if (!userEmail) {
+        setError('User not authenticated');
+        setLoading(false);
+        return;
+      }
+
+      // First, get the current user to find their family_id
+      const { data: currentUser, error: userError } = await supabase
+        .from('users')
+        .select('family_id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!currentUser || !currentUser.family_id) {
+        setError('User not associated with a family');
+        setLoading(false);
+        return;
+      }
+
+      // Get all users in the same family
+      const { data: familyUsers, error: familyError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('family_id', currentUser.family_id);
+
+      if (familyError) {
+        throw familyError;
+      }
+
+      if (!familyUsers || familyUsers.length === 0) {
+        setError('No family members found');
+        setLoading(false);
+        return;
+      }
+
+      // Get the user IDs from the family
+      const familyUserIds = familyUsers.map(user => user.id);
+
+      // Then fetch questions only from users in the same family
       const { data, error } = await supabase
         .from('questions')
-        .select(`*, user:users!questions_user_id_fkey (first_name, last_name, role, persona)`)
+        .select(`
+          *,
+          user:users!inner (
+            first_name,
+            last_name,
+            role,
+            persona,
+            family_id
+          )
+        `)
+        .in('user_id', familyUserIds)
         .order('created_at', { ascending: false });
 
       if (error) {
         throw error;
       }
 
-      setQuestions(data || []);
+      // Make sure we have valid data before setting state
+      const validQuestions = (data || []).filter(question => 
+        question && question.user && question.user.first_name
+      );
+
+      setQuestions(validQuestions);
     } catch (err) {
       console.error('Error fetching questions:', err);
       setError('Failed to load questions');
@@ -325,25 +387,7 @@ export default function QuestionGrid() {
                         <span>{question.comment_count}</span>
                       </Button>
                     </div>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                        >
-                          Answer
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="bg-white sm:max-w-[600px] p-0">
-                        <DialogHeader className="pt-8 px-6 pb-4 border-b">
-                          <DialogTitle className="text-lg font-semibold text-center">Post an Answer</DialogTitle>
-                        </DialogHeader>
-                        <div className="p-6">
-                          <CreateQuestionForm onQuestionCreated={fetchQuestions} type="answer" />
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+                    
                   </div>
                 </div>
               </div>

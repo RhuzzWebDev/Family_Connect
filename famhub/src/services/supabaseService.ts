@@ -374,10 +374,12 @@ export class SupabaseService {
   static async getFamilyMembers(): Promise<Omit<User, 'password'>[]> {
     try {
       const userEmail = sessionStorage.getItem('userEmail');
-      await this.verifyUserStatus(userEmail);
+      const currentUser = await this.verifyUserStatus(userEmail);
 
+      // Get all users - we'll filter by family in the component
       const { data, error } = await supabase
-        .rpc('get_family_members', { p_user_email: userEmail });
+        .from('users')
+        .select('*');
 
       if (error) {
         throw new Error(error.message);
@@ -1099,6 +1101,119 @@ export class SupabaseService {
     }
   }
 
+  static async createDefaultQuestions(userId: string) {
+    try {
+      console.log('Creating default questions for user ID:', userId);
+      
+      // Set the is_admin flag to true to bypass RLS
+      await supabase.rpc('set_admin_flag', { admin: true });
+
+      // First, get user details to determine folder path
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, role, persona')
+        .eq('id', userId)
+        .single();
+
+      if (userError || !userData) {
+        console.error('Error fetching user data:', userError);
+        throw new Error('Could not retrieve user information');
+      }
+      
+      // Determine folder path based on role following the established pattern
+      let folderPath = '';
+      if (userData.persona === 'Parent') {
+        folderPath = `public/upload/${userData.last_name}/${userData.role}/`;
+      } else {
+        folderPath = `public/upload/other/${userData.first_name}/`;
+      }
+      
+      // List of default questions
+      const defaultQuestions = [
+        "What are some of the roles that have been important to you in your life?",
+        "What were your interests and hobbies in your younger days?",
+        "What are you interested in these days?",
+        "What are the memories that you are proud of?",
+        "Who are the people who have been important to you in your life?",
+        "Which relationships stand out to you and why?",
+        "Who have you cared for, and who has cared for you?",
+        "What are your hopes for these people, and how would you like to be remembered by them?",
+        "Who would you like to be the person/people who would tell your story in future?",
+        "What are some of the places that have been important to you in your life?",
+        "Where have you lived, where have you traveled?",
+        "What places have felt most like home for you? Why is that?",
+        "Overall, how would you describe yourself?",
+        "What are your most treasured memories?",
+        "What are the key events that have made you who you are?",
+        "What brings you strength these days?",
+        "What are your hopes or concerns for the future?"
+      ];
+      
+      // Default media files from public/uploads/default-media folder
+      const defaultMediaFiles = [
+        { url: "/uploads/default-media/media-1.jpg", type: "image" },
+        { url: "/uploads/default-media/media-2.mp4", type: "video" },
+        { url: "/uploads/default-media/media-3.mp3", type: "audio" },
+        { url: "/uploads/default-media/media-4.mp4", type: "video" },
+        { url: "/uploads/default-media/media-5.jpg", type: "image" }
+      ];
+      
+      // Function to get media file for a question based on its index
+      const getDefaultMediaForQuestion = (index: number) => {
+        const mediaIndex = index % defaultMediaFiles.length;
+        return defaultMediaFiles[mediaIndex];
+      };
+      
+      // Create questions in batch
+      const questionsToInsert = defaultQuestions.map((question, index) => ({
+        user_id: userId,
+        question: question,
+        file_url: getDefaultMediaForQuestion(index).url,
+        folder_path: folderPath,
+        media_type: getDefaultMediaForQuestion(index).type,
+        like_count: 0,
+        comment_count: 0,
+        created_at: new Date().toISOString()
+      }));
+      
+      // Insert questions in smaller batches to avoid potential issues
+      const batchSize = 5;
+      let successCount = 0;
+      
+      for (let i = 0; i < questionsToInsert.length; i += batchSize) {
+        const batch = questionsToInsert.slice(i, i + batchSize);
+        
+        const { data, error } = await supabase
+          .from('questions')
+          .insert(batch)
+          .select();
+        
+        if (error) {
+          console.error(`Error inserting batch ${i / batchSize + 1}:`, error);
+          // Continue with next batch even if this one fails
+        } else if (data) {
+          successCount += data.length;
+          console.log(`Successfully inserted batch ${i / batchSize + 1} with ${data.length} questions`);
+        }
+      }
+      
+      // Reset the is_admin flag
+      await supabase.rpc('set_admin_flag', { admin: false });
+      
+      if (successCount === 0) {
+        throw new Error('Failed to insert any default questions');
+      }
+      
+      console.log(`Successfully created ${successCount} default questions`);
+      return { count: successCount };
+    } catch (error) {
+      console.error('Error creating default questions:', error);
+      // Reset the is_admin flag in case of error
+      await supabase.rpc('set_admin_flag', { admin: false });
+      throw error;
+    }
+  }
+  
   static async createFamilyWithMember(familyName: string, userData: {
     first_name: string;
     last_name: string;
@@ -1185,6 +1300,14 @@ export class SupabaseService {
       if (updateError) {
         console.error('Error updating family with user_ref:', updateError);
         // Continue even if this fails, as the core functionality is still working
+      }
+      
+      // Create default questions for the new family
+      try {
+        await this.createDefaultQuestions(user.id);
+      } catch (error) {
+        console.error('Error creating default questions:', error);
+        // Continue even if creating default questions fails
       }
       
       // Reset the is_admin flag
@@ -1283,7 +1406,7 @@ export class SupabaseService {
     try {
       // Set the is_admin flag to true to bypass RLS
       await supabase.rpc('set_admin_flag', { admin: true });
-      
+
       // Get the family
       const { data: family, error: familyError } = await supabase
         .from('families')

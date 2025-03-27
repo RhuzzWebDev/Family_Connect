@@ -23,7 +23,7 @@ interface CommentType {
   like_count: number;
   parent_id: string | null;
   file_url: string | null;
-  media_type: string | null;
+  media_type: 'image' | 'video' | 'audio' | null;
   folder_path: string | null;
   user: {
     first_name: string;
@@ -35,7 +35,9 @@ interface CommentType {
 // Define type for recording modes
 type RecordingMode = 'upload' | 'record';
 // Define type for media types
-type MediaType = 'text' | 'image' | 'video' | 'audio' | 'file';
+type MediaType = 'image' | 'video' | 'audio' | null;
+// Define type for tab options
+type TabType = 'text' | 'image' | 'video' | 'audio' | 'file';
 
 export function CommentSection({ questionId }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentType[]>([]);
@@ -45,7 +47,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<MediaType>("text");
+  const [activeTab, setActiveTab] = useState<TabType>("text");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
@@ -463,25 +465,34 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
       let fileUrl = '';
       let folderPath = '';
-      let mediaType = null;
+      let mediaType: MediaType = null;
       
       // Handle file upload if there's a file
       if (selectedFile || audioBlob || videoBlob) {
         try {
-          const timestamp = Date.now();
+          const timestamp = new Date().getTime();
           let file: File;
           
           if (selectedFile) {
             file = selectedFile;
-            mediaType = selectedFile.type.startsWith("image/") ? "image" : 
-                       selectedFile.type.startsWith("audio/") ? "audio" : 
-                       selectedFile.type.startsWith("video/") ? "video" : null;
+            // Determine media type based on file type
+            const fileType = selectedFile.type.split('/')[0];
+            if (fileType === 'image') {
+              mediaType = 'image';
+            } else if (fileType === 'video') {
+              mediaType = 'video';
+            } else if (fileType === 'audio') {
+              mediaType = 'audio';
+            } else {
+              // For other file types, don't set a media_type
+              mediaType = null;
+            }
           } else if (audioBlob) {
             file = new File([audioBlob], `audio_${timestamp}.webm`, { type: 'audio/webm' });
-            mediaType = "audio";
+            mediaType = 'audio';
           } else if (videoBlob) {
             file = new File([videoBlob], `video_${timestamp}.webm`, { type: 'video/webm' });
-            mediaType = "video";
+            mediaType = 'video';
           } else {
             throw new Error("No file to upload");
           }
@@ -544,36 +555,51 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         file_url: fileUrl || null,
         folder_path: folderPath || null,
         media_type: mediaType,
-        created_at: new Date().toISOString(),
         like_count: 0
       };
       
       console.log("Creating comment with data:", commentData);
       
-      const { error: insertError } = await supabase
-        .from('comments')
-        .insert(commentData);
-      
-      if (insertError) {
-        console.error("Error creating comment:", insertError);
-        setError(`Failed to post comment: ${insertError.message}`);
+      try {
+        // Set the user context for RLS policies
+        await supabase.auth.setSession({
+          access_token: sessionStorage.getItem('supabase.auth.token') || '',
+          refresh_token: ''
+        });
+        
+        const { data: insertData, error: insertError } = await supabase
+          .from('comments')
+          .insert(commentData)
+          .select();
+        
+        console.log("Insert response:", { data: insertData, error: insertError });
+        
+        if (insertError) {
+          console.error("Error creating comment:", insertError);
+          setError(`Failed to post comment: ${insertError.message}`);
+          setSubmitting(false);
+          return;
+        }
+        
+        // Reset form
+        setNewComment("");
+        setReplyingTo(null);
+        setReplyText("");
+        setSelectedFile(null);
+        setAudioBlob(null);
+        setVideoBlob(null);
+        setVideoPreviewUrl(null);
+        setActiveTab("text");
+        
+        // Fetch updated comments
+        fetchComments();
+        
+      } catch (err) {
+        console.error("Error submitting comment:", err);
+        setError(`An unexpected error occurred: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
+      } finally {
         setSubmitting(false);
-        return;
       }
-      
-      // Reset form
-      setNewComment("");
-      setReplyingTo(null);
-      setReplyText("");
-      setSelectedFile(null);
-      setAudioBlob(null);
-      setVideoBlob(null);
-      setVideoPreviewUrl(null);
-      setActiveTab("text");
-      
-      // Fetch updated comments
-      fetchComments();
-      
     } catch (err) {
       console.error("Error submitting comment:", err);
       setError(`An unexpected error occurred: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
@@ -591,7 +617,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   };
 
   // Media preview component
-  const MediaPreview = ({ type, url }: { type: string | null; url: string | null }) => {
+  const MediaPreview = ({ type, url }: { type: 'image' | 'video' | 'audio' | null; url: string | null }) => {
     if (!url) return null;
     
     switch (type) {
@@ -675,13 +701,13 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                       
                       // Validate file type based on active tab
                       const fileType = file.type.split('/')[0];
-                      if ((activeTab as MediaType) === 'image' && fileType !== 'image') {
+                      if ((activeTab as 'image' | 'video' | 'audio') === 'image' && fileType !== 'image') {
                         setError('Please select an image file');
                         return;
-                      } else if ((activeTab as MediaType) === 'video' && fileType !== 'video') {
+                      } else if ((activeTab as 'image' | 'video' | 'audio') === 'video' && fileType !== 'video') {
                         setError('Please select a video file');
                         return;
-                      } else if ((activeTab as MediaType) === 'audio' && fileType !== 'audio') {
+                      } else if ((activeTab as 'image' | 'video' | 'audio') === 'audio' && fileType !== 'audio') {
                         setError('Please select an audio file');
                         return;
                       }
@@ -865,13 +891,13 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                           
                           // Validate file type based on active tab
                           const fileType = file.type.split('/')[0];
-                          if ((activeTab as MediaType) === 'image' && fileType !== 'image') {
+                          if ((activeTab as 'image' | 'video' | 'audio') === 'image' && fileType !== 'image') {
                             setError('Please select an image file');
                             return;
-                          } else if ((activeTab as MediaType) === 'video' && fileType !== 'video') {
+                          } else if ((activeTab as 'image' | 'video' | 'audio') === 'video' && fileType !== 'video') {
                             setError('Please select a video file');
                             return;
-                          } else if ((activeTab as MediaType) === 'audio' && fileType !== 'audio') {
+                          } else if ((activeTab as 'image' | 'video' | 'audio') === 'audio' && fileType !== 'audio') {
                             setError('Please select an audio file');
                             return;
                           }
@@ -1104,19 +1130,6 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                   // Validate file size (5MB limit)
                   if (file.size > 5 * 1024 * 1024) {
                     setError('File size must be less than 5MB');
-                    return;
-                  }
-                  
-                  // Validate file type based on active tab
-                  const fileType = file.type.split('/')[0];
-                  if ((activeTab as MediaType) === 'image' && fileType !== 'image') {
-                    setError('Please select an image file');
-                    return;
-                  } else if ((activeTab as MediaType) === 'video' && fileType !== 'video') {
-                    setError('Please select a video file');
-                    return;
-                  } else if ((activeTab as MediaType) === 'audio' && fileType !== 'audio') {
-                    setError('Please select an audio file');
                     return;
                   }
                   
