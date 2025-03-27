@@ -1149,16 +1149,28 @@ export class SupabaseService {
         "What are your hopes or concerns for the future?"
       ];
       
-      // Placeholder image URL for default questions
-      const placeholderImageUrl = "https://via.placeholder.com/300x200?text=Family+Connect";
+      // Default media files from public/uploads/default-media folder
+      const defaultMediaFiles = [
+        { url: "/uploads/default-media/media-1.jpg", type: "image" },
+        { url: "/uploads/default-media/media-2.mp4", type: "video" },
+        { url: "/uploads/default-media/media-3.mp3", type: "audio" },
+        { url: "/uploads/default-media/media-4.mp4", type: "video" },
+        { url: "/uploads/default-media/media-5.jpg", type: "image" }
+      ];
+      
+      // Function to get media file for a question based on its index
+      const getDefaultMediaForQuestion = (index: number) => {
+        const mediaIndex = index % defaultMediaFiles.length;
+        return defaultMediaFiles[mediaIndex];
+      };
       
       // Create questions in batch
-      const questionsToInsert = defaultQuestions.map(question => ({
+      const questionsToInsert = defaultQuestions.map((question, index) => ({
         user_id: userId,
         question: question,
-        file_url: placeholderImageUrl,
+        file_url: getDefaultMediaForQuestion(index).url,
         folder_path: folderPath,
-        media_type: 'image', // Using 'image' as it's a valid enum value
+        media_type: getDefaultMediaForQuestion(index).type,
         like_count: 0,
         comment_count: 0,
         created_at: new Date().toISOString()
