@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import bcrypt from 'bcryptjs';
 import { useSession } from '@/hooks/useSession';
+import { SupabaseService } from '@/services/supabaseService';
 
 const Input = ({ 
   label, 
@@ -80,37 +81,56 @@ const SelectInput = ({
   </div>
 );
 
-type UserRole = User['role'];
-type UserPersona = User['persona'];
-
-interface FormData {
-  first_name: string;
-  last_name: string;
+interface RegisterFormData {
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
   confirmPassword: string;
-  role: UserRole;
-  persona: UserPersona;
+  role: string;
+  persona: 'Parent' | 'Children';
+  createFamily: boolean;
+  familyName: string;
+  familyCode: string;
 }
 
 export default function RegisterForm() {
   const router = useRouter();
   const { setUserEmail } = useSession();
-  const [formData, setFormData] = useState<FormData>({
-    first_name: '',
-    last_name: '',
+  const [formData, setFormData] = useState<RegisterFormData>({
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
     role: 'Father',
-    persona: 'Parent'
+    persona: 'Parent',
+    createFamily: true,
+    familyName: '',
+    familyCode: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target as HTMLInputElement;
+    
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData({
+        ...formData,
+        [name]: checked,
+        // If creating a family, clear the family code; if joining, clear the family name
+        familyCode: name === 'createFamily' && checked ? '' : formData.familyCode,
+        familyName: name === 'createFamily' && !checked ? '' : formData.familyName
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value
+      });
+    }
+    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -121,11 +141,11 @@ export default function RegisterForm() {
     const newErrors: Record<string, string> = {};
 
     // Validate form
-    if (!formData.first_name.trim()) {
-      newErrors.first_name = 'First name is required';
+    if (!formData.firstName.trim()) {
+      newErrors.firstName = 'First name is required';
     }
-    if (!formData.last_name.trim()) {
-      newErrors.last_name = 'Last name is required';
+    if (!formData.lastName.trim()) {
+      newErrors.lastName = 'Last name is required';
     }
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
@@ -145,6 +165,9 @@ export default function RegisterForm() {
     }
     if (!formData.persona) {
       newErrors.persona = 'Persona is required';
+    }
+    if (!formData.createFamily && !formData.familyCode.trim()) {
+      newErrors.familyCode = 'Family code is required to join an existing family';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -172,23 +195,71 @@ export default function RegisterForm() {
       // Hash the password
       const hashedPassword = await bcrypt.hash(formData.password, 10);
 
+      let familyId: string | null = null;
+
+      if (formData.createFamily) {
+        // Create a new family based on last name
+        const { data: newFamily, error: familyError } = await supabase
+          .rpc('get_or_create_family', { 
+            p_family_name: formData.lastName,
+            p_user_id: null // Will be updated after user creation
+          });
+
+        if (familyError || !newFamily) {
+          throw new Error('Failed to create family. Please try again.');
+        }
+
+        familyId = newFamily;
+      } else {
+        // Verify family code (which is actually a family ID)
+        const { data: existingFamily, error: familyError } = await supabase
+          .from('families')
+          .select('id')
+          .eq('id', formData.familyCode)
+          .single();
+
+        if (familyError || !existingFamily) {
+          throw new Error('Invalid family code. Please check and try again.');
+        }
+
+        familyId = existingFamily.id;
+      }
+
       // Create user in the users table
       const { data: newUser, error: createError } = await supabase
         .from('users')
         .insert({
-          first_name: formData.first_name,
-          last_name: formData.last_name,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
           email: formData.email,
           password: hashedPassword,
           role: formData.role,
           persona: formData.persona,
-          status: 'Validating'
+          status: 'Validating',
+          family_id: familyId
         })
         .select()
         .single();
 
       if (createError) {
         throw new Error(createError.message);
+      }
+
+      // If this is a new family and the user is the first member, update the created_by field
+      if (formData.createFamily) {
+        await supabase
+          .from('families')
+          .update({ created_by: newUser.id })
+          .eq('id', familyId);
+          
+        // Create default questions for the new family
+        try {
+          await SupabaseService.createDefaultQuestions(newUser.id);
+          console.log('Default questions created successfully');
+        } catch (error) {
+          console.error('Error creating default questions:', error);
+          // Continue even if creating default questions fails
+        }
       }
 
       // Store email using the session hook
@@ -222,26 +293,26 @@ export default function RegisterForm() {
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="First Name"
-              name="first_name"
+              name="firstName"
               type="text"
               autoComplete="given-name"
               required
               placeholder="Enter first name"
-              value={formData.first_name}
+              value={formData.firstName}
               onChange={handleChange}
-              error={errors.first_name}
+              error={errors.firstName}
               disabled={loading}
             />
             <Input
               label="Last Name"
-              name="last_name"
+              name="lastName"
               type="text"
               autoComplete="family-name"
               required
               placeholder="Enter last name"
-              value={formData.last_name}
+              value={formData.lastName}
               onChange={handleChange}
-              error={errors.last_name}
+              error={errors.lastName}
               disabled={loading}
             />
           </div>
@@ -301,6 +372,31 @@ export default function RegisterForm() {
             options={personaTypes}
             disabled={loading}
           />
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Create Family
+            </label>
+            <input
+              type="checkbox"
+              name="createFamily"
+              checked={formData.createFamily}
+              onChange={handleChange}
+              className="mr-2"
+            />
+            {!formData.createFamily && (
+              <Input
+                label="Family Code"
+                name="familyCode"
+                type="text"
+                required
+                placeholder="Enter family code"
+                value={formData.familyCode}
+                onChange={handleChange}
+                error={errors.familyCode}
+                disabled={loading}
+              />
+            )}
+          </div>
           <div>
             <Button
               type="submit"

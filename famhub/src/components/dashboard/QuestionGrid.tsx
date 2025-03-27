@@ -23,6 +23,7 @@ interface Question {
     last_name: string;
     role: string;
     persona: string;
+    family_id: string;
   };
 }
 
@@ -53,16 +54,77 @@ export default function QuestionGrid() {
 
   const fetchQuestions = async () => {
     try {
+      // Get the current user's email from sessionStorage
+      const userEmail = sessionStorage.getItem('userEmail');
+      
+      if (!userEmail) {
+        setError('User not authenticated');
+        setLoading(false);
+        return;
+      }
+
+      // First, get the current user to find their family_id
+      const { data: currentUser, error: userError } = await supabase
+        .from('users')
+        .select('family_id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!currentUser || !currentUser.family_id) {
+        setError('User not associated with a family');
+        setLoading(false);
+        return;
+      }
+
+      // Get all users in the same family
+      const { data: familyUsers, error: familyError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('family_id', currentUser.family_id);
+
+      if (familyError) {
+        throw familyError;
+      }
+
+      if (!familyUsers || familyUsers.length === 0) {
+        setError('No family members found');
+        setLoading(false);
+        return;
+      }
+
+      // Get the user IDs from the family
+      const familyUserIds = familyUsers.map(user => user.id);
+
+      // Then fetch questions only from users in the same family
       const { data, error } = await supabase
         .from('questions')
-        .select(`*, user:users!questions_user_id_fkey (first_name, last_name, role, persona)`)
+        .select(`
+          *,
+          user:users!inner (
+            first_name,
+            last_name,
+            role,
+            persona,
+            family_id
+          )
+        `)
+        .in('user_id', familyUserIds)
         .order('created_at', { ascending: false });
 
       if (error) {
         throw error;
       }
 
-      setQuestions(data || []);
+      // Make sure we have valid data before setting state
+      const validQuestions = (data || []).filter(question => 
+        question && question.user && question.user.first_name
+      );
+
+      setQuestions(validQuestions);
     } catch (err) {
       console.error('Error fetching questions:', err);
       setError('Failed to load questions');
@@ -217,38 +279,12 @@ export default function QuestionGrid() {
     <div className="space-y-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
-              <PlusCircle className="w-4 h-4" />
-              Ask Question
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="bg-white sm:max-w-[600px] p-0">
-            <DialogHeader className="pt-8 px-6 pb-4 border-b">
-              <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
-            </DialogHeader>
-            <div className="p-6">
-              <CreateQuestionForm 
-                onQuestionCreated={() => {
-                  // Refresh the page after creating a question
-                  window.location.reload();
-                }} 
-                type="question" 
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {questions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-          <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
-          <p className="text-gray-500 text-center">No questions yet. Be the first to ask!</p>
+        {false && (
           <Dialog>
             <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white mt-2">
-                Ask a Question
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
+                <PlusCircle className="w-4 h-4" />
+                Ask Question
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-white sm:max-w-[600px] p-0">
@@ -266,6 +302,36 @@ export default function QuestionGrid() {
               </div>
             </DialogContent>
           </Dialog>
+        )}
+      </div>
+
+      {questions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+          <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
+          <p className="text-gray-500 text-center">No questions yet!</p>
+          {false && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white mt-2">
+                  Ask a Question
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-white sm:max-w-[600px] p-0">
+                <DialogHeader className="pt-8 px-6 pb-4 border-b">
+                  <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
+                </DialogHeader>
+                <div className="p-6">
+                  <CreateQuestionForm 
+                    onQuestionCreated={() => {
+                      // Refresh the page after creating a question
+                      window.location.reload();
+                    }} 
+                    type="question" 
+                  />
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -321,25 +387,7 @@ export default function QuestionGrid() {
                         <span>{question.comment_count}</span>
                       </Button>
                     </div>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                        >
-                          Answer
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="bg-white sm:max-w-[600px] p-0">
-                        <DialogHeader className="pt-8 px-6 pb-4 border-b">
-                          <DialogTitle className="text-lg font-semibold text-center">Post an Answer</DialogTitle>
-                        </DialogHeader>
-                        <div className="p-6">
-                          <CreateQuestionForm onQuestionCreated={fetchQuestions} type="answer" />
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+                    
                   </div>
                 </div>
               </div>
