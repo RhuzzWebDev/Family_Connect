@@ -90,7 +90,7 @@ CREATE TABLE comment_likes (
 
 -- Add foreign key constraints
 ALTER TABLE users ADD CONSTRAINT fk_family_id FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE SET NULL;
-ALTER TABLE families ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE SET NULL;
+ALTER TABLE families ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES admin_schema.admins(id) ON DELETE SET NULL;
 ALTER TABLE families ADD CONSTRAINT fk_user_ref FOREIGN KEY (user_ref) REFERENCES users(id) ON DELETE SET NULL;
 
 -- Create index for faster user lookups
