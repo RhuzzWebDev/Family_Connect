@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import CreateQuestionForm from './CreateQuestionForm';
 import { format } from 'date-fns';
-import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X } from 'lucide-react';
+import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart } from 'lucide-react';
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
 
@@ -25,6 +25,8 @@ interface Question {
     persona: string;
     family_id: string;
   };
+  has_liked?: boolean;
+  question_likes?: { user_id: string }[];
 }
 
 interface Comment {
@@ -53,34 +55,47 @@ export default function QuestionGrid() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchQuestions = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      // Get the current user's email from sessionStorage
+      // Get current user
       const userEmail = sessionStorage.getItem('userEmail');
-      
       if (!userEmail) {
-        setError('User not authenticated');
-        setLoading(false);
-        return;
+        throw new Error('User not logged in');
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) {
+        console.error('User fetch error:', userError);
+        throw new Error('Failed to fetch user data');
+      }
+
+      if (!userData) {
+        throw new Error('User not found');
       }
 
       // First, get the current user to find their family_id
-      const { data: currentUser, error: userError } = await supabase
+      const { data: currentUser, error: userFamilyError } = await supabase
         .from('users')
         .select('family_id')
         .eq('email', userEmail)
         .single();
 
-      if (userError) {
-        throw userError;
+      if (userFamilyError) {
+        throw userFamilyError;
       }
 
       if (!currentUser || !currentUser.family_id) {
-        setError('User not associated with a family');
-        setLoading(false);
-        return;
+        throw new Error('Family ID not found');
       }
 
-      // Get all users in the same family
+      // Then get all users in the same family
       const { data: familyUsers, error: familyError } = await supabase
         .from('users')
         .select('id')
@@ -90,27 +105,21 @@ export default function QuestionGrid() {
         throw familyError;
       }
 
-      if (!familyUsers || familyUsers.length === 0) {
-        setError('No family members found');
-        setLoading(false);
-        return;
-      }
-
-      // Get the user IDs from the family
       const familyUserIds = familyUsers.map(user => user.id);
 
-      // Then fetch questions only from users in the same family
+      // Fetch questions with likes information
       const { data, error } = await supabase
         .from('questions')
         .select(`
           *,
-          user:users!inner (
+          user:users!questions_user_id_fkey (
             first_name,
             last_name,
             role,
             persona,
             family_id
-          )
+          ),
+          question_likes!left (user_id)
         `)
         .in('user_id', familyUserIds)
         .order('created_at', { ascending: false });
@@ -119,15 +128,16 @@ export default function QuestionGrid() {
         throw error;
       }
 
-      // Make sure we have valid data before setting state
-      const validQuestions = (data || []).filter(question => 
-        question && question.user && question.user.first_name
-      );
+      // Process questions to add has_liked field
+      const processedQuestions = (data || []).map(question => ({
+        ...question,
+        has_liked: question.question_likes?.some(like => like.user_id === userData.id) || false
+      }));
 
-      setQuestions(validQuestions);
+      setQuestions(processedQuestions);
     } catch (err) {
       console.error('Error fetching questions:', err);
-      setError('Failed to load questions');
+      setError('Failed to load questions. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -135,20 +145,116 @@ export default function QuestionGrid() {
 
   const handleLike = async (questionId: string) => {
     try {
-      const { error } = await supabase
-        .from('questions')
-        .update({ like_count: questions.find(q => q.id === questionId)?.like_count! + 1 })
-        .eq('id', questionId);
-
-      if (error) {
-        throw error;
+      // Get current user
+      const userEmail = sessionStorage.getItem('userEmail');
+      if (!userEmail) {
+        setError('You must be logged in to like questions');
+        return;
       }
 
-      setQuestions(questions.map(q =>
-        q.id === questionId ? { ...q, like_count: q.like_count + 1 } : q
-      ));
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) {
+        console.error('User fetch error:', userError);
+        throw new Error('Failed to fetch user data');
+      }
+
+      if (!userData) {
+        throw new Error('User not found');
+      }
+
+      // Get the current question data
+      const { data: currentQuestion, error: questionError } = await supabase
+        .from('questions')
+        .select('like_count')
+        .eq('id', questionId)
+        .single();
+
+      if (questionError) {
+        console.error('Question fetch error:', questionError);
+        throw new Error('Failed to fetch question data');
+      }
+
+      if (!currentQuestion) {
+        throw new Error('Question not found');
+      }
+
+      const question = questions.find(q => q.id === questionId);
+      if (!question) {
+        throw new Error('Question not found in state');
+      }
+
+      // Ensure like_count is a number and default to 0 if null
+      const currentLikeCount = currentQuestion.like_count || 0;
+
+      // Optimistic update
+      setQuestions(questions.map(q => {
+        if (q.id === questionId) {
+          return {
+            ...q,
+            like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
+            has_liked: !q.has_liked
+          };
+        }
+        return q;
+      }));
+
+      if (question.has_liked) {
+        // Unlike the question
+        const { error: deleteError } = await supabase
+          .from('question_likes')
+          .delete()
+          .eq('question_id', questionId)
+          .eq('user_id', userData.id);
+
+        if (deleteError) {
+          console.error('Delete like error:', deleteError);
+          throw new Error('Failed to unlike question');
+        }
+
+        const { error: updateError } = await supabase
+          .from('questions')
+          .update({ like_count: currentLikeCount - 1 })
+          .eq('id', questionId);
+
+        if (updateError) {
+          console.error('Update count error:', updateError);
+          throw new Error('Failed to update like count');
+        }
+      } else {
+        // Like the question
+        const { error: insertError } = await supabase
+          .from('question_likes')
+          .insert({
+            question_id: questionId,
+            user_id: userData.id
+          });
+
+        if (insertError) {
+          console.error('Insert like error:', insertError);
+          throw new Error('Failed to like question');
+        }
+
+        const { error: updateError } = await supabase
+          .from('questions')
+          .update({ like_count: currentLikeCount + 1 })
+          .eq('id', questionId);
+
+        if (updateError) {
+          console.error('Update count error:', updateError);
+          throw new Error('Failed to update like count');
+        }
+      }
     } catch (err) {
-      console.error('Error liking question:', err);
+      console.error('Error handling like:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update like. Please try again.');
+      // Revert optimistic update by refetching questions
+      fetchQuestions();
     }
   };
 
@@ -371,11 +477,11 @@ export default function QuestionGrid() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full h-8 px-3"
                         onClick={() => handleLike(question.id)}
+                        className={`${question.has_liked ? 'text-red-500' : 'text-gray-500'} hover:text-red-500`}
                       >
-                        <ThumbsUp className="w-4 h-4 mr-1.5" />
-                        <span>{question.like_count}</span>
+                        <Heart className={`w-4 h-4 ${question.has_liked ? 'fill-current' : ''}`} />
+                        <span className="ml-1">{Math.max(0, question.like_count)}</span>
                       </Button>
                       <Button
                         variant="ghost"

@@ -10,8 +10,18 @@ import { supabase } from "@/lib/supabase";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import Image from "next/image";
 
+// Update the MediaRecorderErrorEvent type
+interface MediaRecorderError extends DOMException {
+  name: string;
+  message: string;
+}
+
 interface CommentSectionProps {
   questionId: string;
+}
+
+interface CommentLike {
+  user_id: string;
 }
 
 interface CommentType {
@@ -30,6 +40,8 @@ interface CommentType {
     last_name: string;
     role: string;
   };
+  has_liked?: boolean;
+  comment_likes?: CommentLike[];
 }
 
 // Define type for recording modes
@@ -137,9 +149,31 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     setLoading(true);
     setError(null);
     try {
+      // Get current user
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        throw new Error('User not logged in');
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Fetch comments with likes information
       const { data, error } = await supabase
         .from('comments')
-        .select(`*, user:users!comments_user_id_fkey (first_name, last_name, role)`)
+        .select(`
+          *,
+          user:users!comments_user_id_fkey (first_name, last_name, role),
+          comment_likes!inner (user_id)
+        `)
         .eq('question_id', questionId)
         .order('created_at', { ascending: true });
 
@@ -147,7 +181,13 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         throw error;
       }
 
-      setComments(data || []);
+      // Process the comments to add has_liked field
+      const processedComments = (data || []).map(comment => ({
+        ...comment,
+        has_liked: (comment.comment_likes as { user_id: string }[])?.some((like) => like.user_id === userData.id) || false
+      }));
+
+      setComments(processedComments);
     } catch (err) {
       console.error('Error fetching comments:', err);
       setError('Failed to load comments. Please try again.');
@@ -214,26 +254,56 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         throw new Error('User not found');
       }
 
+      const comment = comments.find(c => c.id === commentId);
+      if (!comment) return;
+
       // Optimistic update
-      setComments(comments.map(comment => {
-        if (comment.id === commentId) {
-          return { ...comment, like_count: comment.like_count + 1 };
+      setComments(comments.map(c => {
+        if (c.id === commentId) {
+          return {
+            ...c,
+            like_count: c.has_liked ? c.like_count - 1 : c.like_count + 1,
+            has_liked: !c.has_liked
+          };
         }
-        return comment;
+        return c;
       }));
 
-      // Update like count in database
-      const { error } = await supabase
-        .from('comments')
-        .update({ like_count: comments.find(c => c.id === commentId)!.like_count + 1 })
-        .eq('id', commentId);
+      if (comment.has_liked) {
+        // Unlike the comment
+        const { error } = await supabase
+          .from('comment_likes')
+          .delete()
+          .eq('comment_id', commentId)
+          .eq('user_id', userData.id);
 
-      if (error) {
-        throw error;
+        if (error) throw error;
+
+        // Update comment like count
+        await supabase
+          .from('comments')
+          .update({ like_count: comment.like_count - 1 })
+          .eq('id', commentId);
+      } else {
+        // Like the comment
+        const { error } = await supabase
+          .from('comment_likes')
+          .insert({
+            comment_id: commentId,
+            user_id: userData.id
+          });
+
+        if (error) throw error;
+
+        // Update comment like count
+        await supabase
+          .from('comments')
+          .update({ like_count: comment.like_count + 1 })
+          .eq('id', commentId);
       }
     } catch (err) {
-      console.error('Error liking comment:', err);
-      setError('Failed to like comment. Please try again.');
+      console.error('Error handling like:', err);
+      setError('Failed to update like. Please try again.');
       // Revert optimistic update
       fetchComments();
     }
@@ -374,9 +444,10 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         };
       };
       
-      recorder.onerror = (event) => {
-        console.error("Video MediaRecorder error:", event);
-        setError("Video recording failed: " + event.error.message);
+      recorder.onerror = function(this: MediaRecorder, event: Event) {
+        const errorEvent = event as Event & { error: MediaRecorderError };
+        console.error("Video MediaRecorder error:", errorEvent);
+        setError("Video recording failed: " + errorEvent.error.message);
         cleanupMediaResources();
       };
       
@@ -446,9 +517,10 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         stream.getTracks().forEach(track => track.stop());
       };
       
-      recorder.onerror = (event) => {
-        console.error("MediaRecorder error:", event);
-        setError("Recording failed: " + event.error.message);
+      recorder.onerror = function(this: MediaRecorder, event: Event) {
+        const errorEvent = event as Event & { error: MediaRecorderError };
+        console.error("MediaRecorder error:", errorEvent);
+        setError("Recording failed: " + errorEvent.error.message);
       };
       
       recorder.start(1000);
@@ -1351,11 +1423,11 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-auto p-0 text-xs"
+                    className={`${comment.has_liked ? 'text-red-500' : 'text-gray-500'} hover:text-red-500`}
                     onClick={() => handleLike(comment.id)}
                   >
-                    <Heart className="mr-1 h-3 w-3" />
-                    {comment.like_count > 0 && <span>{comment.like_count}</span>}
+                    <Heart className={`w-4 h-4 ${comment.has_liked ? 'fill-current' : ''}`} />
+                    <span className="ml-1">{comment.like_count}</span>
                   </Button>
                   <Button
                     variant="ghost"
