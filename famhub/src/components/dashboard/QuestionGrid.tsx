@@ -10,6 +10,10 @@ import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, Aler
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
 
+interface QuestionLike {
+  user_id: string;
+}
+
 interface Question {
   id: string;
   question: string;
@@ -26,7 +30,7 @@ interface Question {
     family_id: string;
   };
   has_liked?: boolean;
-  question_likes?: { user_id: string }[];
+  question_likes?: QuestionLike[];
 }
 
 interface Comment {
@@ -131,7 +135,7 @@ export default function QuestionGrid() {
       // Process questions to add has_liked field
       const processedQuestions = (data || []).map(question => ({
         ...question,
-        has_liked: question.question_likes?.some(like => like.user_id === userData.id) || false
+        has_liked: question.question_likes?.some((like: QuestionLike) => like.user_id === userData.id) || false
       }));
 
       setQuestions(processedQuestions);
