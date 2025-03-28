@@ -48,7 +48,6 @@ CREATE TABLE families (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     family_name TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    admin_id UUID,
     user_ref UUID
 );
 
@@ -90,14 +89,12 @@ CREATE TABLE comment_likes (
 
 -- Add foreign key constraints
 ALTER TABLE users ADD CONSTRAINT fk_family_id FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE SET NULL;
-ALTER TABLE families ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES admin_schema.admins(id) ON DELETE SET NULL;
 ALTER TABLE families ADD CONSTRAINT fk_user_ref FOREIGN KEY (user_ref) REFERENCES users(id) ON DELETE SET NULL;
 
 -- Create index for faster user lookups
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_questions_user_id ON questions(user_id);
 CREATE INDEX idx_users_family_id ON users(family_id);
-CREATE INDEX idx_families_admin_id ON families(admin_id);
 CREATE INDEX idx_families_user_ref ON families(user_ref);
 
 -- Create indexes for faster comment lookups
@@ -210,7 +207,8 @@ CREATE POLICY "Allow family access"
 CREATE POLICY "Allow admin access to families"
     ON families
     FOR ALL
-    USING (current_setting('app.is_admin', true)::boolean = true);
+    USING (current_setting('app.is_admin', true)::boolean = true)
+    WITH CHECK (current_setting('app.is_admin', true)::boolean = true);
 
 -- Comments policies for native authentication
 CREATE POLICY "Anyone can view comments"
