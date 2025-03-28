@@ -1,6 +1,7 @@
-import { supabase } from '@/lib/supabase'
+import { supabase, Database } from '@/lib/supabase'
 import { User, Question, QuestionWithUser, Admin, Family } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
+import { createClient } from '@supabase/supabase-js'
 
 type SupabaseQuestionResponse = {
   id: string
@@ -1113,6 +1114,222 @@ export class SupabaseService {
     }
   }
 
+  /**
+   * Adds a member to an existing family
+   * @param familyId The ID of the family to add the member to
+   * @param userData The data for the new family member
+   * @returns The created user
+   */
+  static async addMemberToFamily(familyId: string, userData: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    password: string;
+    role: 'Father' | 'Mother' | 'Grandfather' | 'Grandmother' | 'Older Brother' | 'Older Sister' | 'Middle Brother' | 'Middle Sister' | 'Youngest Brother' | 'Youngest Sister';
+    persona: 'Parent' | 'Children';
+    status: 'Active' | 'Validating' | 'Not Active';
+  }) {
+    try {
+      console.log('Adding member to family with ID:', familyId);
+      
+      // Hash the password before storing it
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      
+      // Get the admin email from session storage
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Admin not authenticated. Please log in again.');
+      }
+      
+      // Get the admin ID from the database
+      const { data: admin, error: adminError } = await supabase
+        .from('admins')
+        .select('id')
+        .eq('email', adminEmail)
+        .single();
+        
+      if (adminError || !admin) {
+        console.error('Error getting admin:', adminError);
+        throw new Error('Admin not found. Please log in again.');
+      }
+      
+      // Set the admin flag to bypass RLS policies
+      await supabase.rpc('set_admin_flag', { admin: true });
+      
+      // First verify the family exists
+      const { data: family, error: familyError } = await supabase
+        .from('families')
+        .select('id, family_name')
+        .eq('id', familyId)
+        .single();
+        
+      if (familyError || !family) {
+        // Reset admin flag before throwing error
+        await supabase.rpc('set_admin_flag', { admin: false });
+        console.error('Family not found:', familyError);
+        throw new Error(`Family with ID ${familyId} not found`);
+      }
+      
+      console.log('Found family:', family);
+      
+      // Create the user with the family_id
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .insert({
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          email: userData.email,
+          password: hashedPassword,
+          role: userData.role,
+          persona: userData.persona,
+          status: userData.status,
+          family_id: familyId
+        })
+        .select()
+        .single();
+      
+      if (userError) {
+        // Reset admin flag before throwing error
+        await supabase.rpc('set_admin_flag', { admin: false });
+        console.error('Error creating user:', userError);
+        throw userError;
+      }
+      
+      // Reset the admin flag after operation
+      await supabase.rpc('set_admin_flag', { admin: false });
+      
+      console.log('Successfully added member to family:', user);
+      return user;
+    } catch (error) {
+      // Make sure admin flag is reset in case of any other errors
+      try {
+        await supabase.rpc('set_admin_flag', { admin: false });
+      } catch (e) {
+        console.error('Error resetting admin flag:', e);
+      }
+      console.error('Error adding member to family:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Gets a family by ID
+   * @param familyId The ID of the family to get
+   * @returns The family and its members
+   */
+  static async getFamilyById(familyId: string) {
+    try {
+      // Get the admin email from session storage
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Admin not authenticated. Please log in again.');
+      }
+      
+      // Set the admin flag to bypass RLS policies
+      await supabase.rpc('set_admin_flag', { admin: true });
+
+      // Get the family
+      const { data: family, error: familyError } = await supabase
+        .from('families')
+        .select('*')
+        .eq('id', familyId)
+        .single();
+      
+      if (familyError) {
+        // Reset admin flag before throwing error
+        await supabase.rpc('set_admin_flag', { admin: false });
+        throw familyError;
+      }
+      
+      // Get the family members
+      const { data: members, error: membersError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('family_id', familyId);
+      
+      // Reset the admin flag after operation
+      await supabase.rpc('set_admin_flag', { admin: false });
+      
+      if (membersError) throw membersError;
+      
+      return {
+        ...family,
+        members
+      };
+    } catch (error) {
+      // Make sure admin flag is reset in case of any other errors
+      try {
+        await supabase.rpc('set_admin_flag', { admin: false });
+      } catch (e) {
+        console.error('Error resetting admin flag:', e);
+      }
+      console.error('Error getting family by ID:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Gets all families with their members
+   * @returns A list of families with their members
+   */
+  static async getAllFamiliesWithMembers() {
+    try {
+      // Get the admin email from session storage
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Admin not authenticated. Please log in again.');
+      }
+      
+      // Set the admin flag to bypass RLS policies
+      await supabase.rpc('set_admin_flag', { admin: true });
+      
+      // Get all users with their family_id
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('*, family:family_id(id, family_name, created_at)')
+        .not('family_id', 'is', null);
+      
+      // Reset the admin flag after operation
+      await supabase.rpc('set_admin_flag', { admin: false });
+      
+      if (usersError) throw usersError;
+      
+      // Group users by family
+      const familiesMap = new Map();
+      
+      users.forEach(user => {
+        if (!user.family) return;
+        
+        const familyId = user.family.id;
+        
+        if (!familiesMap.has(familyId)) {
+          familiesMap.set(familyId, {
+            familyId: familyId,
+            familyName: user.family.family_name,
+            createdAt: user.family.created_at,
+            members: [],
+            memberCount: 0
+          });
+        }
+        
+        const family = familiesMap.get(familyId);
+        family.members.push(user);
+        family.memberCount++;
+      });
+      
+      return Array.from(familiesMap.values());
+    } catch (error) {
+      // Make sure admin flag is reset in case of any other errors
+      try {
+        await supabase.rpc('set_admin_flag', { admin: false });
+      } catch (e) {
+        console.error('Error resetting admin flag:', e);
+      }
+      console.error('Error getting all families with members:', error);
+      throw error;
+    }
+  }
+
   static async createDefaultQuestions(userId: string) {
     try {
       console.log('Creating default questions for user ID:', userId);
@@ -1128,6 +1345,8 @@ export class SupabaseService {
         .single();
 
       if (userError || !userData) {
+        // Reset the is_admin flag in case of error
+        await supabase.rpc('set_admin_flag', { admin: false });
         console.error('Error fetching user data:', userError);
         throw new Error('Could not retrieve user information');
       }
@@ -1209,7 +1428,7 @@ export class SupabaseService {
         }
       }
       
-      // Reset the is_admin flag
+      // Reset the is_admin flag after operation
       await supabase.rpc('set_admin_flag', { admin: false });
       
       if (successCount === 0) {
@@ -1219,9 +1438,13 @@ export class SupabaseService {
       console.log(`Successfully created ${successCount} default questions`);
       return { count: successCount };
     } catch (error) {
-      console.error('Error creating default questions:', error);
       // Reset the is_admin flag in case of error
-      await supabase.rpc('set_admin_flag', { admin: false });
+      try {
+        await supabase.rpc('set_admin_flag', { admin: false });
+      } catch (e) {
+        console.error('Error resetting admin flag:', e);
+      }
+      console.error('Error creating default questions:', error);
       throw error;
     }
   }
@@ -1242,242 +1465,102 @@ export class SupabaseService {
       // Hash the password before storing it
       const hashedPassword = await bcrypt.hash(userData.password, 10);
       
-      // Set the is_admin flag to true to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
-      
-      // Get the admin ID from the session
+      // Get the admin email from session storage
       const adminEmail = sessionStorage.getItem('adminEmail');
-      let adminId = null;
-      
-      if (adminEmail) {
-        const { data: admin } = await supabase
-          .from('admins')
-          .select('id')
-          .eq('email', adminEmail)
-          .single();
-          
-        if (admin) {
-          adminId = admin.id;
-        }
+      if (!adminEmail) {
+        throw new Error('Admin not authenticated. Please log in again.');
       }
       
-      // First create the family
+      // Get the admin ID from the database
+      const { data: admin, error: adminError } = await supabase
+        .from('admins')
+        .select('id')
+        .eq('email', adminEmail)
+        .single();
+        
+      if (adminError || !admin) {
+        console.error('Error getting admin:', adminError);
+        throw new Error('Admin not found. Please log in again.');
+      }
+      
+      // Set the admin flag to bypass RLS policies
+      await supabase.rpc('set_admin_flag', { admin: true });
+
+      // First create the user
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .insert({
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          email: userData.email,
+          password: hashedPassword,
+          role: userData.role,
+          persona: userData.persona,
+          status: userData.status
+        })
+        .select()
+        .single();
+      
+      if (userError) {
+        // Reset admin flag before throwing error
+        await supabase.rpc('set_admin_flag', { admin: false });
+        console.error('Error creating user:', userError);
+        throw userError;
+      }
+      
+      console.log('Created user:', user);
+      
+      // Then create the family with user_ref
       const { data: family, error: familyError } = await supabase
         .from('families')
         .insert({
           family_name: familyName,
-          admin_id: adminId
+          admin_id: admin.id,
+          user_ref: user.id
         })
         .select()
         .single();
       
       if (familyError) {
-        console.error('Error creating family:', familyError);
+        // Reset admin flag before throwing error
         await supabase.rpc('set_admin_flag', { admin: false });
+        console.error('Error creating family:', familyError);
         throw familyError;
       }
       
       console.log('Created family:', family);
       
-      // Then create the user with the family_id
-      const userData_with_family = {
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        email: userData.email,
-        password: hashedPassword,
-        role: userData.role,
-        persona: userData.persona,
-        status: userData.status,
-        family_id: family.id
-      };
-      
-      console.log('Creating user with data:', { ...userData_with_family, password: '[REDACTED]' });
-      
-      const { data, error } = await supabase
+      // Update the user with family_id
+      const { data: updatedUser, error: updateError } = await supabase
         .from('users')
-        .insert(userData_with_family)
+        .update({ family_id: family.id })
+        .eq('id', user.id)
         .select()
         .single();
       
-      // Reset the is_admin flag
-      await supabase.rpc('set_admin_flag', { admin: false });
-      
-      if (error) {
-        console.error('Error adding member to family:', error);
-        throw error;
+      if (updateError) {
+        // Reset admin flag before throwing error
+        await supabase.rpc('set_admin_flag', { admin: false });
+        console.error('Error updating user with family ID:', updateError);
+        throw updateError;
       }
       
-      console.log('Successfully added member to family:', data);
+      // Reset the admin flag after operation
+      await supabase.rpc('set_admin_flag', { admin: false });
+      
+      console.log('Successfully added member to family:', updatedUser);
       return {
         family,
-        user: data
+        user: updatedUser
       };
     } catch (error) {
+      // Reset the admin flag in case of error
+      try {
+        await supabase.rpc('set_admin_flag', { admin: false });
+      } catch (e) {
+        console.error('Error resetting admin flag:', e);
+      }
       console.error('Error creating family with member:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Adds a member to an existing family
-   * @param familyId The ID of the family to add the member to
-   * @param userData The data for the new family member
-   * @returns The created user
-   */
-  static async addMemberToFamily(familyId: string, userData: {
-    first_name: string;
-    last_name: string;
-    email: string;
-    password: string;
-    role: 'Father' | 'Mother' | 'Grandfather' | 'Grandmother' | 'Older Brother' | 'Older Sister' | 'Middle Brother' | 'Middle Sister' | 'Youngest Brother' | 'Youngest Sister';
-    persona: 'Parent' | 'Children';
-    status: 'Active' | 'Validating' | 'Not Active';
-  }) {
-    try {
-      console.log('Adding member to family with ID:', familyId);
-      
-      // Hash the password before storing it
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      
-      // Set the is_admin flag to true to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
-      
-      // First verify the family exists
-      const { data: family, error: familyError } = await supabase
-        .from('families')
-        .select('id, family_name')
-        .eq('id', familyId)
-        .single();
-        
-      if (familyError || !family) {
-        console.error('Family not found:', familyError);
-        throw new Error(`Family with ID ${familyId} not found`);
-      }
-      
-      console.log('Found family:', family);
-      
-      // Create the user with the family_id
-      const userData_with_family = {
-        first_name: userData.first_name,
-        last_name: userData.last_name,
-        email: userData.email,
-        password: hashedPassword,
-        role: userData.role,
-        persona: userData.persona,
-        status: userData.status,
-        family_id: familyId
-      };
-      
-      console.log('Creating user with data:', { ...userData_with_family, password: '[REDACTED]' });
-      
-      const { data, error } = await supabase
-        .from('users')
-        .insert(userData_with_family)
-        .select()
-        .single();
-      
-      // Reset the is_admin flag
-      await supabase.rpc('set_admin_flag', { admin: false });
-      
-      if (error) {
-        console.error('Error adding member to family:', error);
-        throw error;
-      }
-      
-      console.log('Successfully added member to family:', data);
-      return data;
-    } catch (error) {
-      console.error('Error adding member to family:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Gets a family by ID
-   * @param familyId The ID of the family to get
-   * @returns The family and its members
-   */
-  static async getFamilyById(familyId: string) {
-    try {
-      // Set the is_admin flag to true to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
-
-      // Get the family
-      const { data: family, error: familyError } = await supabase
-        .from('families')
-        .select('*')
-        .eq('id', familyId)
-        .single();
-      
-      if (familyError) throw familyError;
-      
-      // Get the family members
-      const { data: members, error: membersError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('family_id', familyId);
-      
-      if (membersError) throw membersError;
-      
-      // Reset the is_admin flag
-      await supabase.rpc('set_admin_flag', { admin: false });
-      
-      return {
-        ...family,
-        members
-      };
-    } catch (error) {
-      console.error('Error getting family by ID:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Gets all families with their members
-   * @returns A list of families with their members
-   */
-  static async getAllFamiliesWithMembers() {
-    try {
-      // Set the is_admin flag to true to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
-      
-      // Get all users with their family_id
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('*, family:family_id(id, family_name, created_at)')
-        .not('family_id', 'is', null);
-      
-      if (usersError) throw usersError;
-      
-      // Group users by family
-      const familiesMap = new Map();
-      
-      users.forEach(user => {
-        if (!user.family) return;
-        
-        const familyId = user.family.id;
-        
-        if (!familiesMap.has(familyId)) {
-          familiesMap.set(familyId, {
-            familyId: familyId,
-            familyName: user.family.family_name,
-            createdAt: user.family.created_at,
-            members: [],
-            memberCount: 0
-          });
-        }
-        
-        const family = familiesMap.get(familyId);
-        family.members.push(user);
-        family.memberCount++;
-      });
-      
-      // Reset the is_admin flag
-      await supabase.rpc('set_admin_flag', { admin: false });
-      
-      return Array.from(familiesMap.values());
-    } catch (error) {
-      console.error('Error getting all families:', error);
       throw error;
     }
   }
