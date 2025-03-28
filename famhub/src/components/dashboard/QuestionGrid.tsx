@@ -494,7 +494,7 @@ export default function QuestionGrid() {
                         onClick={() => handleCommentClick(question.id)}
                       >
                         <MessageSquare className="w-4 h-4 mr-1.5" />
-                        <span>{question.comment_count}</span>
+                        <span>{Math.abs(question.comment_count || 0)}</span>
                       </Button>
                     </div>
                     

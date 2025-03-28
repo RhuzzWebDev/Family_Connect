@@ -166,13 +166,13 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         throw new Error('User not found');
       }
 
-      // Fetch comments with likes information
+      // Fetch comments with likes information using LEFT JOIN instead of INNER JOIN
       const { data, error } = await supabase
         .from('comments')
         .select(`
           *,
           user:users!comments_user_id_fkey (first_name, last_name, role),
-          comment_likes!inner (user_id)
+          comment_likes (user_id)
         `)
         .eq('question_id', questionId)
         .order('created_at', { ascending: true });
@@ -184,7 +184,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Process the comments to add has_liked field
       const processedComments = (data || []).map(comment => ({
         ...comment,
-        has_liked: (comment.comment_likes as { user_id: string }[])?.some((like) => like.user_id === userData.id) || false
+        has_liked: comment.comment_likes?.some((like: { user_id: string }) => like.user_id === userData.id) || false
       }));
 
       setComments(processedComments);
