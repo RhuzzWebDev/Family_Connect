@@ -39,6 +39,12 @@ type MediaType = 'image' | 'video' | 'audio' | null;
 // Define type for tab options
 type TabType = 'text' | 'image' | 'video' | 'audio' | 'file';
 
+const MAX_RECORDING_DURATION = 60000; // 60 seconds
+const SUPPORTED_MIME_TYPES = {
+  video: ['video/webm', 'video/mp4'],
+  audio: ['audio/webm', 'audio/mp3', 'audio/wav']
+};
+
 export function CommentSection({ questionId }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentType[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -75,6 +81,56 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       return sessionStorage.getItem('userEmail');
     }
     return null;
+  };
+
+  const initializeMediaDevices = async () => {
+    try {
+      // Request permissions for both audio and video
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      // Stop the stream immediately after getting permissions
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Now enumerate devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      
+      const mics = devices.filter(device => device.kind === 'audioinput');
+      const cameras = devices.filter(device => device.kind === 'videoinput');
+      
+      console.log('Available microphones:', mics);
+      console.log('Available cameras:', cameras);
+      
+      setAvailableMicrophones(mics);
+      setAvailableCameras(cameras);
+      
+      // Set default devices if available
+      if (mics.length > 0) setSelectedMicrophone(mics[0].deviceId);
+      if (cameras.length > 0) setSelectedVideoDevice(cameras[0].deviceId);
+      
+    } catch (err) {
+      console.error('Error initializing media devices:', err);
+      setError(`Media device initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const checkBrowserSupport = () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Your browser does not support media recording. Please try a modern browser like Chrome, Firefox, or Edge.');
+    }
+    
+    // Check for MediaRecorder support
+    if (!window.MediaRecorder) {
+      throw new Error('Your browser does not support MediaRecorder. Please try a modern browser.');
+    }
+    
+    // Check MIME type support
+    const supportedVideoType = SUPPORTED_MIME_TYPES.video.find(type => MediaRecorder.isTypeSupported(type));
+    const supportedAudioType = SUPPORTED_MIME_TYPES.audio.find(type => MediaRecorder.isTypeSupported(type));
+    
+    if (!supportedVideoType || !supportedAudioType) {
+      throw new Error('Your browser does not support the required media formats.');
+    }
+    
+    return { supportedVideoType, supportedAudioType };
   };
 
   const fetchComments = async () => {
@@ -120,6 +176,17 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       };
     }
   }, [questionId]);
+
+  useEffect(() => {
+    initializeMediaDevices();
+    
+    // Listen for device changes
+    navigator.mediaDevices.addEventListener('devicechange', initializeMediaDevices);
+    
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', initializeMediaDevices);
+    };
+  }, []);
 
   useEffect(() => {
     if (videoRecordingMode === 'record' && !showCameraSelection && availableCameras.length === 0) {
@@ -234,101 +301,101 @@ export function CommentSection({ questionId }: CommentSectionProps) {
 
   const startVideoRecording = async () => {
     try {
+      const { supportedVideoType } = checkBrowserSupport();
+      
       if (!selectedVideoDevice) {
-        console.error("No video device selected");
-        setError("Please select a camera first");
-        return;
+        throw new Error("No camera selected");
       }
 
       console.log("Starting video recording with device:", selectedVideoDevice);
-      
-      // Reset any previous recordings
-      setVideoBlob(null);
-      setVideoPreviewUrl(null);
       
       const constraints = {
         audio: selectedMicrophone ? { deviceId: { exact: selectedMicrophone } } : true,
         video: {
           deviceId: { exact: selectedVideoDevice },
-          width: { min: 640, ideal: 1280 },
-          height: { min: 480, ideal: 720 }
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
         }
       };
 
-      console.log("Using constraints:", constraints);
+      console.log("Using video constraints:", constraints);
       
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       setVideoStream(mediaStream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.muted = true; // Prevent feedback
+        videoRef.current.muted = true;
         
-        // Wait for video element to be ready
         await new Promise<void>((resolve) => {
-          const checkReady = () => {
-            if (videoRef.current && videoRef.current.readyState >= 2) {
-              resolve();
-            } else if (videoRef.current) {
-              videoRef.current.onloadeddata = () => resolve();
-            }
-          };
-          checkReady();
+          if (videoRef.current) {
+            videoRef.current.onloadedmetadata = () => resolve();
+          }
         });
         
-        try {
-          await videoRef.current.play();
-        } catch (err) {
-          console.error('Failed to play video:', err);
-          throw new Error('Could not start video preview');
-        }
+        await videoRef.current.play();
       }
       
       setIsVideoRecording(true);
       
-      // Create a media recorder
       const videoChunks: Blob[] = [];
       const recorder = new MediaRecorder(mediaStream, {
-        mimeType: 'video/webm;codecs=vp8,opus',
+        mimeType: supportedVideoType,
         videoBitsPerSecond: 2500000
       });
       
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           videoChunks.push(e.data);
-          console.log("Video data chunk collected, size:", e.data.size);
+          console.log("Video chunk collected, size:", e.data.size);
         }
       };
       
       recorder.onstop = () => {
-        console.log("Video recording stopped, processing chunks...");
-        const blob = new Blob(videoChunks, { type: 'video/webm' });
-        console.log("Created video blob, size:", blob.size);
+        console.log("Video recording stopped");
+        const blob = new Blob(videoChunks, { type: supportedVideoType });
+        console.log("Video blob created, size:", blob.size);
         
         const url = URL.createObjectURL(blob);
         setVideoPreviewUrl(url);
         setVideoBlob(blob);
         
-        // Clean up stream
+        // Clean up resources
         if (videoStream) {
           videoStream.getTracks().forEach(track => track.stop());
         }
         setVideoStream(null);
         setIsVideoRecording(false);
+        
+        // Clean up object URL when component unmounts
+        return () => {
+          URL.revokeObjectURL(url);
+        };
       };
       
-      // Request data every second for smoother recording
+      recorder.onerror = (event) => {
+        console.error("Video MediaRecorder error:", event);
+        setError("Video recording failed: " + event.error.message);
+        cleanupMediaResources();
+      };
+      
       recorder.start(1000);
       videoRecorderRef.current = recorder;
       
+      // Set maximum recording duration
+      setTimeout(() => {
+        if (recorder.state === 'recording') {
+          console.log("Reached maximum recording duration");
+          recorder.stop();
+        }
+      }, MAX_RECORDING_DURATION);
+      
     } catch (err) {
-      console.error("Error starting video recording:", err);
-      setError("Failed to start recording. Please check your camera permissions.");
+      console.error("Error in startVideoRecording:", err);
+      setError(`Video recording failed: ${err instanceof Error ? err.message : String(err)}`);
       setIsVideoRecording(false);
-      if (videoStream) {
-        videoStream.getTracks().forEach(track => track.stop());
-      }
-      setVideoStream(null);
+      cleanupMediaResources();
     }
   };
 
@@ -336,6 +403,62 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     if (videoRecorderRef.current && videoRecorderRef.current.state !== "inactive") {
       console.log("Stopping video recording");
       videoRecorderRef.current.stop();
+    }
+  };
+
+  const startAudioRecording = async () => {
+    try {
+      if (!selectedMicrophone) {
+        throw new Error("No microphone selected");
+      }
+
+      console.log("Starting audio recording with device:", selectedMicrophone);
+      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { 
+          deviceId: { exact: selectedMicrophone },
+          echoCancellation: true,
+          noiseSuppression: true
+        },
+        video: false
+      });
+      
+      console.log("Audio stream obtained:", stream);
+      
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      audioChunksRef.current = [];
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+          console.log("Audio chunk collected, size:", e.data.size);
+        }
+      };
+      
+      recorder.onstop = () => {
+        console.log("Audio recording stopped");
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        console.log("Audio blob created, size:", blob.size);
+        setAudioBlob(blob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      recorder.onerror = (event) => {
+        console.error("MediaRecorder error:", event);
+        setError("Recording failed: " + event.error.message);
+      };
+      
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      
+    } catch (err) {
+      console.error("Error in startAudioRecording:", err);
+      setError(`Audio recording failed: ${err instanceof Error ? err.message : String(err)}`);
+      setIsRecording(false);
     }
   };
 
@@ -372,54 +495,6 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     } catch (err) {
       console.error('Error getting cameras:', err);
       setError('Could not get camera list. Please check your permissions.');
-    }
-  };
-
-  const startAudioRecording = async () => {
-    try {
-      if (!selectedMicrophone) {
-        console.error("No microphone selected");
-        setError("Please select a microphone first");
-        return;
-      }
-
-      console.log("Starting audio recording with device:", selectedMicrophone);
-      
-      const constraints = {
-        audio: { deviceId: { exact: selectedMicrophone } },
-        video: false
-      };
-      
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      const recorder = new MediaRecorder(stream);
-      
-      audioChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-          console.log("Audio data chunk collected, size:", e.data.size);
-        }
-      };
-      
-      recorder.onstop = () => {
-        console.log("Audio recording stopped, processing chunks...");
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        console.log("Created audio blob, size:", blob.size);
-        setAudioBlob(blob);
-        
-        // Clean up stream
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      // Request data every second for smoother recording
-      recorder.start(1000);
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-      
-    } catch (err) {
-      console.error("Error starting audio recording:", err);
-      setError("Failed to start recording. Please check your microphone permissions.");
-      setIsRecording(false);
     }
   };
 
@@ -654,6 +729,31 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         );
     }
   };
+
+  const cleanupMediaResources = () => {
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    if (videoPreviewUrl) {
+      URL.revokeObjectURL(videoPreviewUrl);
+      setVideoPreviewUrl(null);
+    }
+    
+    setVideoBlob(null);
+    setIsVideoRecording(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      cleanupMediaResources();
+    };
+  }, []);
 
   if (loading) {
     return <div className="py-4 text-center">Loading comments...</div>;
