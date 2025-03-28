@@ -116,6 +116,9 @@ $$ LANGUAGE plpgsql;
 -- Create the default admin accounts
 SELECT create_default_admins();
 
+-- Drop existing verify_admin_password function if it exists
+DROP FUNCTION IF EXISTS verify_admin_password(TEXT, TEXT);
+
 -- Function to verify admin password
 CREATE OR REPLACE FUNCTION verify_admin_password(
     admin_email TEXT,
