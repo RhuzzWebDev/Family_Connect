@@ -2,12 +2,18 @@
 
 import { useState, useEffect, useRef } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Heart, Reply, Send, Mic, FileIcon, Image as ImageIcon, Video, X } from "lucide-react";
+import { Heart, Reply, Send, Mic, FileIcon, Image as ImageIcon, Video, X, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import Image from "next/image";
 
 // Update the MediaRecorderErrorEvent type
@@ -110,6 +116,10 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<FamilyMember[]>([]);
   const mentionInputRef = useRef<HTMLTextAreaElement>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [replyEditingText, setReplyEditingText] = useState("");
 
   // Utility function for file validation
   const validateFile = (file: File, type: TabType): string | null => {
@@ -964,6 +974,249 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     fetchFamilyMembers();
   }, []);
 
+  const handleEdit = (comment: CommentType) => {
+    setEditingCommentId(comment.id);
+    setEditText(comment.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditText("");
+  };
+
+  const handleDelete = async (commentId: string) => {
+    try {
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to delete comments');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get comment to verify ownership
+      const { data: comment, error: commentError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', commentId)
+        .single();
+
+      if (commentError || !comment) {
+        throw new Error('Comment not found');
+      }
+
+      // Verify ownership
+      if (comment.user_id !== userData.id) {
+        setError('You can only delete your own comments');
+        return;
+      }
+
+      // Delete comment
+      const { error: deleteError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Fetch updated comments
+      fetchComments();
+    } catch (err) {
+      console.error('Error deleting comment:', err);
+      setError(handleError(err, 'Failed to delete comment'));
+    }
+  };
+
+  const handleSaveEdit = async (commentId: string) => {
+    try {
+      if (!editText.trim()) {
+        setError('Comment cannot be empty');
+        return;
+      }
+
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to edit comments');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get comment to verify ownership
+      const { data: comment, error: commentError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', commentId)
+        .single();
+
+      if (commentError || !comment) {
+        throw new Error('Comment not found');
+      }
+
+      // Verify ownership
+      if (comment.user_id !== userData.id) {
+        setError('You can only edit your own comments');
+        return;
+      }
+
+      // Update comment
+      const { error: updateError } = await supabase
+        .from('comments')
+        .update({ content: editText })
+        .eq('id', commentId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setEditingCommentId(null);
+      setEditText("");
+      fetchComments();
+    } catch (err) {
+      console.error('Error updating comment:', err);
+      setError(handleError(err, 'Failed to update comment'));
+    }
+  };
+
+  const handleReplyEdit = (reply: CommentType) => {
+    setEditingReplyId(reply.id);
+    setReplyEditingText(reply.content);
+  };
+
+  const handleReplyDelete = async (replyId: string) => {
+    try {
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to delete replies');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get reply to verify ownership
+      const { data: reply, error: replyError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', replyId)
+        .single();
+
+      if (replyError || !reply) {
+        throw new Error('Reply not found');
+      }
+
+      // Verify ownership
+      if (reply.user_id !== userData.id) {
+        setError('You can only delete your own replies');
+        return;
+      }
+
+      // Delete reply
+      const { error: deleteError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', replyId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Fetch updated comments
+      fetchComments();
+    } catch (err) {
+      console.error('Error deleting reply:', err);
+      setError(handleError(err, 'Failed to delete reply'));
+    }
+  };
+
+  const handleSaveReplyEdit = async (replyId: string) => {
+    try {
+      if (!replyEditingText.trim()) {
+        setError('Reply cannot be empty');
+        return;
+      }
+
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to edit replies');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get reply to verify ownership
+      const { data: reply, error: replyError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', replyId)
+        .single();
+
+      if (replyError || !reply) {
+        throw new Error('Reply not found');
+      }
+
+      // Verify ownership
+      if (reply.user_id !== userData.id) {
+        setError('You can only edit your own replies');
+        return;
+      }
+
+      // Update reply
+      const { error: updateError } = await supabase
+        .from('comments')
+        .update({ content: replyEditingText })
+        .eq('id', replyId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setEditingReplyId(null);
+      setReplyEditingText("");
+      fetchComments();
+    } catch (err) {
+      console.error('Error updating reply:', err);
+      setError(handleError(err, 'Failed to update reply'));
+    }
+  };
+
   if (loading) {
     return <div className="py-4 text-center">Loading comments...</div>;
   }
@@ -1537,19 +1790,65 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">
-                    {comment.user.first_name} {comment.user.last_name}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                  </span>
-                </div>
-                {comment.content && <p className="text-sm">{comment.content}</p>}
-                {comment.file_url && (
-                  <div className="mt-2">
-                    <MediaPreview type={comment.media_type} url={comment.file_url} />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {comment.user.first_name} {comment.user.last_name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                    </span>
                   </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-auto p-0">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEdit(comment)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => handleDelete(comment.id)}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {editingCommentId === comment.id ? (
+                  <div className="mt-2">
+                    <Textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="min-h-[60px]"
+                    />
+                    <div className="mt-2 flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                        Cancel
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleSaveEdit(comment.id)}
+                        disabled={!editText.trim()}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {comment.content && <p className="text-sm">{comment.content}</p>}
+                    {comment.file_url && (
+                      <div className="mt-2">
+                        <MediaPreview type={comment.media_type} url={comment.file_url} />
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="mt-1 flex items-center gap-2">
                   <Button
@@ -1627,37 +1926,81 @@ export function CommentSection({ questionId }: CommentSectionProps) {
             {getCommentReplies(comment.id).length > 0 && (
               <div className="ml-10 space-y-2">
                 {getCommentReplies(comment.id).map((reply) => (
-                  <div key={reply.id} className="flex items-start gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback>
-                        {reply.user.first_name[0]}{reply.user.last_name[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">
-                          {reply.user.first_name} {reply.user.last_name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(reply.created_at), { addSuffix: true })}
-                        </span>
-                      </div>
-                      {reply.content && <p className="text-sm">{reply.content}</p>}
-                      {reply.file_url && (
-                        <div className="mt-2">
-                          <MediaPreview type={reply.media_type} url={reply.file_url} />
+                  <div key={reply.id} className="ml-10 mt-2">
+                    <div className="flex items-start gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback>
+                          {reply.user.first_name[0]}{reply.user.last_name[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {reply.user.first_name} {reply.user.last_name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(reply.created_at), { addSuffix: true })}
+                            </span>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-auto p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleReplyEdit(reply)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleReplyDelete(reply.id)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                      )}
-                      <div className="mt-1 flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-auto p-0 text-xs"
-                          onClick={() => handleLike(reply.id)}
-                        >
-                          <Heart className="mr-1 h-3 w-3" />
-                          {reply.like_count > 0 && <span>{reply.like_count}</span>}
-                        </Button>
+                        {editingReplyId === reply.id ? (
+                          <div className="mt-2">
+                            <Textarea
+                              value={replyEditingText}
+                              onChange={(e) => setReplyEditingText(e.target.value)}
+                              className="min-h-[60px]"
+                            />
+                            <div className="mt-2 flex justify-end gap-2">
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => {
+                                  setEditingReplyId(null);
+                                  setReplyEditingText("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleSaveReplyEdit(reply.id)}
+                                disabled={!replyEditingText.trim()}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm">{reply.content}</p>
+                            {reply.file_url && (
+                              <div className="mt-2">
+                                <MediaPreview type={reply.media_type} url={reply.file_url} />
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
