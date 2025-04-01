@@ -24,6 +24,13 @@ interface CommentLike {
   user_id: string;
 }
 
+interface FamilyMember {
+  id: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+}
+
 interface CommentType {
   id: string;
   content: string;
@@ -70,6 +77,10 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const [newComment, setNewComment] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [replyMentionQuery, setReplyMentionQuery] = useState("");
+  const [showReplyMentionSuggestions, setShowReplyMentionSuggestions] = useState(false);
+  const [replyFilteredMembers, setReplyFilteredMembers] = useState<FamilyMember[]>([]);
+  const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -94,6 +105,11 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const [selectedVideoDevice, setSelectedVideoDevice] = useState<string | null>(null);
   const [showCameraSelection, setShowCameraSelection] = useState(false);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [filteredMembers, setFilteredMembers] = useState<FamilyMember[]>([]);
+  const mentionInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Utility function for file validation
   const validateFile = (file: File, type: TabType): string | null => {
@@ -345,6 +361,34 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const handleReply = (commentId: string) => {
     setReplyingTo(replyingTo === commentId ? null : commentId);
     setReplyText("");
+  };
+
+  const handleReplyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setReplyText(value);
+
+    // Check for mention trigger in reply
+    const lastAtIndex = value.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const query = value.slice(lastAtIndex + 1);
+      setReplyMentionQuery(query);
+      
+      // Filter family members based on query
+      const filtered = familyMembers.filter(member => 
+        member.first_name.toLowerCase().includes(query.toLowerCase())
+      );
+      setReplyFilteredMembers(filtered);
+      setShowReplyMentionSuggestions(true);
+    } else {
+      setShowReplyMentionSuggestions(false);
+    }
+  };
+
+  const handleReplyMentionSelect = (member: FamilyMember) => {
+    const lastAtIndex = replyText.lastIndexOf('@');
+    const newValue = replyText.slice(0, lastAtIndex) + `@${member.first_name} `;
+    setReplyText(newValue);
+    setShowReplyMentionSuggestions(false);
   };
 
   const submitReply = async (commentId: string) => {
@@ -854,6 +898,72 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     };
   }, []);
 
+  const fetchFamilyMembers = async () => {
+    try {
+      const userEmail = getUserEmail();
+      if (!userEmail) return;
+
+      // Get current user's details
+      const { data: currentUser, error: userError } = await supabase
+        .from('users')
+        .select('last_name')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !currentUser) {
+        console.error('Error fetching current user:', userError);
+        return;
+      }
+
+      // Get family members with the same last name
+      const { data: members, error: membersError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, role')
+        .eq('last_name', currentUser.last_name);
+
+      if (membersError) {
+        console.error('Error fetching family members:', membersError);
+        return;
+      }
+
+      setFamilyMembers(members || []);
+    } catch (err) {
+      console.error('Error in fetchFamilyMembers:', err);
+    }
+  };
+
+  const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setNewComment(value);
+
+    // Check for mention trigger
+    const lastAtIndex = value.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const query = value.slice(lastAtIndex + 1);
+      setMentionQuery(query);
+      
+      // Filter family members based on query
+      const filtered = familyMembers.filter(member => 
+        member.first_name.toLowerCase().includes(query.toLowerCase())
+      );
+      setFilteredMembers(filtered);
+      setShowMentionSuggestions(true);
+    } else {
+      setShowMentionSuggestions(false);
+    }
+  };
+
+  const handleMentionSelect = (member: FamilyMember) => {
+    const lastAtIndex = newComment.lastIndexOf('@');
+    const newValue = newComment.slice(0, lastAtIndex) + `@${member.first_name} `;
+    setNewComment(newValue);
+    setShowMentionSuggestions(false);
+  };
+
+  useEffect(() => {
+    fetchFamilyMembers();
+  }, []);
+
   if (loading) {
     return <div className="py-4 text-center">Loading comments...</div>;
   }
@@ -871,12 +981,33 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       <div className="border rounded-lg overflow-hidden">
         <div className="p-4">
           {activeTab === 'text' && (
-            <Textarea
-              placeholder="Add a comment..."
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              className="min-h-[80px]"
-            />
+            <div className="relative">
+              <Textarea
+                ref={mentionInputRef}
+                placeholder="Add a comment... Use @ to mention family members"
+                value={newComment}
+                onChange={handleCommentChange}
+                className="min-h-[80px]"
+              />
+              {showMentionSuggestions && filteredMembers.length > 0 && (
+                <div className="absolute bottom-full left-0 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto z-10">
+                  {filteredMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                      onClick={() => handleMentionSelect(member)}
+                    >
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback>
+                          {member.first_name[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{member.first_name} ({member.role})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           
           {activeTab === 'audio' && (
@@ -1450,12 +1581,33 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                   <AvatarFallback>Y</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <Textarea
-                    placeholder={`Reply to ${comment.user.first_name}...`}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    className="min-h-[60px]"
-                  />
+                  <div className="relative">
+                    <Textarea
+                      ref={replyInputRef}
+                      placeholder={`Reply to ${comment.user.first_name}... Use @ to mention family members`}
+                      value={replyText}
+                      onChange={handleReplyChange}
+                      className="min-h-[60px]"
+                    />
+                    {showReplyMentionSuggestions && replyFilteredMembers.length > 0 && (
+                      <div className="absolute bottom-full left-0 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto z-10">
+                        {replyFilteredMembers.map((member) => (
+                          <button
+                            key={member.id}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                            onClick={() => handleReplyMentionSelect(member)}
+                          >
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback>
+                                {member.first_name[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{member.first_name} ({member.role})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="mt-2 flex justify-end gap-2">
                     <Button size="sm" variant="outline" onClick={() => setReplyingTo(null)}>
                       Cancel
