@@ -9,16 +9,85 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { 
+  NotificationsDialog, 
+  Notification, 
+  CommentNotification, 
+  LikeNotification 
+} from '@/components/ui/notifications-dialog';
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [userData, setUserData] = useState({ name: '', email: '' });
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [userData, setUserData] = useState({ name: '', email: '', lastName: '' });
   const [isLoading, setIsLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Fetch user data from session
+  // Handle click outside to close menus
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Subscribe to real-time updates
+  useEffect(() => {
+    if (!userData.lastName) return;
+
+    // Subscribe to new comments
+    const commentsSubscription = supabase
+      .channel('comments-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'comments',
+          filter: `users.last_name=eq.${userData.lastName}`
+        },
+        async () => {
+          // Refetch notifications when a comment changes
+          await fetchNotifications(userData.lastName);
+        }
+      )
+      .subscribe();
+
+    // Subscribe to new likes
+    const likesSubscription = supabase
+      .channel('likes-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'questions_like',
+          filter: `users.last_name=eq.${userData.lastName}`
+        },
+        async () => {
+          // Refetch notifications when a like changes
+          await fetchNotifications(userData.lastName);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      commentsSubscription.unsubscribe();
+      likesSubscription.unsubscribe();
+    };
+  }, [userData.lastName]);
+
+  // Fetch user data and initial notifications
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -34,7 +103,6 @@ export function Navbar() {
 
           if (userError) throw userError;
 
-          // If user is not active, log them out
           if (user.status !== 'Active') {
             handleLogout();
             return;
@@ -43,16 +111,17 @@ export function Navbar() {
           if (user) {
             setUserData({
               name: `${user.first_name} ${user.last_name}`,
-              email: user.email
+              email: user.email,
+              lastName: user.last_name
             });
+            await fetchNotifications(user.last_name);
           }
         } else {
-          // No user is logged in, show default values
-          setUserData({ name: 'Guest User', email: 'Not logged in' });
+          setUserData({ name: 'Guest User', email: 'Not logged in', lastName: '' });
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
-        setUserData({ name: 'Guest User', email: 'Not logged in' });
+        setUserData({ name: 'Guest User', email: 'Not logged in', lastName: '' });
       } finally {
         setIsLoading(false);
       }
@@ -60,7 +129,6 @@ export function Navbar() {
 
     fetchUserData();
 
-    // Set up event listener for storage changes
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'userEmail') {
         fetchUserData();
@@ -73,23 +141,74 @@ export function Navbar() {
     };
   }, []);
 
-  // Handle click outside of user menu to close it
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false);
-      }
-    };
+  const fetchNotifications = async (lastName: string) => {
+    try {
+      // Fetch comments
+      const { data: comments } = await supabase
+        .from('comments')
+        .select(`
+          id,
+          content,
+          created_at,
+          users!inner(
+            first_name,
+            last_name
+          )
+        `)
+        .eq('users.last_name', lastName)
+        .order('created_at', { ascending: false })
+        .limit(10) as { data: CommentNotification[] | null };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+      // Fetch likes with user info
+      const { data: likes } = await supabase
+        .from('questions_like')
+        .select(`
+          id,
+          created_at,
+          user_id,
+          users (
+            first_name,
+            last_name
+          )
+        `)
+        .eq('users.last_name', lastName)
+        .order('created_at', { ascending: false })
+        .limit(10) as { data: LikeNotification[] | null };
+
+      const formattedNotifications = [
+        ...(comments?.map(comment => ({
+          id: comment.id,
+          type: 'comment' as const,
+          content: comment.content || '',
+          timestamp: comment.created_at,
+          user: {
+            first_name: comment.users.first_name,
+            last_name: comment.users.last_name
+          }
+        })) || []),
+        ...(likes?.map(like => ({
+          id: like.id,
+          type: 'like' as const,
+          content: 'liked a post',
+          timestamp: like.created_at,
+          user: {
+            first_name: like.users.first_name,
+            last_name: like.users.last_name
+          }
+        })) || [])
+      ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      setNotifications(formattedNotifications);
+      setNotificationCount(formattedNotifications.length);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      console.log('Error details:', error);
+    }
+  };
 
   const handleLogout = () => {
     sessionStorage.removeItem('userEmail');
-    setUserData({ name: 'Guest User', email: 'Not logged in' });
+    setUserData({ name: 'Guest User', email: 'Not logged in', lastName: '' });
     router.push('/login');
   };
 
@@ -112,12 +231,27 @@ export function Navbar() {
         </div>
         
         <div className="ml-auto flex items-center gap-6 pr-8">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white flex items-center justify-center">
-              3
-            </span>
-          </Button>
+          <div className="relative">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="relative"
+              onClick={() => setShowNotifications(!showNotifications)}
+            >
+              <Bell className="h-5 w-5" />
+              {notificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white flex items-center justify-center">
+                  {notificationCount}
+                </span>
+              )}
+            </Button>
+
+            <NotificationsDialog
+              notifications={notifications}
+              show={showNotifications}
+              onClose={() => setShowNotifications(false)}
+            />
+          </div>
 
           <Button
             variant="ghost"
