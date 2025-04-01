@@ -123,7 +123,10 @@ export default function QuestionGrid() {
             persona,
             family_id
           ),
-          question_likes!left (user_id)
+          question_likes!left (
+            user_id
+          ),
+          like_count
         `)
         .in('user_id', familyUserIds)
         .order('created_at', { ascending: false });
@@ -133,10 +136,16 @@ export default function QuestionGrid() {
       }
 
       // Process questions to add has_liked field
-      const processedQuestions = (data || []).map(question => ({
-        ...question,
-        has_liked: question.question_likes?.some((like: QuestionLike) => like.user_id === userData.id) || false
-      }));
+      const processedQuestions = (data || []).map(question => {
+        // Get the actual like count from question_likes array length
+        const actualLikeCount = question.question_likes?.length || 0;
+        
+        return {
+          ...question,
+          has_liked: question.question_likes?.some((like: QuestionLike) => like.user_id === userData.id) || false,
+          like_count: actualLikeCount // Use the actual count from the likes array
+        };
+      });
 
       setQuestions(processedQuestions);
     } catch (err) {
@@ -485,7 +494,7 @@ export default function QuestionGrid() {
                         className={`${question.has_liked ? 'text-red-500' : 'text-gray-500'} hover:text-red-500`}
                       >
                         <Heart className={`w-4 h-4 ${question.has_liked ? 'fill-current' : ''}`} />
-                        <span className="ml-1">{Math.max(0, question.like_count)}</span>
+                        <span className="ml-1">{question.like_count}</span>
                       </Button>
                       <Button
                         variant="ghost"
