@@ -57,6 +57,14 @@ const SUPPORTED_MIME_TYPES = {
   audio: ['audio/webm', 'audio/mp3', 'audio/wav']
 };
 
+// Constants for file validation
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const SUPPORTED_FILE_TYPES = {
+  image: ['image/jpeg', 'image/png', 'image/gif'],
+  video: ['video/webm', 'video/mp4', 'video/mov'],
+  audio: ['audio/webm', 'audio/mp3', 'audio/wav', 'audio/ogg']
+};
+
 export function CommentSection({ questionId }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentType[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -86,6 +94,32 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const [selectedVideoDevice, setSelectedVideoDevice] = useState<string | null>(null);
   const [showCameraSelection, setShowCameraSelection] = useState(false);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+
+  // Utility function for file validation
+  const validateFile = (file: File, type: TabType): string | null => {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      return 'File size must be less than 5MB';
+    }
+    
+    // Check file type
+    const fileType = file.type.split('/')[0];
+    if (type === 'image' && !SUPPORTED_FILE_TYPES.image.includes(file.type)) {
+      return 'Please select a valid image file';
+    } else if (type === 'video' && !SUPPORTED_FILE_TYPES.video.includes(file.type)) {
+      return 'Please select a valid video file';
+    } else if (type === 'audio' && !SUPPORTED_FILE_TYPES.audio.includes(file.type)) {
+      return 'Please select a valid audio file';
+    }
+    
+    return null;
+  };
+
+  // Error handler utility
+  const handleError = (err: unknown, customMessage?: string): string => {
+    console.error(customMessage || 'An error occurred:', err);
+    return `${customMessage || 'An error occurred'}: ${err instanceof Error ? err.message : String(err)}`;
+  };
 
   // Get current user from sessionStorage
   const getUserEmail = () => {
@@ -120,7 +154,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
     } catch (err) {
       console.error('Error initializing media devices:', err);
-      setError(`Media device initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(handleError(err, 'Media device initialization failed'));
     }
   };
 
@@ -190,7 +224,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       setComments(processedComments);
     } catch (err) {
       console.error('Error fetching comments:', err);
-      setError('Failed to load comments. Please try again.');
+      setError(handleError(err, 'Failed to load comments'));
     } finally {
       setLoading(false);
     }
@@ -239,7 +273,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Get current user
       const userEmail = getUserEmail();
       if (!userEmail) {
-        setError('You must be logged in to like comments');
+        setError(handleError(null, 'You must be logged in to like comments'));
         return;
       }
 
@@ -302,7 +336,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       }
     } catch (err) {
       console.error('Error handling like:', err);
-      setError('Failed to update like. Please try again.');
+      setError(handleError(err, 'Failed to update like'));
       // Revert optimistic update
       fetchComments();
     }
@@ -321,7 +355,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Get current user
       const userEmail = getUserEmail();
       if (!userEmail) {
-        setError('You must be logged in to reply');
+        setError(handleError(null, 'You must be logged in to reply'));
         return;
       }
 
@@ -362,7 +396,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       fetchComments();
     } catch (err) {
       console.error('Error submitting reply:', err);
-      setError('Failed to submit reply. Please try again.');
+      setError(handleError(err, 'Failed to submit reply'));
     } finally {
       setSubmitting(false);
     }
@@ -446,7 +480,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       recorder.onerror = function(this: MediaRecorder, event: Event) {
         const errorEvent = event as Event & { error: MediaRecorderError };
         console.error("Video MediaRecorder error:", errorEvent);
-        setError("Video recording failed: " + errorEvent.error.message);
+        setError(handleError(errorEvent.error, 'Video recording failed'));
         cleanupMediaResources();
       };
       
@@ -463,7 +497,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
     } catch (err) {
       console.error("Error in startVideoRecording:", err);
-      setError(`Video recording failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(handleError(err, 'Video recording failed'));
       setIsVideoRecording(false);
       cleanupMediaResources();
     }
@@ -519,7 +553,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       recorder.onerror = function(this: MediaRecorder, event: Event) {
         const errorEvent = event as Event & { error: MediaRecorderError };
         console.error("MediaRecorder error:", errorEvent);
-        setError("Recording failed: " + errorEvent.error.message);
+        setError(handleError(errorEvent.error, 'Recording failed'));
       };
       
       recorder.start(1000);
@@ -528,7 +562,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
     } catch (err) {
       console.error("Error in startAudioRecording:", err);
-      setError(`Audio recording failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(handleError(err, 'Audio recording failed'));
       setIsRecording(false);
     }
   };
@@ -547,7 +581,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       setShowMicrophoneSelection(true);
     } catch (err) {
       console.error('Error getting microphones:', err);
-      setError('Could not get microphone list. Please check your permissions.');
+      setError(handleError(err, 'Could not get microphone list'));
     }
   };
 
@@ -565,7 +599,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       setShowCameraSelection(true);
     } catch (err) {
       console.error('Error getting cameras:', err);
-      setError('Could not get camera list. Please check your permissions.');
+      setError(handleError(err, 'Could not get camera list'));
     }
   };
 
@@ -577,7 +611,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     
     try {
       if (!newComment.trim() && !selectedFile && !audioBlob && !videoBlob) {
-        setError("Please enter a comment or attach media");
+        setError(handleError(null, 'Please enter a comment or attach media'));
         setSubmitting(false);
         return;
       }
@@ -585,7 +619,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Get user session
       const userEmail = sessionStorage.getItem("userEmail");
       if (!userEmail) {
-        setError("You must be logged in to comment");
+        setError(handleError(null, 'You must be logged in to comment'));
         setSubmitting(false);
         return;
       }
@@ -599,7 +633,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
       if (userError || !userData) {
         console.error("Error fetching user data:", userError);
-        setError("Could not retrieve user information");
+        setError(handleError(userError, 'Could not retrieve user information'));
         setSubmitting(false);
         return;
       }
@@ -686,7 +720,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
           });
         } catch (fileError) {
           console.error("File handling error:", fileError);
-          setError(`File processing failed: ${fileError instanceof Error ? fileError.message : JSON.stringify(fileError)}`);
+          setError(handleError(fileError, 'File processing failed'));
           setSubmitting(false);
           return;
         }
@@ -716,7 +750,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         
         if (insertError) {
           console.error("Error creating comment:", insertError);
-          setError(`Failed to post comment: ${insertError.message}`);
+          setError(handleError(insertError, 'Failed to post comment'));
           setSubmitting(false);
           return;
         }
@@ -736,13 +770,13 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         
       } catch (err) {
         console.error("Error submitting comment:", err);
-        setError(`An unexpected error occurred: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
+        setError(handleError(err, 'An unexpected error occurred'));
       } finally {
         setSubmitting(false);
       }
     } catch (err) {
       console.error("Error submitting comment:", err);
-      setError(`An unexpected error occurred: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
+      setError(handleError(err, 'An unexpected error occurred'));
     } finally {
       setSubmitting(false);
     }
@@ -858,22 +892,9 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       
-                      // Validate file size (5MB limit)
-                      if (file.size > 5 * 1024 * 1024) {
-                        setError('File size must be less than 5MB');
-                        return;
-                      }
-                      
-                      // Validate file type based on active tab
-                      const fileType = file.type.split('/')[0];
-                      if ((activeTab as 'image' | 'video' | 'audio') === 'image' && fileType !== 'image') {
-                        setError('Please select an image file');
-                        return;
-                      } else if ((activeTab as 'image' | 'video' | 'audio') === 'video' && fileType !== 'video') {
-                        setError('Please select a video file');
-                        return;
-                      } else if ((activeTab as 'image' | 'video' | 'audio') === 'audio' && fileType !== 'audio') {
-                        setError('Please select an audio file');
+                      const error = validateFile(file, 'audio');
+                      if (error) {
+                        setError(error);
                         return;
                       }
                       
@@ -1042,28 +1063,15 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                       <input
                         type="file"
                         id="videoUpload"
-                        className="hidden"
                         accept="video/*"
+                        className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           
-                          // Validate file size (5MB limit)
-                          if (file.size > 5 * 1024 * 1024) {
-                            setError('File size must be less than 5MB');
-                            return;
-                          }
-                          
-                          // Validate file type based on active tab
-                          const fileType = file.type.split('/')[0];
-                          if ((activeTab as 'image' | 'video' | 'audio') === 'image' && fileType !== 'image') {
-                            setError('Please select an image file');
-                            return;
-                          } else if ((activeTab as 'image' | 'video' | 'audio') === 'video' && fileType !== 'video') {
-                            setError('Please select a video file');
-                            return;
-                          } else if ((activeTab as 'image' | 'video' | 'audio') === 'audio' && fileType !== 'audio') {
-                            setError('Please select an audio file');
+                          const error = validateFile(file, 'video');
+                          if (error) {
+                            setError(error);
                             return;
                           }
                           
@@ -1075,7 +1083,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                         htmlFor="videoUpload"
                         className="flex items-center justify-center w-full py-4 border border-dashed rounded-md cursor-pointer hover:bg-gray-50"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-center gap-2">
                           <Video className="w-6 h-6 text-gray-400" />
                           <span className="text-sm text-gray-500">Upload Video</span>
                         </div>
@@ -1292,9 +1300,9 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   
-                  // Validate file size (5MB limit)
-                  if (file.size > 5 * 1024 * 1024) {
-                    setError('File size must be less than 5MB');
+                  const error = validateFile(file, 'file');
+                  if (error) {
+                    setError(error);
                     return;
                   }
                   
@@ -1335,7 +1343,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
             ></div>
           </div>
         )}
-        
+        {/* comment upload options */}
         <div className="p-4 border-t bg-gray-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
