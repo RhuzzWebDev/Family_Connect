@@ -2,12 +2,18 @@
 
 import { useState, useEffect, useRef } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Heart, Reply, Send, Mic, FileIcon, Image as ImageIcon, Video, X } from "lucide-react";
+import { Heart, Reply, Send, Mic, FileIcon, Image as ImageIcon, Video, X, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import Image from "next/image";
 
 // Update the MediaRecorderErrorEvent type
@@ -22,6 +28,13 @@ interface CommentSectionProps {
 
 interface CommentLike {
   user_id: string;
+}
+
+interface FamilyMember {
+  id: string;
+  first_name: string;
+  last_name: string;
+  role: string;
 }
 
 interface CommentType {
@@ -57,11 +70,23 @@ const SUPPORTED_MIME_TYPES = {
   audio: ['audio/webm', 'audio/mp3', 'audio/wav']
 };
 
+// Constants for file validation
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const SUPPORTED_FILE_TYPES = {
+  image: ['image/jpeg', 'image/png', 'image/gif'],
+  video: ['video/webm', 'video/mp4', 'video/mov'],
+  audio: ['audio/webm', 'audio/mp3', 'audio/wav', 'audio/ogg']
+};
+
 export function CommentSection({ questionId }: CommentSectionProps) {
   const [comments, setComments] = useState<CommentType[]>([]);
   const [newComment, setNewComment] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [replyMentionQuery, setReplyMentionQuery] = useState("");
+  const [showReplyMentionSuggestions, setShowReplyMentionSuggestions] = useState(false);
+  const [replyFilteredMembers, setReplyFilteredMembers] = useState<FamilyMember[]>([]);
+  const replyInputRef = useRef<HTMLTextAreaElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +111,41 @@ export function CommentSection({ questionId }: CommentSectionProps) {
   const [selectedVideoDevice, setSelectedVideoDevice] = useState<string | null>(null);
   const [showCameraSelection, setShowCameraSelection] = useState(false);
   const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [filteredMembers, setFilteredMembers] = useState<FamilyMember[]>([]);
+  const mentionInputRef = useRef<HTMLTextAreaElement>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [replyEditingText, setReplyEditingText] = useState("");
+
+  // Utility function for file validation
+  const validateFile = (file: File, type: TabType): string | null => {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      return 'File size must be less than 5MB';
+    }
+    
+    // Check file type
+    const fileType = file.type.split('/')[0];
+    if (type === 'image' && !SUPPORTED_FILE_TYPES.image.includes(file.type)) {
+      return 'Please select a valid image file';
+    } else if (type === 'video' && !SUPPORTED_FILE_TYPES.video.includes(file.type)) {
+      return 'Please select a valid video file';
+    } else if (type === 'audio' && !SUPPORTED_FILE_TYPES.audio.includes(file.type)) {
+      return 'Please select a valid audio file';
+    }
+    
+    return null;
+  };
+
+  // Error handler utility
+  const handleError = (err: unknown, customMessage?: string): string => {
+    console.error(customMessage || 'An error occurred:', err);
+    return `${customMessage || 'An error occurred'}: ${err instanceof Error ? err.message : String(err)}`;
+  };
 
   // Get current user from sessionStorage
   const getUserEmail = () => {
@@ -120,7 +180,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
     } catch (err) {
       console.error('Error initializing media devices:', err);
-      setError(`Media device initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(handleError(err, 'Media device initialization failed'));
     }
   };
 
@@ -190,7 +250,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       setComments(processedComments);
     } catch (err) {
       console.error('Error fetching comments:', err);
-      setError('Failed to load comments. Please try again.');
+      setError(handleError(err, 'Failed to load comments'));
     } finally {
       setLoading(false);
     }
@@ -239,7 +299,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Get current user
       const userEmail = getUserEmail();
       if (!userEmail) {
-        setError('You must be logged in to like comments');
+        setError(handleError(null, 'You must be logged in to like comments'));
         return;
       }
 
@@ -274,8 +334,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         const { error } = await supabase
           .from('comment_likes')
           .delete()
-          .eq('comment_id', commentId)
-          .eq('user_id', userData.id);
+          .match({ comment_id: commentId, user_id: userData.id });
 
         if (error) throw error;
 
@@ -303,7 +362,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       }
     } catch (err) {
       console.error('Error handling like:', err);
-      setError('Failed to update like. Please try again.');
+      setError(handleError(err, 'Failed to update like'));
       // Revert optimistic update
       fetchComments();
     }
@@ -314,6 +373,34 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     setReplyText("");
   };
 
+  const handleReplyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setReplyText(value);
+
+    // Check for mention trigger in reply
+    const lastAtIndex = value.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const query = value.slice(lastAtIndex + 1);
+      setReplyMentionQuery(query);
+      
+      // Filter family members based on query
+      const filtered = familyMembers.filter(member => 
+        member.first_name.toLowerCase().includes(query.toLowerCase())
+      );
+      setReplyFilteredMembers(filtered);
+      setShowReplyMentionSuggestions(true);
+    } else {
+      setShowReplyMentionSuggestions(false);
+    }
+  };
+
+  const handleReplyMentionSelect = (member: FamilyMember) => {
+    const lastAtIndex = replyText.lastIndexOf('@');
+    const newValue = replyText.slice(0, lastAtIndex) + `@${member.first_name} `;
+    setReplyText(newValue);
+    setShowReplyMentionSuggestions(false);
+  };
+
   const submitReply = async (commentId: string) => {
     if (!replyText.trim()) return;
     setSubmitting(true);
@@ -322,7 +409,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Get current user
       const userEmail = getUserEmail();
       if (!userEmail) {
-        setError('You must be logged in to reply');
+        setError(handleError(null, 'You must be logged in to reply'));
         return;
       }
 
@@ -363,7 +450,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       fetchComments();
     } catch (err) {
       console.error('Error submitting reply:', err);
-      setError('Failed to submit reply. Please try again.');
+      setError(handleError(err, 'Failed to submit reply'));
     } finally {
       setSubmitting(false);
     }
@@ -447,7 +534,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       recorder.onerror = function(this: MediaRecorder, event: Event) {
         const errorEvent = event as Event & { error: MediaRecorderError };
         console.error("Video MediaRecorder error:", errorEvent);
-        setError("Video recording failed: " + errorEvent.error.message);
+        setError(handleError(errorEvent.error, 'Video recording failed'));
         cleanupMediaResources();
       };
       
@@ -464,7 +551,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
     } catch (err) {
       console.error("Error in startVideoRecording:", err);
-      setError(`Video recording failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(handleError(err, 'Video recording failed'));
       setIsVideoRecording(false);
       cleanupMediaResources();
     }
@@ -520,7 +607,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       recorder.onerror = function(this: MediaRecorder, event: Event) {
         const errorEvent = event as Event & { error: MediaRecorderError };
         console.error("MediaRecorder error:", errorEvent);
-        setError("Recording failed: " + errorEvent.error.message);
+        setError(handleError(errorEvent.error, 'Recording failed'));
       };
       
       recorder.start(1000);
@@ -529,7 +616,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
     } catch (err) {
       console.error("Error in startAudioRecording:", err);
-      setError(`Audio recording failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(handleError(err, 'Audio recording failed'));
       setIsRecording(false);
     }
   };
@@ -548,7 +635,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       setShowMicrophoneSelection(true);
     } catch (err) {
       console.error('Error getting microphones:', err);
-      setError('Could not get microphone list. Please check your permissions.');
+      setError(handleError(err, 'Could not get microphone list'));
     }
   };
 
@@ -566,7 +653,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       setShowCameraSelection(true);
     } catch (err) {
       console.error('Error getting cameras:', err);
-      setError('Could not get camera list. Please check your permissions.');
+      setError(handleError(err, 'Could not get camera list'));
     }
   };
 
@@ -578,7 +665,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     
     try {
       if (!newComment.trim() && !selectedFile && !audioBlob && !videoBlob) {
-        setError("Please enter a comment or attach media");
+        setError(handleError(null, 'Please enter a comment or attach media'));
         setSubmitting(false);
         return;
       }
@@ -586,7 +673,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       // Get user session
       const userEmail = sessionStorage.getItem("userEmail");
       if (!userEmail) {
-        setError("You must be logged in to comment");
+        setError(handleError(null, 'You must be logged in to comment'));
         setSubmitting(false);
         return;
       }
@@ -600,7 +687,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       
       if (userError || !userData) {
         console.error("Error fetching user data:", userError);
-        setError("Could not retrieve user information");
+        setError(handleError(userError, 'Could not retrieve user information'));
         setSubmitting(false);
         return;
       }
@@ -687,7 +774,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
           });
         } catch (fileError) {
           console.error("File handling error:", fileError);
-          setError(`File processing failed: ${fileError instanceof Error ? fileError.message : JSON.stringify(fileError)}`);
+          setError(handleError(fileError, 'File processing failed'));
           setSubmitting(false);
           return;
         }
@@ -708,12 +795,6 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       console.log("Creating comment with data:", commentData);
       
       try {
-        // Set the user context for RLS policies
-        await supabase.auth.setSession({
-          access_token: sessionStorage.getItem('supabase.auth.token') || '',
-          refresh_token: ''
-        });
-        
         const { data: insertData, error: insertError } = await supabase
           .from('comments')
           .insert(commentData)
@@ -723,7 +804,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         
         if (insertError) {
           console.error("Error creating comment:", insertError);
-          setError(`Failed to post comment: ${insertError.message}`);
+          setError(handleError(insertError, 'Failed to post comment'));
           setSubmitting(false);
           return;
         }
@@ -743,13 +824,13 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         
       } catch (err) {
         console.error("Error submitting comment:", err);
-        setError(`An unexpected error occurred: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
+        setError(handleError(err, 'An unexpected error occurred'));
       } finally {
         setSubmitting(false);
       }
     } catch (err) {
       console.error("Error submitting comment:", err);
-      setError(`An unexpected error occurred: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
+      setError(handleError(err, 'An unexpected error occurred'));
     } finally {
       setSubmitting(false);
     }
@@ -827,6 +908,315 @@ export function CommentSection({ questionId }: CommentSectionProps) {
     };
   }, []);
 
+  const fetchFamilyMembers = async () => {
+    try {
+      const userEmail = getUserEmail();
+      if (!userEmail) return;
+
+      // Get current user's details
+      const { data: currentUser, error: userError } = await supabase
+        .from('users')
+        .select('last_name')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !currentUser) {
+        console.error('Error fetching current user:', userError);
+        return;
+      }
+
+      // Get family members with the same last name
+      const { data: members, error: membersError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, role')
+        .eq('last_name', currentUser.last_name);
+
+      if (membersError) {
+        console.error('Error fetching family members:', membersError);
+        return;
+      }
+
+      setFamilyMembers(members || []);
+    } catch (err) {
+      console.error('Error in fetchFamilyMembers:', err);
+    }
+  };
+
+  const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setNewComment(value);
+
+    // Check for mention trigger
+    const lastAtIndex = value.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const query = value.slice(lastAtIndex + 1);
+      setMentionQuery(query);
+      
+      // Filter family members based on query
+      const filtered = familyMembers.filter(member => 
+        member.first_name.toLowerCase().includes(query.toLowerCase())
+      );
+      setFilteredMembers(filtered);
+      setShowMentionSuggestions(true);
+    } else {
+      setShowMentionSuggestions(false);
+    }
+  };
+
+  const handleMentionSelect = (member: FamilyMember) => {
+    const lastAtIndex = newComment.lastIndexOf('@');
+    const newValue = newComment.slice(0, lastAtIndex) + `@${member.first_name} `;
+    setNewComment(newValue);
+    setShowMentionSuggestions(false);
+  };
+
+  useEffect(() => {
+    fetchFamilyMembers();
+  }, []);
+
+  const handleEdit = (comment: CommentType) => {
+    setEditingCommentId(comment.id);
+    setEditText(comment.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditText("");
+  };
+
+  const handleDelete = async (commentId: string) => {
+    try {
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to delete comments');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get comment to verify ownership
+      const { data: comment, error: commentError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', commentId)
+        .single();
+
+      if (commentError || !comment) {
+        throw new Error('Comment not found');
+      }
+
+      // Verify ownership
+      if (comment.user_id !== userData.id) {
+        setError('You can only delete your own comments');
+        return;
+      }
+
+      // Delete comment
+      const { error: deleteError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Fetch updated comments
+      fetchComments();
+    } catch (err) {
+      console.error('Error deleting comment:', err);
+      setError(handleError(err, 'Failed to delete comment'));
+    }
+  };
+
+  const handleSaveEdit = async (commentId: string) => {
+    try {
+      if (!editText.trim()) {
+        setError('Comment cannot be empty');
+        return;
+      }
+
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to edit comments');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get comment to verify ownership
+      const { data: comment, error: commentError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', commentId)
+        .single();
+
+      if (commentError || !comment) {
+        throw new Error('Comment not found');
+      }
+
+      // Verify ownership
+      if (comment.user_id !== userData.id) {
+        setError('You can only edit your own comments');
+        return;
+      }
+
+      // Update comment
+      const { error: updateError } = await supabase
+        .from('comments')
+        .update({ content: editText })
+        .eq('id', commentId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setEditingCommentId(null);
+      setEditText("");
+      fetchComments();
+    } catch (err) {
+      console.error('Error updating comment:', err);
+      setError(handleError(err, 'Failed to update comment'));
+    }
+  };
+
+  const handleReplyEdit = (reply: CommentType) => {
+    setEditingReplyId(reply.id);
+    setReplyEditingText(reply.content);
+  };
+
+  const handleReplyDelete = async (replyId: string) => {
+    try {
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to delete replies');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get reply to verify ownership
+      const { data: reply, error: replyError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', replyId)
+        .single();
+
+      if (replyError || !reply) {
+        throw new Error('Reply not found');
+      }
+
+      // Verify ownership
+      if (reply.user_id !== userData.id) {
+        setError('You can only delete your own replies');
+        return;
+      }
+
+      // Delete reply
+      const { error: deleteError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', replyId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Fetch updated comments
+      fetchComments();
+    } catch (err) {
+      console.error('Error deleting reply:', err);
+      setError(handleError(err, 'Failed to delete reply'));
+    }
+  };
+
+  const handleSaveReplyEdit = async (replyId: string) => {
+    try {
+      if (!replyEditingText.trim()) {
+        setError('Reply cannot be empty');
+        return;
+      }
+
+      const userEmail = getUserEmail();
+      if (!userEmail) {
+        setError('You must be logged in to edit replies');
+        return;
+      }
+
+      // Get user from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+
+      // Get reply to verify ownership
+      const { data: reply, error: replyError } = await supabase
+        .from('comments')
+        .select('user_id')
+        .eq('id', replyId)
+        .single();
+
+      if (replyError || !reply) {
+        throw new Error('Reply not found');
+      }
+
+      // Verify ownership
+      if (reply.user_id !== userData.id) {
+        setError('You can only edit your own replies');
+        return;
+      }
+
+      // Update reply
+      const { error: updateError } = await supabase
+        .from('comments')
+        .update({ content: replyEditingText })
+        .eq('id', replyId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setEditingReplyId(null);
+      setReplyEditingText("");
+      fetchComments();
+    } catch (err) {
+      console.error('Error updating reply:', err);
+      setError(handleError(err, 'Failed to update reply'));
+    }
+  };
+
   if (loading) {
     return <div className="py-4 text-center">Loading comments...</div>;
   }
@@ -844,12 +1234,33 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       <div className="border rounded-lg overflow-hidden">
         <div className="p-4">
           {activeTab === 'text' && (
-            <Textarea
-              placeholder="Add a comment..."
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              className="min-h-[80px]"
-            />
+            <div className="relative">
+              <Textarea
+                ref={mentionInputRef}
+                placeholder="Add a comment... Use @ to mention family members"
+                value={newComment}
+                onChange={handleCommentChange}
+                className="min-h-[80px]"
+              />
+              {showMentionSuggestions && filteredMembers.length > 0 && (
+                <div className="absolute bottom-full left-0 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto z-10">
+                  {filteredMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                      onClick={() => handleMentionSelect(member)}
+                    >
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback>
+                          {member.first_name[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{member.first_name} ({member.role})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           
           {activeTab === 'audio' && (
@@ -865,22 +1276,9 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       
-                      // Validate file size (5MB limit)
-                      if (file.size > 5 * 1024 * 1024) {
-                        setError('File size must be less than 5MB');
-                        return;
-                      }
-                      
-                      // Validate file type based on active tab
-                      const fileType = file.type.split('/')[0];
-                      if ((activeTab as 'image' | 'video' | 'audio') === 'image' && fileType !== 'image') {
-                        setError('Please select an image file');
-                        return;
-                      } else if ((activeTab as 'image' | 'video' | 'audio') === 'video' && fileType !== 'video') {
-                        setError('Please select a video file');
-                        return;
-                      } else if ((activeTab as 'image' | 'video' | 'audio') === 'audio' && fileType !== 'audio') {
-                        setError('Please select an audio file');
+                      const error = validateFile(file, 'audio');
+                      if (error) {
+                        setError(error);
                         return;
                       }
                       
@@ -1049,28 +1447,15 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                       <input
                         type="file"
                         id="videoUpload"
-                        className="hidden"
                         accept="video/*"
+                        className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           
-                          // Validate file size (5MB limit)
-                          if (file.size > 5 * 1024 * 1024) {
-                            setError('File size must be less than 5MB');
-                            return;
-                          }
-                          
-                          // Validate file type based on active tab
-                          const fileType = file.type.split('/')[0];
-                          if ((activeTab as 'image' | 'video' | 'audio') === 'image' && fileType !== 'image') {
-                            setError('Please select an image file');
-                            return;
-                          } else if ((activeTab as 'image' | 'video' | 'audio') === 'video' && fileType !== 'video') {
-                            setError('Please select a video file');
-                            return;
-                          } else if ((activeTab as 'image' | 'video' | 'audio') === 'audio' && fileType !== 'audio') {
-                            setError('Please select an audio file');
+                          const error = validateFile(file, 'video');
+                          if (error) {
+                            setError(error);
                             return;
                           }
                           
@@ -1082,7 +1467,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                         htmlFor="videoUpload"
                         className="flex items-center justify-center w-full py-4 border border-dashed rounded-md cursor-pointer hover:bg-gray-50"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-center gap-2">
                           <Video className="w-6 h-6 text-gray-400" />
                           <span className="text-sm text-gray-500">Upload Video</span>
                         </div>
@@ -1299,9 +1684,9 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   
-                  // Validate file size (5MB limit)
-                  if (file.size > 5 * 1024 * 1024) {
-                    setError('File size must be less than 5MB');
+                  const error = validateFile(file, 'file');
+                  if (error) {
+                    setError(error);
                     return;
                   }
                   
@@ -1342,7 +1727,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
             ></div>
           </div>
         )}
-        
+        {/* comment upload options */}
         <div className="p-4 border-t bg-gray-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -1405,19 +1790,65 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">
-                    {comment.user.first_name} {comment.user.last_name}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                  </span>
-                </div>
-                {comment.content && <p className="text-sm">{comment.content}</p>}
-                {comment.file_url && (
-                  <div className="mt-2">
-                    <MediaPreview type={comment.media_type} url={comment.file_url} />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {comment.user.first_name} {comment.user.last_name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                    </span>
                   </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-auto p-0">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEdit(comment)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => handleDelete(comment.id)}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                {editingCommentId === comment.id ? (
+                  <div className="mt-2">
+                    <Textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="min-h-[60px]"
+                    />
+                    <div className="mt-2 flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={handleCancelEdit}>
+                        Cancel
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleSaveEdit(comment.id)}
+                        disabled={!editText.trim()}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {comment.content && <p className="text-sm">{comment.content}</p>}
+                    {comment.file_url && (
+                      <div className="mt-2">
+                        <MediaPreview type={comment.media_type} url={comment.file_url} />
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="mt-1 flex items-center gap-2">
                   <Button
@@ -1449,12 +1880,33 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                   <AvatarFallback>Y</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <Textarea
-                    placeholder={`Reply to ${comment.user.first_name}...`}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    className="min-h-[60px]"
-                  />
+                  <div className="relative">
+                    <Textarea
+                      ref={replyInputRef}
+                      placeholder={`Reply to ${comment.user.first_name}... Use @ to mention family members`}
+                      value={replyText}
+                      onChange={handleReplyChange}
+                      className="min-h-[60px]"
+                    />
+                    {showReplyMentionSuggestions && replyFilteredMembers.length > 0 && (
+                      <div className="absolute bottom-full left-0 w-full bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto z-10">
+                        {replyFilteredMembers.map((member) => (
+                          <button
+                            key={member.id}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                            onClick={() => handleReplyMentionSelect(member)}
+                          >
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback>
+                                {member.first_name[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{member.first_name} ({member.role})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="mt-2 flex justify-end gap-2">
                     <Button size="sm" variant="outline" onClick={() => setReplyingTo(null)}>
                       Cancel
@@ -1474,37 +1926,81 @@ export function CommentSection({ questionId }: CommentSectionProps) {
             {getCommentReplies(comment.id).length > 0 && (
               <div className="ml-10 space-y-2">
                 {getCommentReplies(comment.id).map((reply) => (
-                  <div key={reply.id} className="flex items-start gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarFallback>
-                        {reply.user.first_name[0]}{reply.user.last_name[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">
-                          {reply.user.first_name} {reply.user.last_name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(reply.created_at), { addSuffix: true })}
-                        </span>
-                      </div>
-                      {reply.content && <p className="text-sm">{reply.content}</p>}
-                      {reply.file_url && (
-                        <div className="mt-2">
-                          <MediaPreview type={reply.media_type} url={reply.file_url} />
+                  <div key={reply.id} className="ml-10 mt-2">
+                    <div className="flex items-start gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback>
+                          {reply.user.first_name[0]}{reply.user.last_name[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {reply.user.first_name} {reply.user.last_name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(reply.created_at), { addSuffix: true })}
+                            </span>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-auto p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleReplyEdit(reply)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleReplyDelete(reply.id)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                      )}
-                      <div className="mt-1 flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-auto p-0 text-xs"
-                          onClick={() => handleLike(reply.id)}
-                        >
-                          <Heart className="mr-1 h-3 w-3" />
-                          {reply.like_count > 0 && <span>{reply.like_count}</span>}
-                        </Button>
+                        {editingReplyId === reply.id ? (
+                          <div className="mt-2">
+                            <Textarea
+                              value={replyEditingText}
+                              onChange={(e) => setReplyEditingText(e.target.value)}
+                              className="min-h-[60px]"
+                            />
+                            <div className="mt-2 flex justify-end gap-2">
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => {
+                                  setEditingReplyId(null);
+                                  setReplyEditingText("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleSaveReplyEdit(reply.id)}
+                                disabled={!replyEditingText.trim()}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm">{reply.content}</p>
+                            {reply.file_url && (
+                              <div className="mt-2">
+                                <MediaPreview type={reply.media_type} url={reply.file_url} />
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
