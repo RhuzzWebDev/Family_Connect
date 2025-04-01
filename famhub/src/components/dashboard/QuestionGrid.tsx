@@ -31,6 +31,7 @@ interface Question {
   };
   has_liked?: boolean;
   question_likes?: QuestionLike[];
+  comments?: any[];
 }
 
 interface Comment {
@@ -126,7 +127,10 @@ export default function QuestionGrid() {
           question_likes!left (
             user_id
           ),
-          like_count
+          like_count,
+          comments:comments!left (
+            id
+          )
         `)
         .in('user_id', familyUserIds)
         .order('created_at', { ascending: false });
@@ -139,11 +143,14 @@ export default function QuestionGrid() {
       const processedQuestions = (data || []).map(question => {
         // Get the actual like count from question_likes array length
         const actualLikeCount = question.question_likes?.length || 0;
+        // Get the actual comment count from comments array length
+        const actualCommentCount = question.comments?.length || 0;
         
         return {
           ...question,
           has_liked: question.question_likes?.some((like: QuestionLike) => like.user_id === userData.id) || false,
-          like_count: actualLikeCount // Use the actual count from the likes array
+          like_count: actualLikeCount, // Use the actual count from the likes array
+          comment_count: actualCommentCount // Use the actual count from the comments array
         };
       });
 
@@ -486,7 +493,8 @@ export default function QuestionGrid() {
                     </div>
                   )}
                   <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    <div className="flex items-center gap-3">
+                    {/* Likes function */}
+                    <div className="flex items-center gap-3">  
                       <Button
                         variant="ghost"
                         size="sm"
@@ -496,6 +504,7 @@ export default function QuestionGrid() {
                         <Heart className={`w-4 h-4 ${question.has_liked ? 'fill-current' : ''}`} />
                         <span className="ml-1">{question.like_count}</span>
                       </Button>
+                      {/* Comments function */}
                       <Button
                         variant="ghost"
                         size="sm"
