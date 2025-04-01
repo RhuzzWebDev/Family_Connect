@@ -274,8 +274,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         const { error } = await supabase
           .from('comment_likes')
           .delete()
-          .eq('comment_id', commentId)
-          .eq('user_id', userData.id);
+          .match({ comment_id: commentId, user_id: userData.id });
 
         if (error) throw error;
 
@@ -708,12 +707,6 @@ export function CommentSection({ questionId }: CommentSectionProps) {
       console.log("Creating comment with data:", commentData);
       
       try {
-        // Set the user context for RLS policies
-        await supabase.auth.setSession({
-          access_token: sessionStorage.getItem('supabase.auth.token') || '',
-          refresh_token: ''
-        });
-        
         const { data: insertData, error: insertError } = await supabase
           .from('comments')
           .insert(commentData)
