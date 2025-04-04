@@ -77,17 +77,15 @@ export default function AdminLoginForm() {
 
     setLoading(true);
     try {
-      // Verify admin credentials
-      const admin = await SupabaseService.verifyAdmin(formData.email, formData.password);
+      // Use Supabase Auth for admin login
+      const admin = await SupabaseService.adminLogin(formData.email, formData.password);
       
       if (!admin) {
         throw new Error('Invalid email or password');
       }
-
-      // Store admin email in session storage
-      sessionStorage.setItem('adminEmail', admin.email);
       
       // Redirect to admin dashboard
+      // No need to manually set sessionStorage/localStorage as it's handled in the service
       router.push('/admin/dashboard');
     } catch (error) {
       console.error('Login error:', error);

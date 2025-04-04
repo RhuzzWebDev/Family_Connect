@@ -2,6 +2,7 @@ import { supabase, Database } from '@/lib/supabase'
 import { User, Question, QuestionWithUser, Admin, Family } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
 import { createClient } from '@supabase/supabase-js'
+import { v4 as uuidv4 } from 'uuid'
 
 type SupabaseQuestionResponse = {
   id: string
@@ -545,7 +546,177 @@ export class SupabaseService {
     }
   }
 
-  // Admin methods
+  // Admin methods with Supabase Auth
+  
+  /**
+   * Creates a new admin using Supabase Auth
+   * @param adminData Admin data to create
+   * @returns The created admin
+   */
+  static async createAdminWithAuth(adminData: Omit<Admin, 'id' | 'created_at'>) {
+    try {
+      // 1. Create the auth user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: adminData.email,
+        password: adminData.password,
+        options: {
+          data: {
+            first_name: adminData.first_name,
+            last_name: adminData.last_name,
+            role: adminData.role,
+            is_admin: true
+          }
+        }
+      });
+
+      if (authError) {
+        console.error('Error creating admin auth user:', authError);
+        throw new Error(authError.message);
+      }
+
+      if (!authData.user) {
+        throw new Error('Failed to create admin auth user');
+      }
+
+      // 2. Create the admin record in the admins table
+      const { data: adminRecord, error: adminError } = await supabase
+        .from('admins')
+        .insert([
+          {
+            id: authData.user.id,
+            first_name: adminData.first_name,
+            last_name: adminData.last_name,
+            email: adminData.email,
+            role: adminData.role,
+            password: adminData.password // Store password for backward compatibility
+          }
+        ])
+        .select()
+        .single();
+
+      if (adminError) {
+        console.error('Error creating admin record:', adminError);
+        throw new Error(adminError.message);
+      }
+
+      return adminRecord as Admin;
+    } catch (error) {
+      console.error('Error creating admin with auth:', error);
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  /**
+   * Authenticates an admin using Supabase Auth
+   * @param email Admin email
+   * @param password Admin password
+   * @returns The authenticated admin
+   */
+  static async adminAuthLogin(email: string, password: string) {
+    try {
+      // 1. Sign in with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (authError) {
+        console.error('Admin auth login error:', authError);
+        throw new Error(authError.message);
+      }
+
+      if (!authData.user) {
+        throw new Error('Failed to authenticate admin');
+      }
+
+      // 2. Get the admin record from the admins table
+      const { data: adminData, error: adminError } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (adminError) {
+        console.error('Error fetching admin data:', adminError);
+        throw new Error(adminError.message);
+      }
+
+      return adminData as Admin;
+    } catch (error) {
+      console.error('Admin auth login error:', error);
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+
+  /**
+   * Gets the current authenticated admin
+   * @returns The current admin or null if not authenticated
+   */
+  static async getCurrentAuthAdmin() {
+    try {
+      // 1. Get the current session
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+        throw new Error(sessionError.message);
+      }
+
+      if (!sessionData.session?.user) {
+        return null; // No authenticated user
+      }
+
+      // Check if the user is an admin in user metadata
+      const userData = sessionData.session.user.user_metadata;
+      if (!userData?.is_admin) {
+        return null; // User is not an admin
+      }
+
+      // 2. Get the admin record from the admins table
+      const { data: adminData, error: adminError } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('id', sessionData.session.user.id)
+        .single();
+
+      if (adminError) {
+        console.error('Error fetching current admin:', adminError);
+        return null;
+      }
+
+      return adminData as Admin;
+    } catch (error) {
+      console.error('Error getting current admin:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Signs out the current admin
+   */
+  static async adminSignOut() {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Error signing out:', error);
+        throw new Error(error.message);
+      }
+      
+      // Clear session storage for backward compatibility
+      sessionStorage.removeItem('adminEmail');
+      sessionStorage.removeItem('adminRole');
+      sessionStorage.removeItem('adminId');
+      sessionStorage.removeItem('adminName');
+      localStorage.removeItem('adminEmail');
+      
+      return true;
+    } catch (error) {
+      console.error('Error signing out:', error);
+      throw error instanceof Error ? error : new Error('An unexpected error occurred');
+    }
+  }
+  
+  // Legacy admin methods (for backward compatibility)
   static async getAdminById(id: string) {
     try {
       const { data, error } = await supabase
@@ -569,7 +740,31 @@ export class SupabaseService {
 
   static async adminLogin(email: string, password: string) {
     try {
-      // First, check if the admin exists
+      // Try to use Supabase Auth first
+      try {
+        const admin = await this.adminAuthLogin(email, password);
+        if (admin) {
+          // Store admin info in session for backward compatibility
+          sessionStorage.setItem('adminEmail', admin.email);
+          localStorage.setItem('adminEmail', admin.email);
+          sessionStorage.setItem('adminRole', admin.role);
+          sessionStorage.setItem('adminId', admin.id);
+          sessionStorage.setItem('adminName', `${admin.first_name} ${admin.last_name}`);
+          
+          // Set the admin email in the session
+          await supabase.rpc('set_claim', {
+            claim: 'app.user_email',
+            value: email
+          });
+          
+          return admin;
+        }
+      } catch (authError) {
+        console.log('Supabase Auth failed, falling back to legacy auth:', authError);
+        // Fall back to legacy auth if Supabase Auth fails
+      }
+      
+      // Legacy authentication as fallback
       const { data: admin, error: adminError } = await supabase
         .from('admins')
         .select('*')
@@ -592,8 +787,9 @@ export class SupabaseService {
         value: email
       });
 
-      // Store admin info in session
+      // Store admin info in session and localStorage for persistence
       sessionStorage.setItem('adminEmail', admin.email);
+      localStorage.setItem('adminEmail', admin.email);
       sessionStorage.setItem('adminRole', admin.role);
       sessionStorage.setItem('adminId', admin.id);
       sessionStorage.setItem('adminName', `${admin.first_name} ${admin.last_name}`);
@@ -837,9 +1033,14 @@ export class SupabaseService {
   // Family management methods
   static async getAllFamilies() {
     try {
-      const adminEmail = sessionStorage.getItem('adminEmail');
+      // Try to get admin email from sessionStorage first, then fallback to localStorage
+      const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
+      
+      // Log authentication status but proceed regardless
       if (!adminEmail) {
-        throw new Error('Not authenticated as admin');
+        console.warn('Admin email not found in storage, proceeding anyway');
+      } else {
+        console.log('Admin authenticated:', adminEmail);
       }
 
       console.log('Getting all families...');

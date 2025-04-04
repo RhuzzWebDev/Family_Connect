@@ -32,15 +32,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const adminEmail = sessionStorage.getItem('adminEmail');
+        // First try to get the admin from Supabase Auth
+        const authAdmin = await SupabaseService.getCurrentAuthAdmin();
+        
+        if (authAdmin) {
+          setAdmin(authAdmin);
+          setLoading(false);
+          return;
+        }
+        
+        // Fallback to session/local storage for backward compatibility
+        const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
         if (!adminEmail) {
           router.push('/admin/login');
           return;
         }
+        
+        // Ensure both storage mechanisms have the admin email
+        sessionStorage.setItem('adminEmail', adminEmail);
+        localStorage.setItem('adminEmail', adminEmail);
 
         const adminData = await SupabaseService.getAdminByEmail(adminEmail);
         if (!adminData) {
           sessionStorage.removeItem('adminEmail');
+          localStorage.removeItem('adminEmail');
           router.push('/admin/login');
           return;
         }
@@ -48,7 +63,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         setAdmin(adminData);
       } catch (error) {
         console.error('Auth check error:', error);
+        // Clear all auth data
         sessionStorage.removeItem('adminEmail');
+        localStorage.removeItem('adminEmail');
         router.push('/admin/login');
       } finally {
         setLoading(false);
@@ -58,9 +75,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     checkAuth();
   }, [router]);
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('adminEmail');
-    router.push('/admin/login');
+  const handleLogout = async () => {
+    try {
+      // Sign out using Supabase Auth
+      await SupabaseService.adminSignOut();
+      // No need to manually clear session/local storage as it's handled in the service
+      router.push('/admin/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Fallback to manual logout if Supabase Auth fails
+      sessionStorage.removeItem('adminEmail');
+      localStorage.removeItem('adminEmail');
+      router.push('/admin/login');
+    }
   };
 
   if (loading) {
