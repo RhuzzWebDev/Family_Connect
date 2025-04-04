@@ -663,14 +663,31 @@ export class SupabaseService {
       }
 
       if (!sessionData.session?.user) {
+        console.log('No authenticated session found');
         return null; // No authenticated user
       }
 
-      // Check if the user is an admin in user metadata
-      const userData = sessionData.session.user.user_metadata;
-      if (!userData?.is_admin) {
+      console.log('Found authenticated session, checking for admin status');
+      
+      // Check if the user is an admin in app_metadata first
+      const appMetadata = sessionData.session.user.app_metadata;
+      let isAdmin = appMetadata?.is_admin === true;
+      
+      if (!isAdmin) {
+        console.log('Not an admin in app_metadata, checking user_metadata');
+        // Try user_metadata if app_metadata doesn't have admin flag
+        const userMetadata = sessionData.session.user.user_metadata;
+        isAdmin = userMetadata?.is_admin === true || 
+                 userMetadata?.role === 'sysAdmin' || 
+                 userMetadata?.role === 'Admin';
+      }
+      
+      if (!isAdmin) {
+        console.log('User is not an admin in any metadata');
         return null; // User is not an admin
       }
+      
+      console.log('User confirmed as admin, fetching admin record');
 
       // 2. Get the admin record from the admins table
       const { data: adminData, error: adminError } = await supabase
@@ -681,9 +698,24 @@ export class SupabaseService {
 
       if (adminError) {
         console.error('Error fetching current admin:', adminError);
-        return null;
+        
+        // Try to get admin by auth_user_id as a fallback
+        const { data: adminByAuthId, error: authIdError } = await supabase
+          .from('admins')
+          .select('*')
+          .eq('auth_user_id', sessionData.session.user.id)
+          .single();
+          
+        if (authIdError || !adminByAuthId) {
+          console.error('Error fetching admin by auth_user_id:', authIdError);
+          return null;
+        }
+        
+        console.log('Found admin by auth_user_id');
+        return adminByAuthId as Admin;
       }
 
+      console.log('Found admin record:', adminData?.email);
       return adminData as Admin;
     } catch (error) {
       console.error('Error getting current admin:', error);
@@ -966,17 +998,77 @@ export class SupabaseService {
 
   static async updateAdminPassword(adminId: string, newPassword: string) {
     try {
-      const adminEmail = sessionStorage.getItem('adminEmail');
-      if (!adminEmail) {
-        throw new Error('Not authenticated as admin');
+      // First check if user is authenticated with Supabase Auth
+      const { data: sessionData } = await supabase.auth.getSession();
+      let isAuthenticated = false;
+      let isSysAdmin = false;
+      
+      if (sessionData.session?.user) {
+        isAuthenticated = true;
+        // Check if the user is a sysAdmin in metadata
+        const metadata = sessionData.session.user.user_metadata;
+        isSysAdmin = metadata?.role === 'sysAdmin';
+        
+        if (!isSysAdmin) {
+          // Try app_metadata if user_metadata doesn't have role
+          const appMetadata = sessionData.session.user.app_metadata;
+          isSysAdmin = appMetadata?.admin_role === 'sysAdmin';
+        }
       }
+      
+      // Fallback to legacy authentication if not authenticated via Supabase Auth
+      if (!isAuthenticated || !isSysAdmin) {
+        const adminEmail = sessionStorage.getItem('adminEmail');
+        if (!adminEmail) {
+          throw new Error('Not authenticated as admin');
+        }
 
-      // Check if the current admin is a sysAdmin
-      const currentAdmin = await this.getAdminByEmail(adminEmail);
-      if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
-        throw new Error('Only system administrators can update admin accounts');
+        // Check if the current admin is a sysAdmin
+        const currentAdmin = await this.getAdminByEmail(adminEmail);
+        if (!currentAdmin || currentAdmin.role !== 'sysAdmin') {
+          throw new Error('Only system administrators can update admin accounts');
+        }
+        
+        isSysAdmin = true;
       }
-
+      
+      if (!isSysAdmin) {
+        throw new Error('Only system administrators can update admin passwords');
+      }
+      
+      // Get the admin to update
+      const { data: adminToUpdate, error: getError } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('id', adminId)
+        .single();
+        
+      if (getError || !adminToUpdate) {
+        throw new Error('Admin not found');
+      }
+      
+      // Update in Supabase Auth if auth_user_id exists
+      if (adminToUpdate.auth_user_id) {
+        try {
+          // Update the password in Supabase Auth
+          const { error: authUpdateError } = await supabase.auth.admin.updateUserById(
+            adminToUpdate.auth_user_id,
+            { password: newPassword }
+          );
+          
+          if (authUpdateError) {
+            console.error('Error updating auth user password:', authUpdateError);
+            // Continue anyway to update the admin record
+          } else {
+            console.log('Updated auth user password successfully');
+          }
+        } catch (authError) {
+          console.error('Error updating auth user password:', authError);
+          // Continue anyway to update the admin record
+        }
+      }
+      
+      // Update the password in the admins table for backward compatibility
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       
       const { data, error } = await supabase
@@ -1033,34 +1125,165 @@ export class SupabaseService {
   // Family management methods
   static async getAllFamilies() {
     try {
-      // Try to get admin email from sessionStorage first, then fallback to localStorage
-      const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
-      
-      // Log authentication status but proceed regardless
-      if (!adminEmail) {
-        console.warn('Admin email not found in storage, proceeding anyway');
-      } else {
-        console.log('Admin authenticated:', adminEmail);
-      }
-
       console.log('Getting all families...');
       
-      // Set admin flag to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
-
-      // Get all families
-      const { data: familiesData, error: familiesError } = await supabase
-        .from('families')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (familiesError) {
-        console.error('Error fetching families:', familiesError);
-        throw new Error(familiesError.message);
+      let isAdmin = false;
+      
+      // Check if user is authenticated with Supabase Auth
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+      }
+      
+      const isAuthenticated = !!sessionData?.session;
+      
+      if (isAuthenticated) {
+        console.log('User authenticated with Supabase Auth');
+        
+        // Get user metadata to check if they're an admin
+        const appMetadata = sessionData.session?.user?.app_metadata;
+        isAdmin = appMetadata?.is_admin === true;
+        
+        if (isAdmin) {
+          console.log('User is authenticated as admin with Supabase Auth (app_metadata)');
+          // Store admin email in both session and local storage for persistence
+          const userEmail = sessionData.session?.user?.email;
+          if (userEmail) {
+            sessionStorage.setItem('adminEmail', userEmail);
+            localStorage.setItem('adminEmail', userEmail);
+            console.log('Stored admin email in storage for persistence:', userEmail);
+          }
+        } else {
+          console.log('Checking user_metadata for admin status...');
+          // Try user_metadata if app_metadata doesn't have admin flag
+          const userMetadata = sessionData.session?.user?.user_metadata;
+          isAdmin = userMetadata?.is_admin === true || 
+                   userMetadata?.role === 'sysAdmin' || 
+                   userMetadata?.role === 'Admin';
+          
+          if (isAdmin) {
+            console.log('User is authenticated as admin via user_metadata');
+            // Store admin email in both session and local storage for persistence
+            const userEmail = sessionData.session?.user?.email;
+            if (userEmail) {
+              sessionStorage.setItem('adminEmail', userEmail);
+              localStorage.setItem('adminEmail', userEmail);
+              console.log('Stored admin email in storage for persistence:', userEmail);
+            }
+          } else {
+            console.warn('User is authenticated but not an admin');
+          }
+        }
+      }
+      
+      // Fallback to legacy authentication if not authenticated via Supabase Auth
+      if (!isAuthenticated || !isAdmin) {
+        console.warn('No Supabase Auth admin session found, attempting legacy authentication');
+        
+        const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
+        if (!adminEmail) {
+          console.warn('No admin authentication found in any storage mechanism');
+          throw new Error('Not authenticated as admin');
+        }
+        
+        console.log('Found legacy admin authentication:', adminEmail);
+        
+        // Ensure both storage mechanisms have the admin email for persistence
+        sessionStorage.setItem('adminEmail', adminEmail);
+        localStorage.setItem('adminEmail', adminEmail);
+        
+        // Verify admin status
+        const adminData = await this.getAdminByEmail(adminEmail);
+        if (!adminData) {
+          console.log('Admin not found with email:', adminEmail);
+          throw new Error('Admin not found');
+        }
+        
+        console.log('Authenticated as admin via legacy method:', adminData.email);
+        isAdmin = true;
+      }
+      
+      if (!isAdmin) {
+        console.log('User is not an admin');
+        throw new Error('Not authorized as admin');
+      }
+      
+      // Set admin flag to bypass RLS - using the correct parameter format from schema.sql
+      let adminFlagSet = false;
+      try {
+        console.log('Setting admin flag to bypass RLS...');
+        // The function signature is set_admin_flag(admin BOOLEAN)
+        const { data: flagData, error: flagError } = await supabase.rpc('set_admin_flag', { admin: true });
+        
+        if (flagError) {
+          console.error('Error setting admin flag:', flagError);
+          // Don't throw here, just log and continue
+          console.log('Will attempt to proceed despite admin flag error');
+        } else {
+          console.log('Admin flag set successfully');
+          adminFlagSet = true;
+        }
+        
+        // We'll proceed regardless of whether the flag was set successfully
+        // This is a more resilient approach that won't break the entire flow
+      } catch (flagError) {
+        console.error('Exception setting admin flag:', flagError);
+        // Don't throw here, just log and continue
+        console.log('Will attempt to proceed despite admin flag exception');
       }
 
-      console.log('Families data:', familiesData);
+      // Try using the stored procedure first (most reliable approach)
+      let familiesData;
+      try {
+        console.log('Attempting to fetch families using stored procedure...');
+        const { data: procData, error: procError } = await supabase
+          .rpc('admin_get_all_families');
 
+        if (!procError && procData) {
+          console.log('Successfully fetched families using stored procedure');
+          // Transform the data to match the expected format
+          familiesData = procData.map((family: { id: string; family_name: string; created_at: string; member_count: number }) => ({
+            id: family.id,
+            family_name: family.family_name,
+            created_at: family.created_at
+          }));
+        } else {
+          console.error('Error using stored procedure:', procError);
+          console.log('Falling back to regular query...');
+          
+          // Fallback to regular query
+          const { data: regFamilies, error: familiesError } = await supabase
+            .from('families')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (familiesError) {
+            console.error('Error fetching families:', familiesError);
+            throw new Error(familiesError.message);
+          }
+          
+          familiesData = regFamilies;
+        }
+      } catch (procCallError) {
+        console.error('Exception calling stored procedure:', procCallError);
+        console.log('Falling back to regular query...');
+        
+        // Fallback to regular query
+        const { data: regFamilies, error: familiesError } = await supabase
+          .from('families')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (familiesError) {
+          console.error('Error fetching families:', familiesError);
+          throw new Error(familiesError.message);
+        }
+        
+        familiesData = regFamilies;
+      }
+
+      console.log('Families data:', familiesData?.length ? `Found ${familiesData.length} families` : 'No families found');
+      
       // Get all users
       const { data: usersData, error: usersError } = await supabase
         .from('users')
@@ -1072,7 +1295,7 @@ export class SupabaseService {
         throw new Error(usersError.message);
       }
 
-      console.log('Users data:', usersData);
+      console.log('Users data:', usersData?.length ? `Found ${usersData.length} users` : 'No users found');
 
       // Group users by family_id
       const usersByFamilyId = usersData.reduce((acc: Record<string, User[]>, user) => {
@@ -1088,7 +1311,7 @@ export class SupabaseService {
       console.log('Users grouped by family_id:', usersByFamilyId);
 
       // Format the families for display
-      const formattedFamilies = familiesData.map(family => {
+      const formattedFamilies = familiesData.map((family: { id: string; family_name: string; created_at: string }) => {
         const members = usersByFamilyId[family.id] || [];
         
         return {
@@ -1103,7 +1326,19 @@ export class SupabaseService {
       console.log('Formatted families:', formattedFamilies);
 
       // Reset admin flag
-      await supabase.rpc('set_admin_flag', { admin: false });
+      if (adminFlagSet) {
+        try {
+          const { data: resetData, error: resetError } = await supabase.rpc('set_admin_flag', { admin: false });
+          
+          if (resetError) {
+            throw resetError;
+          }
+          
+          console.log('Admin flag reset successfully:', resetData);
+        } catch (flagError) {
+          console.error('Error resetting admin flag:', flagError);
+        }
+      }
 
       return formattedFamilies;
     } catch (error) {
@@ -1114,11 +1349,102 @@ export class SupabaseService {
 
   static async getFamilyMembersByLastName(lastName: string) {
     try {
-      const adminEmail = sessionStorage.getItem('adminEmail');
-      if (!adminEmail) {
-        throw new Error('Not authenticated as admin');
+      console.log(`Getting family members with last name: ${lastName}`);
+      let isAdmin = false;
+      
+      // Check if user is authenticated with Supabase Auth
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+      }
+      
+      const isAuthenticated = !!sessionData?.session;
+      
+      if (isAuthenticated) {
+        console.log('User is authenticated with Supabase Auth');
+        // Check app_metadata first
+        const appMetadata = sessionData.session?.user?.app_metadata;
+        isAdmin = appMetadata?.is_admin === true;
+        
+        if (!isAdmin) {
+          // Try user_metadata if app_metadata doesn't have admin flag
+          const userMetadata = sessionData.session?.user?.user_metadata;
+          isAdmin = userMetadata?.is_admin === true || 
+                   userMetadata?.role === 'sysAdmin' || 
+                   userMetadata?.role === 'Admin';
+        }
+        
+        console.log('Is admin from metadata:', isAdmin);
+      } else {
+        console.log('No Supabase Auth session found, trying legacy authentication');
+      }
+      
+      // Fallback to legacy authentication if not authenticated via Supabase Auth
+      if (!isAuthenticated || !isAdmin) {
+        const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
+        if (!adminEmail) {
+          console.log('No admin email found in session/local storage');
+          throw new Error('Not authenticated as admin');
+        }
+        
+        // Ensure both storage mechanisms have the admin email
+        sessionStorage.setItem('adminEmail', adminEmail);
+        localStorage.setItem('adminEmail', adminEmail);
+        
+        // Verify admin status
+        const adminData = await this.getAdminByEmail(adminEmail);
+        if (!adminData) {
+          console.log('Admin not found with email:', adminEmail);
+          throw new Error('Admin not found');
+        }
+        
+        console.log('Authenticated as admin via legacy method:', adminData.email);
+        isAdmin = true;
+      }
+      
+      if (!isAdmin) {
+        console.log('User is not an admin');
+        throw new Error('Not authorized as admin');
+      }
+      
+      // Set admin flag to bypass RLS - using the correct parameter format
+      let adminFlagSet = false;
+      try {
+        console.log('Setting admin flag to bypass RLS...');
+        const { data: flagData, error: flagError } = await supabase.rpc('set_admin_flag', { admin: true });
+        
+        if (flagError) {
+          console.error('Error setting admin flag:', flagError);
+          // Don't throw here, just log and continue
+          console.log('Will attempt to proceed despite admin flag error');
+        } else {
+          console.log('Admin flag set successfully');
+          adminFlagSet = true;
+        }
+        
+        // Try a second time if the first attempt failed
+        if (!adminFlagSet) {
+          console.log('Retrying admin flag setting...');
+          const { error: retryError } = await supabase.rpc('set_admin_flag', { admin: true });
+          
+          if (retryError) {
+            console.error('Error in retry setting admin flag:', retryError);
+            console.log('Will attempt to proceed despite retry error');
+          } else {
+            console.log('Admin flag set successfully on retry');
+            adminFlagSet = true;
+          }
+        }
+        
+        // We'll proceed regardless of whether the flag was set successfully
+        // This is a more resilient approach that won't break the entire flow
+      } catch (flagError) {
+        console.error('Exception setting admin flag:', flagError);
+        // Don't throw here, just log and continue
+        console.log('Will attempt to proceed despite admin flag exception');
       }
 
+      console.log(`Querying users with last name: ${lastName}`);
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -1126,7 +1452,25 @@ export class SupabaseService {
         .order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Error fetching users:', error);
         throw new Error(error.message);
+      }
+      
+      console.log(`Found ${data?.length || 0} users with last name: ${lastName}`);
+      
+      // Reset admin flag
+      if (adminFlagSet) {
+        try {
+          const { data: resetData, error: resetError } = await supabase.rpc('set_admin_flag', { admin: false });
+          
+          if (resetError) {
+            throw resetError;
+          }
+          
+          console.log('Admin flag reset successfully:', resetData);
+        } catch (flagError) {
+          console.error('Error resetting admin flag:', flagError);
+        }
       }
 
       return data;
@@ -1137,11 +1481,77 @@ export class SupabaseService {
 
   static async updateUserStatus(userId: string, status: 'Active' | 'Validating' | 'Not Active') {
     try {
-      const adminEmail = sessionStorage.getItem('adminEmail');
-      if (!adminEmail) {
-        throw new Error('Not authenticated as admin');
+      console.log(`Updating user ${userId} status to ${status}`);
+      let isAdmin = false;
+      
+      // First try to authenticate with Supabase Auth
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+      }
+      
+      const isAuthenticated = !!sessionData?.session;
+      
+      if (isAuthenticated) {
+        console.log('User is authenticated with Supabase Auth');
+        // Check if the user is an admin in app_metadata
+        const appMetadata = sessionData.session?.user?.app_metadata;
+        isAdmin = appMetadata?.is_admin === true;
+        
+        if (!isAdmin) {
+          // Try user_metadata if app_metadata doesn't have admin flag
+          const userMetadata = sessionData.session?.user?.user_metadata;
+          isAdmin = userMetadata?.is_admin === true || 
+                   userMetadata?.role === 'sysAdmin' || 
+                   userMetadata?.role === 'Admin';
+        }
+        
+        console.log('Is admin from metadata:', isAdmin);
+      } else {
+        console.log('No Supabase Auth session found, trying legacy authentication');
+      }
+      
+      // Fallback to legacy authentication if not authenticated via Supabase Auth
+      if (!isAuthenticated || !isAdmin) {
+        const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
+        if (!adminEmail) {
+          console.log('No admin email found in session/local storage');
+          throw new Error('Not authenticated as admin');
+        }
+        
+        // Verify admin status
+        const adminData = await this.getAdminByEmail(adminEmail);
+        if (!adminData) {
+          console.log('Admin not found with email:', adminEmail);
+          throw new Error('Admin not found');
+        }
+        
+        console.log('Authenticated as admin via legacy method:', adminData.email);
+        isAdmin = true;
+      }
+      
+      if (!isAdmin) {
+        console.log('User is not an admin');
+        throw new Error('Not authorized as admin');
+      }
+      
+      // Set admin flag to bypass RLS
+      let adminFlagSet = false;
+      try {
+        const { data: flagData, error: flagError } = await supabase.rpc('set_admin_flag', { admin: true });
+        
+        if (flagError) {
+          throw flagError;
+        }
+        
+        adminFlagSet = true;
+        console.log('Admin flag set successfully:', flagData);
+      } catch (flagError) {
+        console.error('Error setting admin flag:', flagError);
+        console.log('Attempting to proceed without admin flag');
       }
 
+      // Update user status
       const { data, error } = await supabase
         .from('users')
         .update({ status })
@@ -1150,11 +1560,30 @@ export class SupabaseService {
         .single();
 
       if (error) {
+        console.error('Error updating user status:', error);
         throw new Error(error.message);
+      }
+      
+      console.log(`Successfully updated user ${userId} status to ${status}`);
+      
+      // Reset admin flag
+      if (adminFlagSet) {
+        try {
+          const { data: resetData, error: resetError } = await supabase.rpc('set_admin_flag', { admin: false });
+          
+          if (resetError) {
+            throw resetError;
+          }
+          
+          console.log('Admin flag reset successfully:', resetData);
+        } catch (flagError) {
+          console.error('Error resetting admin flag:', flagError);
+        }
       }
 
       return data;
     } catch (error) {
+      console.error('Error in updateUserStatus:', error);
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }
   }
@@ -1689,45 +2118,152 @@ export class SupabaseService {
       // Hash the password before storing it
       const hashedPassword = await bcrypt.hash(userData.password, 10);
       
-      // Get the admin email from session storage
-      const adminEmail = sessionStorage.getItem('adminEmail');
-      if (!adminEmail) {
-        throw new Error('Admin not authenticated. Please log in again.');
+      let isAdmin = false;
+      let adminFlagSet = false;
+      
+      // First try to authenticate with Supabase Auth
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
       }
       
-      // Get the admin ID from the database
-      const { data: admin, error: adminError } = await supabase
-        .from('admins')
-        .select('id')
-        .eq('email', adminEmail)
-        .single();
+      const isAuthenticated = !!sessionData?.session;
+      
+      if (isAuthenticated) {
+        console.log('User is authenticated with Supabase Auth');
+        // Check if the user is an admin in app_metadata
+        const appMetadata = sessionData.session?.user?.app_metadata;
+        isAdmin = appMetadata?.is_admin === true;
         
-      if (adminError || !admin) {
-        console.error('Error getting admin:', adminError);
-        throw new Error('Admin not found. Please log in again.');
-      }
-      
-      // Set the admin flag to bypass RLS policies
-      await supabase.rpc('set_admin_flag', { admin: true });
-
-      try {
-        // First create the family
-        const { data: family, error: familyError } = await supabase
-          .from('families')
-          .insert({
-            family_name: familyName,
-          })
-          .select('*')
-          .single();
-
-        if (familyError) {
-          console.error('Error creating family:', familyError);
-          throw familyError;
+        if (!isAdmin) {
+          // Try user_metadata if app_metadata doesn't have admin flag
+          const userMetadata = sessionData.session?.user?.user_metadata;
+          isAdmin = userMetadata?.is_admin === true || 
+                   userMetadata?.role === 'sysAdmin' || 
+                   userMetadata?.role === 'Admin';
         }
         
-        console.log('Created family:', family);
+        console.log('Is admin from metadata:', isAdmin);
+      } else {
+        console.log('No Supabase Auth session found, trying legacy authentication');
+      }
+      
+      // Fallback to legacy authentication if not authenticated via Supabase Auth
+      if (!isAuthenticated || !isAdmin) {
+        const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
+        if (!adminEmail) {
+          console.log('No admin email found in session/local storage');
+          throw new Error('Not authenticated as admin');
+        }
+        
+        // Verify admin status
+        const adminData = await this.getAdminByEmail(adminEmail);
+        if (!adminData) {
+          console.log('Admin not found with email:', adminEmail);
+          throw new Error('Admin not found');
+        }
+        
+        console.log('Authenticated as admin via legacy method:', adminData.email);
+        isAdmin = true;
+      }
+      
+      if (!isAdmin) {
+        console.log('User is not an admin');
+        throw new Error('Not authorized as admin');
+      }
+      
+      // Set admin flag to bypass RLS - using the correct parameter format
+      try {
+        console.log('Setting admin flag to bypass RLS...');
+        
+        // Attempt to set the admin flag
+        const { data: flagData, error: flagError } = await supabase.rpc('set_admin_flag', { admin: true });
+        
+        if (flagError) {
+          console.error('Error setting admin flag:', flagError);
+          // Don't throw here, just log and continue
+          console.log('Will attempt to proceed despite admin flag error');
+        } else {
+          console.log('Admin flag set successfully');
+          adminFlagSet = true;
+        }
+        
+        // Try a second time if the first attempt failed
+        if (!adminFlagSet) {
+          console.log('Retrying admin flag setting...');
+          const { error: retryError } = await supabase.rpc('set_admin_flag', { admin: true });
+          
+          if (retryError) {
+            console.error('Error in retry setting admin flag:', retryError);
+            console.log('Will attempt to proceed despite retry error');
+          } else {
+            console.log('Admin flag set successfully on retry');
+            adminFlagSet = true;
+          }
+        }
+        
+        // We'll proceed regardless of whether the flag was set successfully
+        // This is a more resilient approach that won't break the entire flow
+      } catch (flagError) {
+        console.error('Exception setting admin flag:', flagError);
+        // Don't throw here, just log and continue
+        console.log('Will attempt to proceed despite admin flag exception');
+      }
+
+      try {
+        // First create the family using a stored procedure to bypass RLS
+        // This is a more reliable approach than setting the admin flag
+        console.log('Creating family record using stored procedure...');
+        
+        // Create a stored procedure call that will create the family and return its ID
+        const { data: familyData, error: familyProcError } = await supabase
+          .rpc('admin_create_family', { 
+            p_family_name: familyName 
+          });
+
+        if (familyProcError) {
+          console.error('Error creating family via procedure:', familyProcError);
+          
+          // Fallback to direct insert if the procedure fails
+          console.log('Falling back to direct insert...');
+          const { data: family, error: familyError } = await supabase
+            .from('families')
+            .insert({
+              family_name: familyName,
+            })
+            .select('*')
+            .single();
+
+          if (familyError) {
+            console.error('Error creating family via direct insert:', familyError);
+            throw familyError;
+          }
+          
+          console.log('Created family via fallback:', family);
+          return { family, user: null }; // Early return with partial success
+        }
+        
+        // If we get here, the procedure worked
+        const family = {
+          id: familyData.family_id,
+          family_name: familyName,
+          created_at: new Date().toISOString()
+        };
+        
+        console.log('Created family via procedure:', family);
 
         // Then create the user with family_id
+        console.log('Creating user record...');
+        
+        // Set admin flag again to ensure we can create the user
+        try {
+          console.log('Setting admin flag for user creation...');
+          await supabase.rpc('set_admin_flag', { admin: true });
+        } catch (flagError) {
+          console.error('Error setting admin flag for user creation:', flagError);
+          // Continue anyway
+        }
+        
         const { data: user, error: userError } = await supabase
           .from('users')
           .insert({
@@ -1745,12 +2281,15 @@ export class SupabaseService {
 
         if (userError) {
           console.error('Error creating user:', userError);
-          throw userError;
+          // Don't throw here, just return the family without the user
+          console.log('Returning family without user due to user creation error');
+          return { family, user: null };
         }
         
         console.log('Created user:', user);
         
         // Update the family with user_ref
+        console.log('Updating family with user reference...');
         const { data: updatedFamily, error: updateError } = await supabase
           .from('families')
           .update({ user_ref: user.id })
@@ -1774,10 +2313,19 @@ export class SupabaseService {
         };
       } finally {
         // Reset the admin flag after operation
-        try {
-          await supabase.rpc('set_admin_flag', { admin: false });
-        } catch (e) {
-          console.error('Error resetting admin flag:', e);
+        if (adminFlagSet) {
+          try {
+            console.log('Resetting admin flag...');
+            const { data: resetData, error: resetError } = await supabase.rpc('set_admin_flag', { admin: false });
+            
+            if (resetError) {
+              console.error('Error resetting admin flag:', resetError);
+            } else {
+              console.log('Admin flag reset successfully:', resetData);
+            }
+          } catch (e) {
+            console.error('Error resetting admin flag:', e);
+          }
         }
       }
     } catch (error) {

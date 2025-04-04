@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { SupabaseService } from '@/services/supabaseService';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { 
   LayoutDashboard, 
@@ -32,21 +33,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log('Checking admin authentication...');
         // First try to get the admin from Supabase Auth
         const authAdmin = await SupabaseService.getCurrentAuthAdmin();
         
         if (authAdmin) {
+          console.log('Admin authenticated via Supabase Auth:', authAdmin.email);
+          // Store admin email in both session and local storage for persistence
+          sessionStorage.setItem('adminEmail', authAdmin.email);
+          localStorage.setItem('adminEmail', authAdmin.email);
           setAdmin(authAdmin);
           setLoading(false);
+          
+          // Set admin flag to ensure RLS is bypassed
+          try {
+            await supabase.rpc('set_admin_flag', { admin: true });
+            console.log('Admin flag set on initial load');
+          } catch (flagError) {
+            console.error('Error setting admin flag on initial load:', flagError);
+          }
           return;
         }
         
         // Fallback to session/local storage for backward compatibility
         const adminEmail = sessionStorage.getItem('adminEmail') || localStorage.getItem('adminEmail');
         if (!adminEmail) {
+          console.log('No admin email found in storage, redirecting to login');
           router.push('/admin/login');
           return;
         }
+        
+        console.log('Found admin email in storage:', adminEmail);
         
         // Ensure both storage mechanisms have the admin email
         sessionStorage.setItem('adminEmail', adminEmail);
@@ -54,13 +71,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         const adminData = await SupabaseService.getAdminByEmail(adminEmail);
         if (!adminData) {
+          console.log('Admin not found with email:', adminEmail);
           sessionStorage.removeItem('adminEmail');
           localStorage.removeItem('adminEmail');
           router.push('/admin/login');
           return;
         }
 
+        console.log('Admin authenticated via legacy method:', adminData.email);
         setAdmin(adminData);
+        
+        // Set admin flag to ensure RLS is bypassed
+        try {
+          await supabase.rpc('set_admin_flag', { admin: true });
+          console.log('Admin flag set on initial load (legacy auth)');
+        } catch (flagError) {
+          console.error('Error setting admin flag on initial load (legacy auth):', flagError);
+        }
       } catch (error) {
         console.error('Auth check error:', error);
         // Clear all auth data
@@ -77,13 +104,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleLogout = async () => {
     try {
+      console.log('Logging out admin...');
+      
+      // Reset admin flag before logout
+      try {
+        console.log('Resetting admin flag...');
+        const { data: resetData, error: resetError } = await supabase.rpc('set_admin_flag', { admin: false });
+        
+        if (resetError) {
+          console.error('Error resetting admin flag during logout:', resetError);
+        } else {
+          console.log('Admin flag reset successfully during logout');
+        }
+      } catch (flagError) {
+        console.error('Exception resetting admin flag during logout:', flagError);
+      }
+      
       // Sign out using Supabase Auth
       await SupabaseService.adminSignOut();
-      // No need to manually clear session/local storage as it's handled in the service
+      console.log('Signed out from Supabase Auth');
+      
+      // Clear session/local storage for complete logout
+      sessionStorage.removeItem('adminEmail');
+      localStorage.removeItem('adminEmail');
+      console.log('Cleared admin email from storage');
+      
+      // Navigate to login page
       router.push('/admin/login');
     } catch (error) {
       console.error('Logout error:', error);
       // Fallback to manual logout if Supabase Auth fails
+      try {
+        await supabase.rpc('set_admin_flag', { admin: false });
+      } catch (e) {
+        console.error('Error resetting admin flag during fallback logout:', e);
+      }
+      
       sessionStorage.removeItem('adminEmail');
       localStorage.removeItem('adminEmail');
       router.push('/admin/login');
