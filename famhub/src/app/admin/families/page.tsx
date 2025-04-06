@@ -16,7 +16,8 @@ import {
   Eye,
   RefreshCw,
   Key,
-  Copy
+  Copy,
+  AlertTriangle
 } from 'lucide-react';
 import Link from 'next/link';
 import { User } from '@/lib/supabase';
@@ -74,6 +75,7 @@ export default function AdminFamiliesPage() {
   const [selectedMember, setSelectedMember] = useState<User | null>(null);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
+  const [isDeleteFamilyOpen, setIsDeleteFamilyOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   // Form states
@@ -266,6 +268,27 @@ export default function AdminFamiliesPage() {
     } catch (err) {
       console.error('Error deleting member:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete member');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleDeleteFamily = async () => {
+    if (!selectedFamilyId) return;
+    
+    try {
+      setLoading(true);
+      
+      await SupabaseService.deleteFamily(selectedFamilyId);
+      
+      // Refresh the families list
+      handleRefreshFamilies();
+      
+      // Close dialog
+      setIsDeleteFamilyOpen(false);
+    } catch (err) {
+      console.error('Error deleting family:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete family');
     } finally {
       setLoading(false);
     }
@@ -532,6 +555,19 @@ export default function AdminFamiliesPage() {
                               familyId={family.id}
                             />
                           )}
+                          
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            className="text-red-600 border-red-200 hover:bg-red-50"
+                            onClick={() => {
+                              setSelectedFamilyId(family.id);
+                              setIsDeleteFamilyOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Delete
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -653,6 +689,48 @@ export default function AdminFamiliesPage() {
                 </div>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+        
+        {/* Delete Family Confirmation Dialog */}
+        <Dialog open={isDeleteFamilyOpen} onOpenChange={setIsDeleteFamilyOpen}>
+          <DialogContent className="sm:max-w-md bg-white border border-gray-200 shadow-lg rounded-xl p-0 overflow-hidden" style={{ backdropFilter: 'none' }}>
+            <Card className="border-0 shadow-none">
+              <CardContent className="p-0">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <DialogTitle className="text-xl font-semibold text-red-600">
+                      Delete Family
+                    </DialogTitle>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-lg">
+                      <AlertTriangle className="h-6 w-6 text-red-600" />
+                      <div>
+                        <p className="font-medium text-red-600">Warning: This action cannot be undone</p>
+                        <p className="text-sm text-gray-600">Deleting this family will permanently remove all family members and their data.</p>
+                      </div>
+                    </div>
+                    
+                    <p className="text-gray-600">
+                      Are you sure you want to delete this family? All members, questions, and related data will be permanently deleted.
+                    </p>
+                  </div>
+                </div>
+                
+                <DialogFooter className="p-4 pt-0">
+                  <Button variant="outline" onClick={() => setIsDeleteFamilyOpen(false)} className="rounded-lg">Cancel</Button>
+                  <Button 
+                    onClick={handleDeleteFamily} 
+                    disabled={loading} 
+                    className="rounded-lg bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {loading ? 'Deleting...' : 'Delete Family'}
+                  </Button>
+                </DialogFooter>
+              </CardContent>
+            </Card>
           </DialogContent>
         </Dialog>
         

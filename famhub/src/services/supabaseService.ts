@@ -1472,6 +1472,85 @@ export class SupabaseService {
     }
   }
   
+  /**
+   * Deletes a family and all its members
+   * @param familyId The ID of the family to delete
+   * @returns true if successful
+   */
+  static async deleteFamily(familyId: string): Promise<boolean> {
+    try {
+      // Get the admin email from session storage
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Admin not authenticated. Please log in again.');
+      }
+      
+      // Set the admin flag to bypass RLS policies
+      await supabase.rpc('set_admin_flag', { admin: true });
+
+      try {
+        // First get all users in this family
+        const { data: familyMembers, error: membersError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('family_id', familyId);
+        
+        if (membersError) {
+          console.error('Error getting family members:', membersError);
+          throw membersError;
+        }
+        
+        // Delete all questions from family members
+        for (const member of familyMembers) {
+          const { error: questionsError } = await supabase
+            .from('questions')
+            .delete()
+            .eq('user_id', member.id);
+          
+          if (questionsError) {
+            console.error(`Error deleting questions for user ${member.id}:`, questionsError);
+            // Continue with other deletions even if this fails
+          }
+        }
+        
+        // Delete all users in the family
+        const { error: usersError } = await supabase
+          .from('users')
+          .delete()
+          .eq('family_id', familyId);
+        
+        if (usersError) {
+          console.error('Error deleting family members:', usersError);
+          throw usersError;
+        }
+        
+        // Finally delete the family
+        const { error: familyError } = await supabase
+          .from('families')
+          .delete()
+          .eq('id', familyId);
+        
+        if (familyError) {
+          console.error('Error deleting family:', familyError);
+          throw familyError;
+        }
+        
+        console.log('Successfully deleted family and all its members');
+        return true;
+      } finally {
+        // Reset the admin flag after operation
+        try {
+          await supabase.rpc('set_admin_flag', { admin: false });
+        } catch (e) {
+          console.error('Error resetting admin flag:', e);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting family:', error);
+      throw error;
+    }
+  }
+
   static async createFamilyWithMember(familyName: string, userData: {
     first_name: string;
     last_name: string;
