@@ -1154,40 +1154,68 @@ export class SupabaseService {
     try {
       console.log('Adding member to family with ID:', familyId);
       
-      // Set the admin flag to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
+      // Hash the password before storing it
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      
+      // Get the admin email from session storage
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      if (!adminEmail) {
+        throw new Error('Admin not authenticated. Please log in again.');
+      }
+      
+      // Get the admin ID from the database
+      const { data: admin, error: adminError } = await supabase
+        .from('admins')
+        .select('id, email')
+        .eq('email', adminEmail)
+        .single();
+        
+      if (adminError || !admin) {
+        console.error('Error getting admin:', adminError);
+        throw new Error('Admin not found. Please log in again.');
+      }
+      
+      // Set the admin flag and user context to bypass RLS
+      const { error: adminFlagError } = await supabase.rpc('set_admin_flag', { admin: true });
+      if (adminFlagError) {
+        console.error('Error setting admin flag:', adminFlagError);
+      }
+      
+      // Also set the user context to the admin's email
+      try {
+        await supabase.rpc('set_user_context', { user_email: admin.email });
+      } catch (e) {
+        // If the function doesn't exist yet, that's okay
+        console.log('set_user_context not available, continuing without it');
+      }
 
       try {
-        // Hash the password before storing it
-        const hashedPassword = await bcrypt.hash(userData.password, 10);
+        // First verify the family exists using a direct RPC call to bypass RLS
+        const { data: familyData, error: familyRpcError } = await supabase
+          .rpc('get_family_by_id', { p_family_id: familyId });
+          
+        let family;
         
-        // Get the admin email from session storage
-        const adminEmail = sessionStorage.getItem('adminEmail');
-        if (!adminEmail) {
-          throw new Error('Admin not authenticated. Please log in again.');
+        if (familyRpcError) {
+          console.log('RPC method not available, falling back to direct query');
+          // If the RPC method doesn't exist, try direct query with admin flag
+          const { data: familyQueryData, error: familyQueryError } = await supabase
+            .from('families')
+            .select('*')
+            .eq('id', familyId)
+            .single();
+            
+          if (familyQueryError || !familyQueryData) {
+            console.error('Family not found:', familyQueryError);
+            throw new Error(`Family with ID ${familyId} not found`);
+          }
+          
+          family = familyQueryData;
+        } else {
+          family = familyData;
         }
         
-        // Get the admin ID from the database
-        const { data: admin, error: adminError } = await supabase
-          .from('admins')
-          .select('id')
-          .eq('email', adminEmail)
-          .single();
-          
-        if (adminError || !admin) {
-          console.error('Error getting admin:', adminError);
-          throw new Error('Admin not found. Please log in again.');
-        }
-        
-        // First verify the family exists
-        const { data: family, error: familyError } = await supabase
-          .from('families')
-          .select('*')
-          .eq('id', familyId)
-          .single();
-          
-        if (familyError || !family) {
-          console.error('Family not found:', familyError);
+        if (!family) {
           throw new Error(`Family with ID ${familyId} not found`);
         }
         
@@ -1576,7 +1604,7 @@ export class SupabaseService {
       // Get the admin ID from the database
       const { data: admin, error: adminError } = await supabase
         .from('admins')
-        .select('id')
+        .select('id, email')
         .eq('email', adminEmail)
         .single();
         
@@ -1585,23 +1613,59 @@ export class SupabaseService {
         throw new Error('Admin not found. Please log in again.');
       }
       
-      // Set the admin flag to bypass RLS policies
-      await supabase.rpc('set_admin_flag', { admin: true });
+      // Instead of using RPC, let's use a stored procedure to create the family
+      // This will execute the operation with the server's permissions, bypassing RLS
+      const { data: familyResult, error: familyProcedureError } = await supabase
+        .rpc('create_family_for_admin', { 
+          p_family_name: familyName,
+          p_admin_email: admin.email
+        });
+      
+      if (familyProcedureError) {
+        console.error('Error creating family via procedure:', familyProcedureError);
+        
+        // If the stored procedure doesn't exist, we'll try a different approach
+        if (familyProcedureError.code === '42883') { // Function not found
+          console.log('Stored procedure not found, trying alternative approach');
+          
+          // Let's try using a direct SQL query with service_role key if available
+          // This is a fallback option - ideally, you should create the stored procedure
+          try {
+            // First create the family
+            const { data: family, error: familyError } = await supabase
+              .from('families')
+              .insert({
+                family_name: familyName
+              })
+              .select('*')
+              .single();
 
-      try {
-        // First create the family
-        const { data: family, error: familyError } = await supabase
-          .from('families')
-          .insert({
-            family_name: familyName,
-          })
-          .select('*')
-          .single();
-
-        if (familyError) {
-          console.error('Error creating family:', familyError);
-          throw familyError;
+            if (familyError) {
+              console.error('Error creating family:', familyError);
+              throw familyError;
+            }
+            
+            // Continue with the rest of the function using the family data
+            console.log('Created family:', family);
+            
+            // Set the admin flag to bypass RLS policies for user creation
+            await supabase.rpc('set_admin_flag', { admin: true });
+          } catch (error) {
+            console.error('Alternative approach failed:', error);
+            throw new Error('Failed to create family. Please contact support.');
+          }
+        } else {
+          throw familyProcedureError;
         }
+      }
+      
+      // If we got here using the stored procedure, extract the family data
+      const family = familyResult;
+      console.log('Created family:', family);
+      
+      try {
+        // Set the admin flag to bypass RLS policies for user creation
+        await supabase.rpc('set_admin_flag', { admin: true });
         
         console.log('Created family:', family);
 
