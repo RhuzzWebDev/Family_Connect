@@ -232,21 +232,33 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
   const renderCommentSection = () => (
     <div className="mt-4 space-y-4">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Avatar className="h-8 w-8">
+      <div className="space-y-4">
+        {/* Media at the top if available */}
+        {question.file_url && question.media_type && (
+          <div className="w-full rounded-md overflow-hidden">
+            {renderMedia()}
+          </div>
+        )}
+        
+        {/* Question text */}
+        <p className="text-base font-medium">{question.question}</p>
+        
+        {/* User info at the bottom */}
+        <div className="flex items-center gap-2 pt-3">
+          <Avatar className="h-6 w-6">
             <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
             <AvatarFallback>{`${question.user.first_name[0]}${question.user.last_name[0]}`}</AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
-            <p className="text-xs text-muted-foreground">
-              {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
-            </p>
+            <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-muted-foreground">{question.user.role}</p>
+              <span className="text-[10px] text-muted-foreground">
+                {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+              </span>
+            </div>
           </div>
         </div>
-        <p className="text-sm">{question.question}</p>
-        {renderMedia()}
       </div>
       <AnswerForm questionId={question.id} />
       <CommentSection questionId={question.id} />
@@ -255,48 +267,65 @@ export function QuestionCard({ question }: QuestionCardProps) {
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="flex flex-row items-center gap-3 space-y-0 p-4">
-        <Avatar className="h-8 w-8">
-          <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-          <AvatarFallback>{`${question.user.first_name[0]}${question.user.last_name[0]}`}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1">
-          <p className="text-sm font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
-          <p className="text-xs text-muted-foreground">{question.user.role}</p>
-          <p className="text-xs text-muted-foreground">
-            {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
-          </p>
+      {/* Media at the top if available */}
+      {question.file_url && question.media_type && (
+        <div className="w-full">
+          {renderMedia()}
         </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-0">
-        <p className="mb-3 text-sm">{question.question}</p>
-        {renderMedia()}
+      )}
+      
+      {/* Question content in the middle */}
+      <CardContent className="p-4">
+        <p className="text-base font-medium">{question.question}</p>
       </CardContent>
-      <CardFooter className="flex items-center gap-4 p-4 pt-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1"
-          onClick={handleLike}
-          disabled={isLikeLoading}
-        >
-          <Heart className={cn("h-4 w-4", { "fill-current text-red-500": liked })} />
-          <span>{likeCount.toString()}</span>
-        </Button>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-1">
-              <MessageSquare className="h-4 w-4" />
-              <span>{commentCount.toString()}</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>Answers & Comments</DialogTitle>
-            </DialogHeader>
-            {renderCommentSection()}
-          </DialogContent>
-        </Dialog>
+      
+      {/* User info and actions in the footer */}
+      <CardFooter className="flex items-center justify-between p-4 pt-0">
+        <div className="flex items-center gap-2">
+          <Avatar className="h-6 w-6">
+            <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
+            <AvatarFallback>{`${question.user.first_name[0]}${question.user.last_name[0]}`}</AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-muted-foreground">{question.user.role}</p>
+              <span className="text-[10px] text-muted-foreground">
+                {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("h-8 w-8 p-0", { "text-red-500": liked })}
+            onClick={handleLike}
+            disabled={isLikeLoading}
+          >
+            <Heart className={cn("h-4 w-4", { "fill-current text-red-500": liked })} />
+            <span className="sr-only">Like</span>
+          </Button>
+          <span className="text-xs">{likeCount.toString()}</span>
+          
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MessageSquare className="h-4 w-4" />
+                <span className="sr-only">Comment</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>Answers & Comments</DialogTitle>
+              </DialogHeader>
+              {renderCommentSection()}
+            </DialogContent>
+          </Dialog>
+          <span className="text-xs">{commentCount.toString()}</span>
+        </div>
       </CardFooter>
     </Card>
   );

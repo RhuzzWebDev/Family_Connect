@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import QuestionGrid from '@/components/dashboard/QuestionGrid';
 import { Layout } from '@/components/layout/Layout';
+import { InnerNavbar } from '@/components/layout/InnerNavbar';
 
 export default function DashboardPage() {
   useEffect(() => {
@@ -14,9 +15,10 @@ export default function DashboardPage() {
 
   return (
     <Layout>
+      <InnerNavbar />
       <div className="pl-6 pr-6 md:pl-8">
         <div className="mb-6 pt-6">
-          <h1 className="text-3xl font-bold">Family Feed</h1>
+         
         </div>
         <QuestionGrid />
       </div>
