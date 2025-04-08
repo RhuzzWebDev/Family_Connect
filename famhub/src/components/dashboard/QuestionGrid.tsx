@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import CreateQuestionForm from './CreateQuestionForm';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart } from 'lucide-react';
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
+import { cn } from '@/lib/utils';
 
 interface QuestionLike {
   user_id: string;
@@ -462,64 +465,62 @@ export default function QuestionGrid() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {questions.map((question) => (
-            <div 
-              key={question.id} 
-              className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 md:p-5 space-y-4 transition-all duration-200 hover:shadow-md"
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold shrink-0">
-                  {getInitials(question.user.first_name, question.user.last_name)}
+            <Card key={question.id} className="overflow-hidden">
+              {/* Media at the top if available */}
+              {question.file_url && (
+                <div className="w-full">
+                  <MediaPreview type={question.media_type} url={question.file_url} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                    <div>
-                      <h3 className="font-semibold text-gray-900 line-clamp-1">
-                        {question.user.first_name} {question.user.last_name}
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                          {question.user.role}
-                        </span>
-                        <time className="text-xs text-gray-500">
-                          {format(new Date(question.created_at), 'MMM d, yyyy')}
-                        </time>
-                      </div>
+              )}
+              
+              {/* Question content in the middle */}
+              <CardContent className="p-4">
+                <p className="text-base font-medium">{question.question}</p>
+              </CardContent>
+              
+              {/* User info and actions in the footer */}
+              <CardFooter className="flex items-center justify-between p-4 pt-0">
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
+                    <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] text-muted-foreground">{question.user.role}</p>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+                      </span>
                     </div>
                   </div>
-                  <p className="mt-3 text-gray-700 line-clamp-3">{question.question}</p>
-                  {question.file_url && (
-                    <div className="mt-3 border rounded-md overflow-hidden">
-                      <MediaPreview type={question.media_type} url={question.file_url} />
-                    </div>
-                  )}
-                  <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    {/* Likes function */}
-                    <div className="flex items-center gap-3">  
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleLike(question.id)}
-                        className={`${question.has_liked ? 'text-red-500' : 'text-gray-500'} hover:text-red-500`}
-                      >
-                        <Heart className={`w-4 h-4 ${question.has_liked ? 'fill-current' : ''}`} />
-                        <span className="ml-1">{question.like_count}</span>
-                      </Button>
-                      {/* Comments function */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full h-8 px-3"
-                        onClick={() => handleCommentClick(question.id)}
-                      >
-                        <MessageSquare className="w-4 h-4 mr-1.5" />
-                        <span>{Math.abs(question.comment_count || 0)}</span>
-                      </Button>
-                    </div>
-                    
-                  </div>
                 </div>
-              </div>
-            </div>
+                
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-8 w-8 p-0", { "text-red-500": question.has_liked })}
+                    onClick={() => handleLike(question.id)}
+                  >
+                    <Heart className={cn("h-4 w-4", { "fill-current text-red-500": question.has_liked })} />
+                    <span className="sr-only">Like</span>
+                  </Button>
+                  <span className="text-xs">{question.like_count.toString()}</span>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() => handleCommentClick(question.id)}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="sr-only">Comment</span>
+                  </Button>
+                  <span className="text-xs">{Math.abs(question.comment_count || 0).toString()}</span>
+                </div>
+              </CardFooter>
+            </Card>
           ))}
         </div>
       )}
@@ -531,35 +532,37 @@ export default function QuestionGrid() {
           setSelectedQuestion(null);
         }
       }}>
-        <DialogContent className="bg-white sm:max-w-[600px] p-0">
-          <DialogHeader className="pt-8 px-6 pb-4 border-b">
-            <DialogTitle className="text-lg font-semibold text-center">Comments</DialogTitle>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Answers & Comments</DialogTitle>
           </DialogHeader>
-          <div className="p-6 max-h-[60vh] overflow-y-auto">
+          <div className="mt-4 space-y-4">
             {selectedQuestion && (
-              <div className="mb-6 border rounded-lg p-4 bg-gray-50">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
-                    {getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}
+              <div className="space-y-4">
+                {/* Media at the top if available */}
+                {selectedQuestion.file_url && (
+                  <div className="w-full rounded-md overflow-hidden">
+                    <MediaPreview type={selectedQuestion.media_type} url={selectedQuestion.file_url} />
                   </div>
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold">
-                        {selectedQuestion.user.first_name} {selectedQuestion.user.last_name}
-                      </h3>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                        {selectedQuestion.user.role}
+                )}
+                
+                {/* Question text */}
+                <p className="text-base font-medium">{selectedQuestion.question}</p>
+                
+                {/* User info at the bottom */}
+                <div className="flex items-center gap-2 pt-3">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src={`/avatars/${selectedQuestion.user.role.toLowerCase()}.png`} alt={selectedQuestion.user.first_name} />
+                    <AvatarFallback>{getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-xs font-medium">{`${selectedQuestion.user.first_name} ${selectedQuestion.user.last_name}`}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] text-muted-foreground">{selectedQuestion.user.role}</p>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(selectedQuestion.created_at), { addSuffix: true })}
                       </span>
-                      <time className="text-xs text-gray-500 ml-auto">
-                        {format(new Date(selectedQuestion.created_at), 'MMM d, yyyy')}
-                      </time>
                     </div>
-                    <p className="mt-2 text-gray-700">{selectedQuestion.question}</p>
-                    {selectedQuestion.file_url && (
-                      <div className="mt-3 border rounded-md overflow-hidden">
-                        <MediaPreview type={selectedQuestion.media_type} url={selectedQuestion.file_url} />
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
