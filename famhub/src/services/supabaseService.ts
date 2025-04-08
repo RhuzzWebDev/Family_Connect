@@ -482,8 +482,23 @@ export class SupabaseService {
     password?: string;
   }) {
     try {
+      // Check if admin is logged in, otherwise check for regular user
+      const adminEmail = sessionStorage.getItem('adminEmail');
       const userEmail = sessionStorage.getItem('userEmail');
-      await this.verifyUserStatus(userEmail);
+      
+      // Check authentication
+      if (!adminEmail && !userEmail) {
+        throw new Error('Not authenticated');
+      }
+      
+      // If admin is logged in, set admin flag to bypass RLS
+      if (adminEmail) {
+        await supabase.rpc('set_admin_flag', { admin: true });
+        console.log('Admin authenticated:', adminEmail);
+      } else {
+        // Only verify user status for regular users
+        await this.verifyUserStatus(userEmail);
+      }
       
       // Prepare update data
       const updateData: any = {
@@ -501,12 +516,26 @@ export class SupabaseService {
         updateData.password = await bcrypt.hash(userData.password, 10);
       }
       
+      // First check if the user exists to avoid the single() error
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId);
+        
+      if (checkError) {
+        throw new Error(`Error checking user: ${checkError.message}`);
+      }
+      
+      if (!existingUser || existingUser.length === 0) {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+      
+      // Now perform the update
       const { data, error } = await supabase
         .from('users')
         .update(updateData)
         .eq('id', userId)
-        .select()
-        .single();
+        .select();
 
       if (error) {
         if (error.code === '23505') { // Unique violation
@@ -514,12 +543,15 @@ export class SupabaseService {
         }
         throw new Error(error.message);
       }
-
-      if (!data) {
+      
+      if (!data || data.length === 0) {
         throw new Error('Failed to update user');
       }
+      
+      // Return the first item if multiple were returned
+      const updatedUser = Array.isArray(data) ? data[0] : data;
 
-      return data;
+      return updatedUser;
     } catch (error) {
       throw error instanceof Error ? error : new Error('An unexpected error occurred');
     }
@@ -1222,6 +1254,7 @@ export class SupabaseService {
         console.log('Found family:', family);
         
         // Create the user with the family_id
+        console.log('Adding user to family with ID:', familyId);
         const { data: user, error: userError } = await supabase
           .from('users')
           .insert({
@@ -1232,14 +1265,59 @@ export class SupabaseService {
             role: userData.role,
             persona: userData.persona,
             status: userData.status,
-            family_id: familyId
+            family_id: familyId  // Ensure family_id is explicitly set
           })
           .select()
-          .single();
+          .maybeSingle(); // Use maybeSingle instead of single to handle no rows returned
         
         if (userError) {
           console.error('Error creating user:', userError);
           throw userError;
+        }
+        
+        if (!user) {
+          console.error('User was created but no data was returned');
+          // Try to fetch the user we just created
+          const { data: fetchedUser, error: fetchError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', userData.email)
+            .maybeSingle();
+            
+          if (fetchError || !fetchedUser) {
+            console.error('Could not fetch the created user:', fetchError);
+            throw new Error('Failed to create user or retrieve user data');
+          }
+          
+          // Use the fetched user
+          return fetchedUser;
+        }
+        
+        // Verify the family_id was properly assigned
+        if (user.family_id !== familyId) {
+          console.error('Family ID mismatch:', { expected: familyId, actual: user.family_id });
+          
+          // Try to fix the user's family_id
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ family_id: familyId })
+            .eq('id', user.id);
+            
+          if (updateError) {
+            console.error('Failed to update user family_id:', updateError);
+          } else {
+            console.log('Successfully fixed user family_id');
+          }
+        }
+        
+        // Create default questions for the user
+        try {
+          console.log('Creating default questions for user:', user.id);
+          // Pass true for adminFlagAlreadySet since we already set the admin flag in this method
+          await SupabaseService.createDefaultQuestions(user.id, true);
+        } catch (error) {
+          console.error('Error creating default questions:', error);
+          // Continue even if creating default questions fails
         }
         
         console.log('Successfully added member to family:', user);
@@ -1387,12 +1465,17 @@ export class SupabaseService {
     }
   }
 
-  static async createDefaultQuestions(userId: string) {
+  static async createDefaultQuestions(userId: string, adminFlagAlreadySet = false) {
     try {
       console.log('Creating default questions for user ID:', userId);
       
-      // Set the is_admin flag to true to bypass RLS
-      await supabase.rpc('set_admin_flag', { admin: true });
+      // Set the is_admin flag to true to bypass RLS if not already set
+      if (!adminFlagAlreadySet) {
+        console.log('Setting admin flag for default questions creation');
+        await supabase.rpc('set_admin_flag', { admin: true });
+      } else {
+        console.log('Admin flag already set, skipping');
+      }
 
       try {
         // First, get user details to determine folder path
@@ -1487,11 +1570,16 @@ export class SupabaseService {
         console.log(`Successfully created ${successCount} default questions`);
         return { count: successCount };
       } finally {
-        // Reset the is_admin flag after operation
-        try {
-          await supabase.rpc('set_admin_flag', { admin: false });
-        } catch (e) {
-          console.error('Error resetting admin flag:', e);
+        // Reset the is_admin flag after operation only if we set it in this method
+        if (!adminFlagAlreadySet) {
+          try {
+            console.log('Resetting admin flag after default questions creation');
+            await supabase.rpc('set_admin_flag', { admin: false });
+          } catch (e) {
+            console.error('Error resetting admin flag:', e);
+          }
+        } else {
+          console.log('Skipping admin flag reset as it was set externally');
         }
       }
     } catch (error) {
@@ -1503,9 +1591,29 @@ export class SupabaseService {
   /**
    * Deletes a family and all its members
    * @param familyId The ID of the family to delete
-   * @returns true if successful
+   * @returns An object with deletion statistics and success status
    */
-  static async deleteFamily(familyId: string): Promise<boolean> {
+  static async deleteFamily(familyId: string): Promise<{ 
+    success: boolean; 
+    stats: { 
+      usersDeleted: number; 
+      questionsDeleted: number; 
+      commentsDeleted: number; 
+      conversationsDeleted: number; 
+      messagesDeleted: number;
+      familyName: string;
+    } 
+  }> {
+    // Initialize deletion statistics
+    const stats = {
+      usersDeleted: 0,
+      questionsDeleted: 0,
+      commentsDeleted: 0,
+      conversationsDeleted: 0,
+      messagesDeleted: 0,
+      familyName: ''
+    };
+    
     try {
       // Get the admin email from session storage
       const adminEmail = sessionStorage.getItem('adminEmail');
@@ -1517,7 +1625,18 @@ export class SupabaseService {
       await supabase.rpc('set_admin_flag', { admin: true });
 
       try {
-        // First get all users in this family
+        // First get the family name for reporting
+        const { data: familyData, error: familyDataError } = await supabase
+          .from('families')
+          .select('family_name')
+          .eq('id', familyId)
+          .single();
+          
+        if (familyData) {
+          stats.familyName = familyData.family_name;
+        }
+        
+        // Get all users in this family
         const { data: familyMembers, error: membersError } = await supabase
           .from('users')
           .select('id')
@@ -1528,28 +1647,144 @@ export class SupabaseService {
           throw membersError;
         }
         
-        // Delete all questions from family members
-        for (const member of familyMembers) {
+        // Get all questions from family members
+        const userIds = familyMembers ? familyMembers.map(member => member.id) : [];
+        stats.usersDeleted = userIds.length;
+        
+        // Get all questions from these users
+        const { data: familyQuestions, error: questionsQueryError } = await supabase
+          .from('questions')
+          .select('id')
+          .in('user_id', userIds);
+          
+        if (questionsQueryError) {
+          console.error('Error getting family questions:', questionsQueryError);
+          // Continue with deletion even if this query fails
+        }
+        
+        // Process questions and comments if we have questions
+        if (familyQuestions && familyQuestions.length > 0) {
+          const questionIds = familyQuestions.map(q => q.id);
+          stats.questionsDeleted = questionIds.length;
+          
+          // Count comments for these questions
+          const { count: commentsCount, error: commentsCountError } = await supabase
+            .from('comments')
+            .select('*', { count: 'exact', head: true })
+            .in('question_id', questionIds);
+            
+          if (!commentsCountError && commentsCount !== null) {
+            stats.commentsDeleted = commentsCount;
+          }
+          
+          // Delete all comments related to these questions
+          const { error: commentsError } = await supabase
+            .from('comments')
+            .delete()
+            .in('question_id', questionIds);
+            
+          if (commentsError) {
+            console.error('Error deleting comments for family questions:', commentsError);
+            // Continue with deletion even if comments deletion fails
+          }
+          
+          // Delete all questions from family members
           const { error: questionsError } = await supabase
             .from('questions')
             .delete()
-            .eq('user_id', member.id);
-          
+            .in('id', questionIds);
+            
           if (questionsError) {
-            console.error(`Error deleting questions for user ${member.id}:`, questionsError);
+            console.error('Error deleting family questions:', questionsError);
             // Continue with other deletions even if this fails
+          }
+        } else {
+          console.log('No questions found for family members');
+        }
+        
+        // Also check for any conversation data related to family members
+        if (userIds.length > 0) {
+          try {
+            // First count messages that will be deleted
+            const { count: messagesCount, error: messagesCountError } = await supabase
+              .from('messages')
+              .select('*', { count: 'exact', head: true })
+              .in('sender_id', userIds);
+              
+            if (!messagesCountError && messagesCount !== null) {
+              stats.messagesDeleted = messagesCount;
+            }
+            
+            // Delete conversation participants
+            await supabase
+              .from('conversation_participants')
+              .delete()
+              .in('user_id', userIds);
+              
+            // First get all conversations that might be empty after deleting participants
+            const { data: potentialEmptyConversations, error: convError } = await supabase
+              .from('conversations')
+              .select('id');
+              
+            if (!convError && potentialEmptyConversations && potentialEmptyConversations.length > 0) {
+              // For each conversation, check if it has any participants left
+              const emptyConversations = [];
+              
+              for (const conv of potentialEmptyConversations) {
+                const { data: participants, error: partError } = await supabase
+                  .from('conversation_participants')
+                  .select('user_id')
+                  .eq('conversation_id', conv.id);
+                  
+                if (!partError && (participants === null || participants.length === 0)) {
+                  emptyConversations.push(conv);
+                }
+              }
+                  
+              if (emptyConversations.length > 0) {
+                const emptyConversationIds = emptyConversations.map(c => c.id);
+                stats.conversationsDeleted = emptyConversationIds.length;
+                
+                // Delete messages in empty conversations
+                await supabase
+                  .from('messages')
+                  .delete()
+                  .in('conversation_id', emptyConversationIds);
+                  
+                // Delete empty conversations
+                await supabase
+                  .from('conversations')
+                  .delete()
+                  .in('id', emptyConversationIds);
+              }
+            } else if (convError) {
+              console.error('Error getting conversations:', convError);
+              // Skip conversation cleanup but continue with family deletion
+            }
+            
+            // Delete messages sent by family members
+            await supabase
+              .from('messages')
+              .delete()
+              .in('sender_id', userIds);
+              
+          } catch (conversationError) {
+            console.error('Error cleaning up conversation data:', conversationError);
+            // Continue with family deletion even if conversation cleanup fails
           }
         }
         
         // Delete all users in the family
-        const { error: usersError } = await supabase
-          .from('users')
-          .delete()
-          .eq('family_id', familyId);
-        
-        if (usersError) {
-          console.error('Error deleting family members:', usersError);
-          throw usersError;
+        if (userIds.length > 0) {
+          const { error: usersError } = await supabase
+            .from('users')
+            .delete()
+            .eq('family_id', familyId);
+          
+          if (usersError) {
+            console.error('Error deleting family members:', usersError);
+            throw usersError;
+          }
         }
         
         // Finally delete the family
@@ -1563,8 +1798,8 @@ export class SupabaseService {
           throw familyError;
         }
         
-        console.log('Successfully deleted family and all its members');
-        return true;
+        console.log('Successfully deleted family and all its members, questions, and related data', stats);
+        return { success: true, stats };
       } finally {
         // Reset the admin flag after operation
         try {
@@ -1575,7 +1810,7 @@ export class SupabaseService {
       }
     } catch (error) {
       console.error('Error deleting family:', error);
-      throw error;
+      return { success: false, stats };
     }
   }
 
@@ -1613,63 +1848,15 @@ export class SupabaseService {
         throw new Error('Admin not found. Please log in again.');
       }
       
-      // Instead of using RPC, let's use a stored procedure to create the family
-      // This will execute the operation with the server's permissions, bypassing RLS
-      const { data: familyResult, error: familyProcedureError } = await supabase
-        .rpc('create_family_for_admin', { 
-          p_family_name: familyName,
-          p_admin_email: admin.email
-        });
-      
-      if (familyProcedureError) {
-        console.error('Error creating family via procedure:', familyProcedureError);
-        
-        // If the stored procedure doesn't exist, we'll try a different approach
-        if (familyProcedureError.code === '42883') { // Function not found
-          console.log('Stored procedure not found, trying alternative approach');
-          
-          // Let's try using a direct SQL query with service_role key if available
-          // This is a fallback option - ideally, you should create the stored procedure
-          try {
-            // First create the family
-            const { data: family, error: familyError } = await supabase
-              .from('families')
-              .insert({
-                family_name: familyName
-              })
-              .select('*')
-              .single();
-
-            if (familyError) {
-              console.error('Error creating family:', familyError);
-              throw familyError;
-            }
-            
-            // Continue with the rest of the function using the family data
-            console.log('Created family:', family);
-            
-            // Set the admin flag to bypass RLS policies for user creation
-            await supabase.rpc('set_admin_flag', { admin: true });
-          } catch (error) {
-            console.error('Alternative approach failed:', error);
-            throw new Error('Failed to create family. Please contact support.');
-          }
-        } else {
-          throw familyProcedureError;
-        }
-      }
-      
-      // If we got here using the stored procedure, extract the family data
-      const family = familyResult;
-      console.log('Created family:', family);
+      // Set the admin flag to bypass RLS policies
+      console.log('Setting admin flag to bypass RLS policies');
+      await supabase.rpc('set_admin_flag', { admin: true });
       
       try {
-        // Set the admin flag to bypass RLS policies for user creation
-        await supabase.rpc('set_admin_flag', { admin: true });
+        // Create the family using a two-step approach with SECURITY DEFINER functions
+        console.log('Creating family with name:', familyName);
         
-        console.log('Created family:', family);
-
-        // Then create the user with family_id
+        // First create the user without family_id
         const { data: user, error: userError } = await supabase
           .from('users')
           .insert({
@@ -1679,40 +1866,161 @@ export class SupabaseService {
             password: hashedPassword,
             role: userData.role,
             persona: userData.persona,
-            status: userData.status,
-            family_id: family.id
+            status: userData.status
+            // No family_id yet
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (userError) {
           console.error('Error creating user:', userError);
           throw userError;
         }
         
+        if (!user) {
+          console.error('User was created but no data was returned');
+          throw new Error('Failed to create user - no data returned');
+        }
+        
         console.log('Created user:', user);
         
-        // Update the family with user_ref
-        const { data: updatedFamily, error: updateError } = await supabase
-          .from('families')
-          .update({ user_ref: user.id })
-          .eq('id', family.id)
-          .select('*')
-          .single();
+        // Try to use the admin_create_family function to bypass RLS
+        let family;
+        let familyId;
         
-        if (updateError) {
-          console.error('Error updating family with user ref:', updateError);
-          throw updateError;
+        try {
+          // Use the SECURITY DEFINER function to create the family
+          const { data: familyIdResult, error: familyProcError } = await supabase
+            .rpc('admin_create_family', { 
+              p_family_name: familyName,
+              p_user_id: user.id
+            });
+            
+          if (familyProcError) {
+            console.error('Error using admin_create_family procedure:', familyProcError);
+            throw familyProcError;
+          }
+          
+          familyId = familyIdResult;
+          console.log('Created family with ID:', familyId);
+          
+          // Fetch the family details
+          const { data: familyData, error: familyFetchError } = await supabase
+            .from('families')
+            .select('*')
+            .eq('id', familyId)
+            .maybeSingle();
+            
+          if (familyFetchError) {
+            console.error('Error fetching family details:', familyFetchError);
+          } else if (familyData) {
+            family = familyData;
+            console.log('Fetched family details:', family);
+          }
+        } catch (procError) {
+          console.error('Stored procedure approach failed, falling back to direct insert:', procError);
+          
+          // Fall back to direct insert with admin flag
+          const { data: directFamily, error: directFamilyError } = await supabase
+            .from('families')
+            .insert({
+              family_name: familyName,
+              user_ref: user.id
+            })
+            .select('*')
+            .maybeSingle();
+            
+          if (directFamilyError) {
+            console.error('Error with fallback family creation:', directFamilyError);
+            throw directFamilyError;
+          }
+          
+          family = directFamily;
+          familyId = family?.id;
+          
+          if (!family || !familyId) {
+            console.error('Failed to create family with either method');
+            throw new Error('Failed to create family');
+          }
+          
+          console.log('Created family with fallback method:', family);
+        }
+        
+        // Update the user with family_id using the SECURITY DEFINER function
+        let userUpdated = false;
+        
+        try {
+          const { data: updateResult, error: updateProcError } = await supabase
+            .rpc('admin_update_user_family', {
+              p_user_id: user.id,
+              p_family_id: familyId
+            });
+            
+          if (updateProcError) {
+            console.error('Error using admin_update_user_family procedure:', updateProcError);
+            throw updateProcError;
+          }
+          
+          userUpdated = true;
+          console.log('Updated user with family_id using procedure');
+        } catch (updateProcError) {
+          console.error('Stored procedure for user update failed, falling back to direct update:', updateProcError);
+          
+          // Fall back to direct update
+          const { error: directUpdateError } = await supabase
+            .from('users')
+            .update({ family_id: familyId })
+            .eq('id', user.id);
+            
+          if (directUpdateError) {
+            console.error('Error with fallback user update:', directUpdateError);
+            // Continue anyway - we'll use the user object with family_id added manually
+          } else {
+            userUpdated = true;
+            console.log('Updated user with family_id using fallback method');
+          }
+        }
+        
+        // Get the updated user or create a merged object
+        let finalUser;
+        
+        if (userUpdated) {
+          // Try to fetch the updated user
+          const { data: fetchedUser, error: fetchError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+            
+          if (!fetchError && fetchedUser) {
+            finalUser = fetchedUser;
+            console.log('Fetched updated user:', finalUser);
+          } else {
+            // Use the original user with family_id added
+            finalUser = {
+              ...user,
+              family_id: familyId
+            };
+            console.log('Using original user with family_id added:', finalUser);
+          }
+        } else {
+          // Use the original user with family_id added
+          finalUser = {
+            ...user,
+            family_id: familyId
+          };
+          console.log('Using original user with family_id added:', finalUser);
         }
 
         // Create default questions for the user
         console.log('Creating default questions for user:', user.id);
-        await SupabaseService.createDefaultQuestions(user.id);
+        // Pass true for adminFlagAlreadySet since we already set the admin flag in this method
+        await SupabaseService.createDefaultQuestions(user.id, true);
 
         console.log('Successfully created family with member and default questions');
         return {
-          family: updatedFamily,
-          user
+          family: family || { id: familyId, family_name: familyName, user_ref: user.id },
+          user: finalUser
         };
       } finally {
         // Reset the admin flag after operation

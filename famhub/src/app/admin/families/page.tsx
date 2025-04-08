@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { User } from '@/lib/supabase';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -135,6 +136,17 @@ export default function AdminFamiliesPage() {
   const handleAddFamily = async () => {
     try {
       setLoading(true);
+      setError('');
+      
+      if (!newFamilyData.familyName) {
+        setError('Family name is required');
+        return;
+      }
+      
+      if (!newFamilyData.email || !newFamilyData.password) {
+        setError('Email and password are required for the family member');
+        return;
+      }
       
       // Create the family with the parent member
       const result = await SupabaseService.createFamilyWithMember(
@@ -150,10 +162,24 @@ export default function AdminFamiliesPage() {
         }
       );
       
-      console.log('Family created successfully:', result);
+      if (!result || !result.family || !result.user) {
+        throw new Error('Failed to create family or user - incomplete result returned');
+      }
+      
+      console.log('Family created successfully:', {
+        family_id: result.family.id,
+        user_id: result.user.id,
+        family_name: result.family.family_name,
+        user_ref: result.family.user_ref
+      });
+      
+      // Show success message
+      toast.success(
+        `Family "${result.family.family_name}" created successfully with member ${result.user.first_name} ${result.user.last_name}`
+      );
       
       // Refresh the families list
-      handleRefreshFamilies();
+      await handleRefreshFamilies();
       
       // Reset form and close dialog
       setNewFamilyData({
@@ -166,9 +192,56 @@ export default function AdminFamiliesPage() {
         status: 'Active' as 'Active' | 'Validating' | 'Not Active'
       });
       setIsAddFamilyOpen(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error adding family:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add family');
+      
+      // Provide more detailed error messages
+      let errorMessage = 'Failed to add family';
+      
+      if (err?.code === 'PGRST116') {
+        // This error occurs when no rows are returned but we expected one
+        // The operation might have actually succeeded, so let's try to refresh the families list
+        console.log('Got PGRST116 error, but the operation might have succeeded. Refreshing families list...');
+        
+        // Try to refresh the families list
+        await handleRefreshFamilies();
+        
+        // Show a warning instead of an error
+        toast.warning('Family may have been created but we encountered a data retrieval issue. Please check if the family appears in the list.');
+        
+        // Reset form and close dialog
+        setNewFamilyData({
+          familyName: '',
+          firstName: '',
+          lastName: '',
+          email: '',
+          password: '',
+          role: 'Father' as 'Father' | 'Mother' | 'Grandfather' | 'Grandmother',
+          status: 'Active' as 'Active' | 'Validating' | 'Not Active'
+        });
+        setIsAddFamilyOpen(false);
+        setLoading(false);
+        return; // Exit early since we've handled this specific error
+      } else if (err?.code === '42501') {
+        // This is an RLS policy violation error
+        console.log('Got RLS policy violation error. Attempting to refresh families list anyway...');
+        
+        // Try to refresh the families list - the operation might have partially succeeded
+        await handleRefreshFamilies();
+        
+        errorMessage = 'Permission denied: You need admin privileges to create families. Please check if the SQL functions are properly installed.';
+        toast.error(errorMessage);
+        
+        // Show a more detailed error in the console for debugging
+        console.error('RLS policy violation details:', err);
+        console.error('Please make sure the SQL functions in sql/rls_bypass_functions.sql are installed in your Supabase database.');
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -263,11 +336,16 @@ export default function AdminFamiliesPage() {
       setLoading(true);
       await SupabaseService.deleteUser(userId);
       
+      // Show success message
+      toast.success('Family member deleted successfully');
+      
       // Refresh the families list
       handleRefreshFamilies();
     } catch (err) {
       console.error('Error deleting member:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete member');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to delete member';
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -279,16 +357,44 @@ export default function AdminFamiliesPage() {
     try {
       setLoading(true);
       
-      await SupabaseService.deleteFamily(selectedFamilyId);
+      const result = await SupabaseService.deleteFamily(selectedFamilyId);
       
       // Refresh the families list
       handleRefreshFamilies();
       
       // Close dialog
       setIsDeleteFamilyOpen(false);
+      
+      // Show deletion statistics
+      if (result.success) {
+        const { stats } = result;
+        
+        // Create a toast with deletion statistics
+        toast.success(
+          <div className="space-y-1">
+            <p className="font-semibold">Successfully deleted family "{stats.familyName}"</p>
+            <ul className="text-sm space-y-0.5 list-disc pl-4">
+              <li>{stats.usersDeleted} family members deleted</li>
+              <li>{stats.questionsDeleted} questions deleted</li>
+              <li>{stats.commentsDeleted} comments deleted</li>
+              <li>{stats.conversationsDeleted} conversations deleted</li>
+              <li>{stats.messagesDeleted} messages deleted</li>
+            </ul>
+          </div>,
+          {
+            duration: 5000 // Show for 5 seconds due to more content
+          }
+        );
+      } else {
+        const errorMsg = 'Failed to delete family. Some data may not have been properly cleaned up.';
+        setError(errorMsg);
+        toast.error(errorMsg);
+      }
     } catch (err) {
       console.error('Error deleting family:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete family');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to delete family';
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
