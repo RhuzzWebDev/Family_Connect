@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogPortal, DialogOverlay } from '@/components/ui/dialog';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import CreateQuestionForm from './CreateQuestionForm';
 import { format, formatDistanceToNow } from 'date-fns';
-import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart } from 'lucide-react';
+import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart, MoreHorizontal, Share2, Maximize2, Minimize2 } from 'lucide-react';
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
 import { cn } from '@/lib/utils';
@@ -59,8 +59,10 @@ export default function QuestionGrid() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
+  const [isLiking, setIsLiking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isFullWidth, setIsFullWidth] = useState(false);
 
   const fetchQuestions = async () => {
     setLoading(true);
@@ -167,7 +169,13 @@ export default function QuestionGrid() {
   };
 
   const handleLike = async (questionId: string) => {
+    // Don't proceed if already processing a like action
+    if (isLiking) return;
+    
     try {
+      // Set liking state to show loading indicator
+      setIsLiking(true);
+      
       // Get current user
       const userEmail = sessionStorage.getItem('userEmail');
       if (!userEmail) {
@@ -215,7 +223,7 @@ export default function QuestionGrid() {
       // Ensure like_count is a number and default to 0 if null
       const currentLikeCount = currentQuestion.like_count || 0;
 
-      // Optimistic update
+      // Optimistic update for questions list
       setQuestions(questions.map(q => {
         if (q.id === questionId) {
           return {
@@ -226,6 +234,15 @@ export default function QuestionGrid() {
         }
         return q;
       }));
+      
+      // Also update selectedQuestion if it's the one being liked
+      if (selectedQuestion && selectedQuestion.id === questionId) {
+        setSelectedQuestion({
+          ...selectedQuestion,
+          like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
+          has_liked: !question.has_liked
+        });
+      }
 
       if (question.has_liked) {
         // Unlike the question
@@ -278,6 +295,9 @@ export default function QuestionGrid() {
       setError(err instanceof Error ? err.message : 'Failed to update like. Please try again.');
       // Revert optimistic update by refetching questions
       fetchQuestions();
+    } finally {
+      // Reset liking state when done
+      setIsLiking(false);
     }
   };
 
@@ -526,52 +546,133 @@ export default function QuestionGrid() {
         </div>
       )}
 
-      {/* Comments Dialog */}
-      <Dialog open={!!selectedQuestionId} onOpenChange={(open) => {
-        if (!open) {
-          setSelectedQuestionId(null);
-          setSelectedQuestion(null);
-        }
-      }}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Answers & Comments</DialogTitle>
-          </DialogHeader>
-          <div className="mt-4 space-y-4">
-            {selectedQuestion && (
-              <div className="space-y-4">
-                {/* Media at the top if available */}
+      {/* Custom Side Panel for Comments */}
+      {selectedQuestionId && selectedQuestion && (
+        <div 
+          className={`fixed inset-y-0 right-0 z-50 w-full ${isFullWidth ? 'md:w-full' : 'md:w-1/2'} bg-black/70 transform transition-all duration-300 ease-in-out ${!!selectedQuestionId ? "translate-x-0" : "translate-x-full"}`}
+          onClick={() => {
+            setSelectedQuestionId(null);
+            setSelectedQuestion(null);
+          }}
+        >
+          <div
+            className="h-full bg-white flex flex-col overflow-hidden rounded-l-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-500 hover:text-gray-900 mr-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsFullWidth(!isFullWidth);
+                  }}
+                >
+                  {isFullWidth ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+                <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden">
+                  <Image
+                    src="/logo.svg"
+                    alt="Community logo"
+                    width={32}
+                    height={32}
+                    className="object-cover"
+                  />
+                </div>
+                <span className="font-medium">All Community Members</span>
+              </div>
+              <div className="flex items-center">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-gray-500 hover:text-gray-900" 
+                  onClick={() => {
+                    setSelectedQuestionId(null);
+                    setSelectedQuestion(null);
+                  }}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Author info */}
+            <div className="p-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full overflow-hidden">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={`/avatars/${selectedQuestion.user.role.toLowerCase()}.png`} alt={selectedQuestion.user.first_name} />
+                    <AvatarFallback>{getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}</AvatarFallback>
+                  </Avatar>
+                </div>
+                <div>
+                  <div className="font-medium flex items-center gap-2">
+                    {`${selectedQuestion.user.first_name} ${selectedQuestion.user.last_name}`}
+                    <span className="bg-orange-500 rounded-full w-2 h-2"></span>
+                  </div>
+                  <div className="text-sm text-gray-500">{selectedQuestion.user.role}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 flex-grow overflow-y-auto">
+              <div className="max-w-lg mx-auto">
+                {/* Media if available */}
                 {selectedQuestion.file_url && (
-                  <div className="w-full rounded-md overflow-hidden">
+                  <div className="w-full rounded-md overflow-hidden mb-6">
                     <MediaPreview type={selectedQuestion.media_type} url={selectedQuestion.file_url} />
                   </div>
                 )}
                 
-                {/* Question text */}
-                <p className="text-base font-medium">{selectedQuestion.question}</p>
+                <h2 className="text-2xl font-semibold mb-6">{selectedQuestion.question}</h2>
                 
-                {/* User info at the bottom */}
-                <div className="flex items-center gap-2 pt-3">
-                  <Avatar className="h-6 w-6">
-                    <AvatarImage src={`/avatars/${selectedQuestion.user.role.toLowerCase()}.png`} alt={selectedQuestion.user.first_name} />
-                    <AvatarFallback>{getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-xs font-medium">{`${selectedQuestion.user.first_name} ${selectedQuestion.user.last_name}`}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-[10px] text-muted-foreground">{selectedQuestion.user.role}</p>
-                      <span className="text-[10px] text-muted-foreground">
-                        {formatDistanceToNow(new Date(selectedQuestion.created_at), { addSuffix: true })}
-                      </span>
-                    </div>
-                  </div>
+                {/* Comments section */}
+                <div className="mt-8">
+                  {selectedQuestionId && <CommentSection questionId={selectedQuestionId} />}
                 </div>
+                
+               
               </div>
-            )}
-            {selectedQuestionId && <CommentSection questionId={selectedQuestionId} />}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t">
+             
+
+              <div className="flex items-center justify-center mb-4">
+                <Button 
+                  variant="ghost" 
+                  className={cn("text-gray-500 hover:text-gray-900 relative", { "text-red-500": selectedQuestion.has_liked })}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleLike(selectedQuestion.id);
+                  }}
+                  disabled={isLiking}
+                >
+                  <Heart className={cn("h-5 w-5 mr-2", { "fill-current text-red-500": selectedQuestion.has_liked })} />
+                  <span className="relative">
+                    {selectedQuestion.like_count > 0 ? `${selectedQuestion.like_count} cheers` : "Be the first to cheer this"}
+                    {isLiking && (
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="animate-pulse">...</span>
+                      </span>
+                    )}
+                  </span>
+                </Button>
+              </div>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
