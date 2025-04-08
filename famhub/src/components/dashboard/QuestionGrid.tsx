@@ -465,7 +465,11 @@ export default function QuestionGrid() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {questions.map((question) => (
-            <Card key={question.id} className="overflow-hidden">
+            <Card 
+              key={question.id} 
+              className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleCommentClick(question.id)}
+            >
               {/* Media at the top if available */}
               {question.file_url && (
                 <div className="w-full">
@@ -501,23 +505,20 @@ export default function QuestionGrid() {
                     variant="ghost"
                     size="sm"
                     className={cn("h-8 w-8 p-0", { "text-red-500": question.has_liked })}
-                    onClick={() => handleLike(question.id)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent card click event
+                      handleLike(question.id);
+                    }}
                   >
                     <Heart className={cn("h-4 w-4", { "fill-current text-red-500": question.has_liked })} />
                     <span className="sr-only">Like</span>
                   </Button>
                   <span className="text-xs">{question.like_count.toString()}</span>
                   
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() => handleCommentClick(question.id)}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    <span className="sr-only">Comment</span>
-                  </Button>
-                  <span className="text-xs">{Math.abs(question.comment_count || 0).toString()}</span>
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="h-4 w-4 text-gray-500" />
+                    <span className="text-xs">{Math.abs(question.comment_count || 0).toString()}</span>
+                  </span>
                 </div>
               </CardFooter>
             </Card>
