@@ -56,7 +56,12 @@ interface Comment {
   };
 }
 
-export default function QuestionGrid() {
+interface QuestionGridProps {
+  limitCards?: number;
+  showHeader?: boolean;
+}
+
+export default function QuestionGrid({ limitCards, showHeader = true }: QuestionGridProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
@@ -428,39 +433,41 @@ export default function QuestionGrid() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
-        <div className="flex items-center gap-2">
-          <FilterDropdown 
-            viewType={viewType}
-            setViewType={setViewType}
-          />
-          {false && (
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
-                  <PlusCircle className="w-4 h-4" />
-                  Ask Question
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-white sm:max-w-[600px] p-0">
-                <DialogHeader className="pt-8 px-6 pb-4 border-b">
-                  <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
-                </DialogHeader>
-                <div className="p-6">
-                  <CreateQuestionForm 
-                    onQuestionCreated={() => {
-                      // Refresh the page after creating a question
-                      window.location.reload();
-                    }} 
-                    type="question" 
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
+      {showHeader && (
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
+          <div className="flex items-center gap-2">
+            <FilterDropdown 
+              viewType={viewType}
+              setViewType={setViewType}
+            />
+            {false && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
+                    <PlusCircle className="w-4 h-4" />
+                    Ask Question
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white sm:max-w-[600px] p-0">
+                  <DialogHeader className="pt-8 px-6 pb-4 border-b">
+                    <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
+                  </DialogHeader>
+                  <div className="p-6">
+                    <CreateQuestionForm 
+                      onQuestionCreated={() => {
+                        // Refresh the page after creating a question
+                        window.location.reload();
+                      }} 
+                      type="question" 
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {questions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
@@ -492,7 +499,7 @@ export default function QuestionGrid() {
         </div>
       ) : viewType === "card" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 md:gap-6">
-          {questions.map((question) => (
+          {questions.slice(0, limitCards || questions.length).map((question) => (
             <Card 
               key={question.id} 
               className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
