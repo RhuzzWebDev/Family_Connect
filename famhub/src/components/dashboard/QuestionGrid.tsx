@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import FilterDropdown, { ViewType } from './FilterDropdown';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogPortal, DialogOverlay } from '@/components/ui/dialog';
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import CreateQuestionForm from './CreateQuestionForm';
-import { format } from 'date-fns';
-import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart } from 'lucide-react';
+import { format, formatDistanceToNow } from 'date-fns';
+import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart, MoreHorizontal, Share2, Maximize2, Minimize2 } from 'lucide-react';
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
+import { cn } from '@/lib/utils';
 
 interface QuestionLike {
   user_id: string;
@@ -52,12 +56,20 @@ interface Comment {
   };
 }
 
-export default function QuestionGrid() {
+interface QuestionGridProps {
+  limitCards?: number;
+  showHeader?: boolean;
+}
+
+export default function QuestionGrid({ limitCards, showHeader = true }: QuestionGridProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
+  const [isLiking, setIsLiking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isFullWidth, setIsFullWidth] = useState(false);
+  const [viewType, setViewType] = useState<ViewType>('card');
 
   const fetchQuestions = async () => {
     setLoading(true);
@@ -164,7 +176,13 @@ export default function QuestionGrid() {
   };
 
   const handleLike = async (questionId: string) => {
+    // Don't proceed if already processing a like action
+    if (isLiking) return;
+    
     try {
+      // Set liking state to show loading indicator
+      setIsLiking(true);
+      
       // Get current user
       const userEmail = sessionStorage.getItem('userEmail');
       if (!userEmail) {
@@ -212,7 +230,7 @@ export default function QuestionGrid() {
       // Ensure like_count is a number and default to 0 if null
       const currentLikeCount = currentQuestion.like_count || 0;
 
-      // Optimistic update
+      // Optimistic update for questions list
       setQuestions(questions.map(q => {
         if (q.id === questionId) {
           return {
@@ -223,6 +241,15 @@ export default function QuestionGrid() {
         }
         return q;
       }));
+      
+      // Also update selectedQuestion if it's the one being liked
+      if (selectedQuestion && selectedQuestion.id === questionId) {
+        setSelectedQuestion({
+          ...selectedQuestion,
+          like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
+          has_liked: !question.has_liked
+        });
+      }
 
       if (question.has_liked) {
         // Unlike the question
@@ -275,6 +302,9 @@ export default function QuestionGrid() {
       setError(err instanceof Error ? err.message : 'Failed to update like. Please try again.');
       // Revert optimistic update by refetching questions
       fetchQuestions();
+    } finally {
+      // Reset liking state when done
+      setIsLiking(false);
     }
   };
 
@@ -403,33 +433,41 @@ export default function QuestionGrid() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
-        {false && (
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
-                <PlusCircle className="w-4 h-4" />
-                Ask Question
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-white sm:max-w-[600px] p-0">
-              <DialogHeader className="pt-8 px-6 pb-4 border-b">
-                <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
-              </DialogHeader>
-              <div className="p-6">
-                <CreateQuestionForm 
-                  onQuestionCreated={() => {
-                    // Refresh the page after creating a question
-                    window.location.reload();
-                  }} 
-                  type="question" 
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
-      </div>
+      {showHeader && (
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
+          <div className="flex items-center gap-2">
+            <FilterDropdown 
+              viewType={viewType}
+              setViewType={setViewType}
+            />
+            {false && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
+                    <PlusCircle className="w-4 h-4" />
+                    Ask Question
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-white sm:max-w-[600px] p-0">
+                  <DialogHeader className="pt-8 px-6 pb-4 border-b">
+                    <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
+                  </DialogHeader>
+                  <div className="p-6">
+                    <CreateQuestionForm 
+                      onQuestionCreated={() => {
+                        // Refresh the page after creating a question
+                        window.location.reload();
+                      }} 
+                      type="question" 
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        </div>
+      )}
 
       {questions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
@@ -459,64 +497,122 @@ export default function QuestionGrid() {
             </Dialog>
           )}
         </div>
+      ) : viewType === "card" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 md:gap-6">
+          {questions.slice(0, limitCards || questions.length).map((question) => (
+            <Card 
+              key={question.id} 
+              className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleCommentClick(question.id)}
+            >
+              {/* Media at the top if available */}
+              {question.file_url && (
+                <div className="w-full">
+                  <MediaPreview type={question.media_type} url={question.file_url} />
+                </div>
+              )}
+              
+              {/* Question content in the middle */}
+              <CardContent className="p-4">
+                <p className="text-base font-medium">{question.question}</p>
+              </CardContent>
+              
+              {/* User info and actions in the footer */}
+              <CardFooter className="flex items-center justify-between p-4 pt-0">
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
+                    <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] text-muted-foreground">{question.user.role}</p>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-8 w-8 p-0", { "text-red-500": question.has_liked })}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent card click event
+                      handleLike(question.id);
+                    }}
+                  >
+                    <Heart className={cn("h-4 w-4", { "fill-current text-red-500": question.has_liked })} />
+                    <span className="sr-only">Like</span>
+                  </Button>
+                  <span className="text-xs">{question.like_count.toString()}</span>
+                  
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="h-4 w-4 text-gray-500" />
+                    <span className="text-xs">{Math.abs(question.comment_count || 0).toString()}</span>
+                  </span>
+                </div>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="space-y-4">
           {questions.map((question) => (
             <div 
-              key={question.id} 
-              className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 md:p-5 space-y-4 transition-all duration-200 hover:shadow-md"
+              key={question.id}
+              className="flex flex-col sm:flex-row gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => handleCommentClick(question.id)}
             >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold shrink-0">
-                  {getInitials(question.user.first_name, question.user.last_name)}
+              <div className="flex items-start gap-3 sm:w-1/4">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
+                  <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <p className="text-xs text-muted-foreground">{question.user.role}</p>
+                    <span className="hidden sm:inline text-xs text-muted-foreground">•</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                    <div>
-                      <h3 className="font-semibold text-gray-900 line-clamp-1">
-                        {question.user.first_name} {question.user.last_name}
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                          {question.user.role}
-                        </span>
-                        <time className="text-xs text-gray-500">
-                          {format(new Date(question.created_at), 'MMM d, yyyy')}
-                        </time>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-gray-700 line-clamp-3">{question.question}</p>
-                  {question.file_url && (
-                    <div className="mt-3 border rounded-md overflow-hidden">
-                      <MediaPreview type={question.media_type} url={question.file_url} />
-                    </div>
-                  )}
-                  <div className="mt-4 flex items-center justify-between border-t pt-3">
-                    {/* Likes function */}
-                    <div className="flex items-center gap-3">  
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleLike(question.id)}
-                        className={`${question.has_liked ? 'text-red-500' : 'text-gray-500'} hover:text-red-500`}
-                      >
-                        <Heart className={`w-4 h-4 ${question.has_liked ? 'fill-current' : ''}`} />
-                        <span className="ml-1">{question.like_count}</span>
-                      </Button>
-                      {/* Comments function */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full h-8 px-3"
-                        onClick={() => handleCommentClick(question.id)}
-                      >
-                        <MessageSquare className="w-4 h-4 mr-1.5" />
-                        <span>{Math.abs(question.comment_count || 0)}</span>
-                      </Button>
-                    </div>
-                    
-                  </div>
+              </div>
+              
+              <div className="flex-1">
+                <p className="text-base mb-3">{question.question}</p>
+                
+                {/* Media preview removed from list view */}
+                {question.media_type && (
+                  <span className="flex items-center gap-1 text-gray-500 mb-3">
+                    <MediaTypeIcon type={question.media_type} />
+                    <span className="text-xs capitalize">{question.media_type} attached</span>
+                  </span>
+                )}
+                
+                <div className="flex items-center gap-4 mt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-8 px-2", { "text-red-500": question.has_liked })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLike(question.id);
+                    }}
+                  >
+                    <Heart className={cn("h-4 w-4 mr-1", { "fill-current text-red-500": question.has_liked })} />
+                    <span className="text-xs">{question.like_count > 0 ? question.like_count : "Like"}</span>
+                  </Button>
+                  
+                  <span className="flex items-center gap-1 text-gray-500">
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="text-xs">{question.comment_count > 0 ? `${question.comment_count} comments` : "Comment"}</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -524,50 +620,133 @@ export default function QuestionGrid() {
         </div>
       )}
 
-      {/* Comments Dialog */}
-      <Dialog open={!!selectedQuestionId} onOpenChange={(open) => {
-        if (!open) {
-          setSelectedQuestionId(null);
-          setSelectedQuestion(null);
-        }
-      }}>
-        <DialogContent className="bg-white sm:max-w-[600px] p-0">
-          <DialogHeader className="pt-8 px-6 pb-4 border-b">
-            <DialogTitle className="text-lg font-semibold text-center">Comments</DialogTitle>
-          </DialogHeader>
-          <div className="p-6 max-h-[60vh] overflow-y-auto">
-            {selectedQuestion && (
-              <div className="mb-6 border rounded-lg p-4 bg-gray-50">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
-                    {getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}
+      {/* Custom Side Panel for Comments */}
+      {selectedQuestionId && selectedQuestion && (
+        <div 
+          className={`fixed inset-y-0 right-0 z-50 w-full ${isFullWidth ? 'md:w-full' : 'md:w-1/2'} bg-black/70 transform transition-all duration-300 ease-in-out ${!!selectedQuestionId ? "translate-x-0" : "translate-x-full"}`}
+          onClick={() => {
+            setSelectedQuestionId(null);
+            setSelectedQuestion(null);
+          }}
+        >
+          <div
+            className="h-full bg-white flex flex-col overflow-hidden rounded-l-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-500 hover:text-gray-900 mr-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsFullWidth(!isFullWidth);
+                  }}
+                >
+                  {isFullWidth ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+                <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden">
+                  <Image
+                    src="/logo.svg"
+                    alt="Community logo"
+                    width={32}
+                    height={32}
+                    className="object-cover"
+                  />
+                </div>
+                <span className="font-medium">All Community Members</span>
+              </div>
+              <div className="flex items-center">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-gray-500 hover:text-gray-900" 
+                  onClick={() => {
+                    setSelectedQuestionId(null);
+                    setSelectedQuestion(null);
+                  }}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Author info */}
+            <div className="p-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full overflow-hidden">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={`/avatars/${selectedQuestion.user.role.toLowerCase()}.png`} alt={selectedQuestion.user.first_name} />
+                    <AvatarFallback>{getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}</AvatarFallback>
+                  </Avatar>
+                </div>
+                <div>
+                  <div className="font-medium flex items-center gap-2">
+                    {`${selectedQuestion.user.first_name} ${selectedQuestion.user.last_name}`}
+                    <span className="bg-orange-500 rounded-full w-2 h-2"></span>
                   </div>
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold">
-                        {selectedQuestion.user.first_name} {selectedQuestion.user.last_name}
-                      </h3>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                        {selectedQuestion.user.role}
-                      </span>
-                      <time className="text-xs text-gray-500 ml-auto">
-                        {format(new Date(selectedQuestion.created_at), 'MMM d, yyyy')}
-                      </time>
-                    </div>
-                    <p className="mt-2 text-gray-700">{selectedQuestion.question}</p>
-                    {selectedQuestion.file_url && (
-                      <div className="mt-3 border rounded-md overflow-hidden">
-                        <MediaPreview type={selectedQuestion.media_type} url={selectedQuestion.file_url} />
-                      </div>
-                    )}
-                  </div>
+                  <div className="text-sm text-gray-500">{selectedQuestion.user.role}</div>
                 </div>
               </div>
-            )}
-            {selectedQuestionId && <CommentSection questionId={selectedQuestionId} />}
+            </div>
+
+            {/* Content */}
+            <div className="p-6 flex-grow overflow-y-auto">
+              <div className="max-w-lg mx-auto">
+                {/* Media if available */}
+                {selectedQuestion.file_url && (
+                  <div className="w-full rounded-md overflow-hidden mb-6">
+                    <MediaPreview type={selectedQuestion.media_type} url={selectedQuestion.file_url} />
+                  </div>
+                )}
+                
+                <h2 className="text-2xl font-semibold mb-6">{selectedQuestion.question}</h2>
+                
+                {/* Comments section */}
+                <div className="mt-8">
+                  {selectedQuestionId && <CommentSection questionId={selectedQuestionId} />}
+                </div>
+                
+               
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t">
+             
+
+              <div className="flex items-center justify-center mb-4">
+                <Button 
+                  variant="ghost" 
+                  className={cn("text-gray-500 hover:text-gray-900 relative", { "text-red-500": selectedQuestion.has_liked })}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleLike(selectedQuestion.id);
+                  }}
+                  disabled={isLiking}
+                >
+                  <Heart className={cn("h-5 w-5 mr-2", { "fill-current text-red-500": selectedQuestion.has_liked })} />
+                  <span className="relative">
+                    {selectedQuestion.like_count > 0 ? `${selectedQuestion.like_count} cheers` : "Be the first to cheer this"}
+                    {isLiking && (
+                      <span className="absolute inset-0 flex items-center justify-center">
+                        <span className="animate-pulse">...</span>
+                      </span>
+                    )}
+                  </span>
+                </Button>
+              </div>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
