@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import FilterDropdown, { ViewType } from './FilterDropdown';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogPortal, DialogOverlay } from '@/components/ui/dialog';
@@ -63,6 +64,7 @@ export default function QuestionGrid() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFullWidth, setIsFullWidth] = useState(false);
+  const [viewType, setViewType] = useState<ViewType>('card');
 
   const fetchQuestions = async () => {
     setLoading(true);
@@ -428,30 +430,36 @@ export default function QuestionGrid() {
     <div className="space-y-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
-        {false && (
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
-                <PlusCircle className="w-4 h-4" />
-                Ask Question
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-white sm:max-w-[600px] p-0">
-              <DialogHeader className="pt-8 px-6 pb-4 border-b">
-                <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
-              </DialogHeader>
-              <div className="p-6">
-                <CreateQuestionForm 
-                  onQuestionCreated={() => {
-                    // Refresh the page after creating a question
-                    window.location.reload();
-                  }} 
-                  type="question" 
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
+        <div className="flex items-center gap-2">
+          <FilterDropdown 
+            viewType={viewType}
+            setViewType={setViewType}
+          />
+          {false && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2">
+                  <PlusCircle className="w-4 h-4" />
+                  Ask Question
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-white sm:max-w-[600px] p-0">
+                <DialogHeader className="pt-8 px-6 pb-4 border-b">
+                  <DialogTitle className="text-lg font-semibold text-center">Ask a Question</DialogTitle>
+                </DialogHeader>
+                <div className="p-6">
+                  <CreateQuestionForm 
+                    onQuestionCreated={() => {
+                      // Refresh the page after creating a question
+                      window.location.reload();
+                    }} 
+                    type="question" 
+                  />
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
       </div>
 
       {questions.length === 0 ? (
@@ -482,8 +490,8 @@ export default function QuestionGrid() {
             </Dialog>
           )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+      ) : viewType === "card" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 md:gap-6">
           {questions.map((question) => (
             <Card 
               key={question.id} 
@@ -542,6 +550,65 @@ export default function QuestionGrid() {
                 </div>
               </CardFooter>
             </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {questions.map((question) => (
+            <div 
+              key={question.id}
+              className="flex flex-col sm:flex-row gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => handleCommentClick(question.id)}
+            >
+              <div className="flex items-start gap-3 sm:w-1/4">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
+                  <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <p className="text-xs text-muted-foreground">{question.user.role}</p>
+                    <span className="hidden sm:inline text-xs text-muted-foreground">•</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex-1">
+                <p className="text-base mb-3">{question.question}</p>
+                
+                {/* Media preview removed from list view */}
+                {question.media_type && (
+                  <span className="flex items-center gap-1 text-gray-500 mb-3">
+                    <MediaTypeIcon type={question.media_type} />
+                    <span className="text-xs capitalize">{question.media_type} attached</span>
+                  </span>
+                )}
+                
+                <div className="flex items-center gap-4 mt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-8 px-2", { "text-red-500": question.has_liked })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLike(question.id);
+                    }}
+                  >
+                    <Heart className={cn("h-4 w-4 mr-1", { "fill-current text-red-500": question.has_liked })} />
+                    <span className="text-xs">{question.like_count > 0 ? question.like_count : "Like"}</span>
+                  </Button>
+                  
+                  <span className="flex items-center gap-1 text-gray-500">
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="text-xs">{question.comment_count > 0 ? `${question.comment_count} comments` : "Comment"}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       )}
