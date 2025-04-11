@@ -12,11 +12,12 @@ interface NavItem {
 const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard' },
   //{ name: 'Resources', href: '/resources' },
+  { name: 'Questions', href: '/questions' },
   { name: 'Events', href: '/events' },
-  { name: 'Feed', href: '/feed' },
+  //{ name: 'Feed', href: '/feed' },
   //{ name: 'Tags', href: '/tags' },
-  //{ name: 'Members', href: '/members' },
-  { name: 'Chat', href: '/messages' },
+  { name: 'Members', href: '/members' },
+ // { name: 'Chat', href: '/messages' },
 ];
 
 export function InnerNavbar() {
@@ -24,8 +25,8 @@ export function InnerNavbar() {
 
   return (
     <div className="">
-      <div className="container mx-auto flex justify-center px-4 py-4">
-        {/* Logo and title side by side */}
+      {/* Header with logo and title */}
+      <div className="container mx-auto px-6 py-4 flex justify-center">
         <div className="flex items-center">
           <img 
             src="/logo.svg" 
@@ -37,26 +38,26 @@ export function InnerNavbar() {
             }}
           />
           <div>
-            <h2 className="text-3xl font-semibold">All Community Members</h2>
-            <p className="text-lg text-black-300">
-              Let's help families come to terms and live well with a terminal illness with and for each other
+            <h2 className="text-xl font-bold text-gray-900">All Community Members</h2>
+            <p className="text-sm text-gray-600">
+              Explore our resources. RSVP for our events. Discover our solutions.
             </p>
           </div>
         </div>
       </div>
       
-      {/* Centered tabs */}
-      <div className="container mx-auto">
-        <nav className="flex justify-center overflow-x-auto border-b border-gray-700">
+      {/* Navigation tabs */}
+      <div className="w-full border-b border-grey-900">
+        <nav className="container mx-auto px-6 flex justify-center overflow-x-auto">
           {navItems.map((item) => (
             <Link
               key={item.name}
               href={item.href}
               className={cn(
-                "flex h-10 items-center px-4 text-lg font-medium transition-colors",
+                "flex h-12 items-center px-6 text-sm font-medium transition-colors",
                 pathname === item.href
-                  ? "border-b-2 border-blue-500 text-blue-400"
-                  : "text-black-300 hover:text-black-300"
+                  ? "border-b-2 border-blue-500 text-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
               )}
             >
               {item.name}
