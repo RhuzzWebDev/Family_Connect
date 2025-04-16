@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { User, Family } from '@/lib/supabase';
 import { AddFamilyMemberModal } from '@/components/add-family-member-modal';
+import FamilyInviteModal from './FamilyInvite';
 
 type FamilyMember = Omit<User, 'password'>;
 
@@ -164,13 +165,13 @@ export default function FamilyHub() {
           </Button>
         </div>
         <div className="flex gap-2">
+          <FamilyInviteModal />
           <AddFamilyMemberModal 
             buttonLabel="Add Family Member" 
             isAdmin={false} 
             onMemberAdded={handleMemberAdded}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           />
-          
         </div>
       </div>
 
