@@ -27,7 +27,7 @@ export function Layout({ children }: LayoutProps) {
       
       <div className="flex">
         {/* Sidebar */}
-        <aside className="w-64 hidden md:flex flex-col gap-2 p-4 border-r min-h-[calc(100vh-4rem)] sticky top-16" style={{ background: '#1E1F29' }}>
+        <aside className="w-64 hidden md:flex flex-col gap-2 p-4 border-r border-gray-700 min-h-[calc(100vh-4rem)] sticky top-16" style={{ background: '#1E1F29' }}>
           <div style={{ color: '#fff' }}>
           <Button
               variant="ghost"
