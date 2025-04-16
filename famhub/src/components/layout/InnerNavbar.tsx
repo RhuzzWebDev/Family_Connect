@@ -24,7 +24,7 @@ export function InnerNavbar() {
   const pathname = usePathname();
 
   return (
-    <div className="">
+    <div className="bg-[#1E1F29]">
       {/* Header with logo and title */}
       <div className="container mx-auto px-6 py-4 flex justify-center">
         <div className="flex items-center">
@@ -38,8 +38,8 @@ export function InnerNavbar() {
             }}
           />
           <div>
-            <h2 className="text-xl font-bold text-gray-900">All Community Members</h2>
-            <p className="text-sm text-gray-600">
+            <h2 className="text-xl font-bold text-white">All Community Members</h2>
+            <p className="text-sm text-gray-300">
               Explore our resources. RSVP for our events. Discover our solutions.
             </p>
           </div>
@@ -47,7 +47,7 @@ export function InnerNavbar() {
       </div>
       
       {/* Navigation tabs */}
-      <div className="w-full border-b border-grey-900">
+      <div className="w-full border-b border-[#232336]">
         <nav className="container mx-auto px-6 flex justify-center overflow-x-auto">
           {navItems.map((item) => (
             <Link
@@ -56,8 +56,8 @@ export function InnerNavbar() {
               className={cn(
                 "flex h-12 items-center px-6 text-sm font-medium transition-colors",
                 pathname === item.href
-                  ? "border-b-2 border-blue-500 text-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
+                  ? "border-b-2 border-blue-400 text-blue-300 bg-[#181926]"
+                  : "text-gray-300 hover:text-white hover:bg-[#181926]"
               )}
             >
               {item.name}

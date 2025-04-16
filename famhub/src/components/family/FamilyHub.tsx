@@ -148,7 +148,7 @@ export default function FamilyHub() {
   const familyName = currentUser?.last_name || (familyDetails?.family_name || 'Your');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ background: '#0F1017', color: '#fff', minHeight: '100vh', padding: '1.5rem' }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-2xl font-bold tracking-tight">
@@ -175,8 +175,8 @@ export default function FamilyHub() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}>
+        <CardHeader style={{ color: '#fff' }}>
           <div className="flex justify-between items-center">
             <CardTitle>Family Members</CardTitle>
             <span className="text-sm text-gray-500">{familyMembers.length} members</span>
@@ -185,31 +185,31 @@ export default function FamilyHub() {
             View and manage your family members
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent style={{ color: '#fff' }}>
           {familyMembers.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {familyMembers.map((member) => (
-                <Card key={member.id} className="overflow-hidden border">
-                  <CardHeader className={`${getRoleColor(member.role)} py-3`}>
+                <Card key={member.id} className="overflow-hidden border" style={{ background: '#232336', color: '#fff', border: '1px solid #232336' }}>
+                  <CardHeader className="py-3" style={{ background: '#20212b', color: '#e5e7eb' }}>
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-blue-600 font-semibold">
+                      <div className="h-8 w-8 rounded-full flex items-center justify-center font-semibold" style={{ background: '#23233b', color: '#60a5fa' }}>
                         {member.first_name.charAt(0)}{member.last_name.charAt(0)}
                       </div>
                       {member.first_name} {member.last_name}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-4 space-y-3">
+                  <CardContent className="p-4 space-y-3" style={{ color: '#fff' }}>
                     <div className="flex items-center gap-2 text-sm">
-                      <Mail className="h-4 w-4 text-gray-500" />
-                      <span className="text-gray-700">{member.email}</span>
+                      <Mail className="h-4 w-4 text-gray-400" />
+                      <span className="text-gray-200">{member.email}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      <Badge className="h-4 w-4 text-gray-500" />
-                      <span className="text-gray-700">Role: {member.role}</span>
+                      <Badge className="h-4 w-4 text-gray-400" />
+                      <span className="text-gray-200">Role: {member.role}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                      <span className="text-gray-700">Joined: {formatDate(member.created_at)}</span>
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <span className="text-gray-200">Joined: {formatDate(member.created_at)}</span>
                     </div>
                     <div className="mt-2">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
@@ -226,8 +226,8 @@ export default function FamilyHub() {
           ) : (
             <div className="text-center py-8">
               <UserPlus className="h-12 w-12 mx-auto text-gray-400" />
-              <h3 className="mt-4 text-lg font-medium text-gray-900">No family members yet</h3>
-              <p className="mt-2 text-sm text-gray-500">
+              <h3 className="mt-4 text-lg font-medium text-gray-100">No family members yet</h3>
+              <p className="mt-2 text-sm text-gray-400">
                 Get started by adding your first family member.
               </p>
               <AddFamilyMemberModal 
@@ -242,16 +242,16 @@ export default function FamilyHub() {
       </Card>
 
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
-        <DialogContent>
+        <DialogContent style={{ background: '#181926', color: '#fff' }}>
           <DialogHeader>
             <DialogTitle>Invite Family Member</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-300">
               Share this code with your family member. They will need to enter this code when registering to join your family.
             </p>
             <div className="flex items-center gap-2">
-              <div className="flex-1 p-3 bg-gray-50 rounded-md font-mono text-sm">
+              <div className="flex-1 p-3 rounded-md font-mono text-sm" style={{ background: '#232336', color: '#fff' }}>
                 {inviteCode}
               </div>
               <Button 

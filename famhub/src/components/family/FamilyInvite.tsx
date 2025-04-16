@@ -41,7 +41,8 @@ export default function FamilyInviteModal() {
           onClick={closeModal}
         >
           <div
-            className="h-full bg-white flex flex-col overflow-hidden rounded-l-2xl"
+            className="h-full flex flex-col overflow-hidden rounded-l-2xl"
+            style={{ background: '#181926', color: '#fff' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -50,19 +51,20 @@ export default function FamilyInviteModal() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-gray-500 hover:text-gray-900 mr-1"
+                  className="text-gray-400 group mr-1"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsFullWidth(!isFullWidth);
                   }}
+                  style={{ background: 'transparent', transition: 'box-shadow 0.2s' }}
                 >
                   {isFullWidth ? (
-                    <Minimize2 className="h-4 w-4" />
+                    <Minimize2 className="h-4 w-4 group-hover:text-cyan-400" style={{ transition: 'color 0.2s, box-shadow 0.2s' }} />
                   ) : (
-                    <Maximize2 className="h-4 w-4" />
+                    <Maximize2 className="h-4 w-4 group-hover:text-cyan-400" style={{ transition: 'color 0.2s, box-shadow 0.2s' }} />
                   )}
                 </Button>
-                <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden">
+                <div className="w-8 h-8 rounded-full overflow-hidden" style={{ background: '#232336' }}>
                   <Image
                     src="/logo.svg"
                     alt="Community logo"
@@ -71,24 +73,35 @@ export default function FamilyInviteModal() {
                     className="object-cover"
                   />
                 </div>
-                <span className="font-medium">Invite a Family Member</span>
+                <span className="font-medium" style={{ color: '#e5e7eb' }}>Invite a Family Member</span>
               </div>
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="text-gray-500 hover:text-gray-900" 
+                className="text-gray-400 group"
                 onClick={closeModal}
+                style={{ background: 'transparent', transition: 'box-shadow 0.2s' }}
               >
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 group-hover:text-cyan-400" style={{ transition: 'color 0.2s, box-shadow 0.2s' }} />
               </Button>
+              <style>{`
+                .group:hover {
+                  background: transparent !important;
+                }
+                .group:hover .group-hover\:text-cyan-400 {
+                  color: #22d3ee !important;
+                  filter: drop-shadow(0 0 6px #22d3ee);
+                }
+              `}</style>
             </div>
 
             {/* Placeholder: Invite Link */}
-            <div className="p-6 flex-grow overflow-y-auto text-center text-gray-600">
-              <div className="text-lg font-medium mb-2">Family Invite Link</div>
-              <div className="mb-2">Copy the link below to invite people to your family</div>
+            <div className="p-6 flex-grow overflow-y-auto text-center" style={{ color: '#e5e7eb' }}>
+              <div className="text-lg font-medium mb-2" style={{ color: '#fff' }}>Family Invite Link</div>
+              <div className="mb-2" style={{ color: '#cbd5e1' }}>Copy the link below to invite people to your family</div>
               <div
-                className="flex items-center justify-center gap-2 bg-gray-100 border border-dashed border-gray-400 p-4 rounded-lg text-sm italic transition-colors cursor-pointer hover:bg-gray-200"
+                className="flex items-center justify-center gap-2 border border-dashed p-4 rounded-lg text-sm italic transition-colors cursor-pointer"
+                style={{ background: '#232336', borderColor: '#35364a', color: '#e5e7eb' }}
                 onClick={() => {
                   navigator.clipboard.writeText('https://yourapp.com/invite/family/placeholder-link');
                   setCopied(true);
@@ -96,8 +109,8 @@ export default function FamilyInviteModal() {
                 }}
                 title="Click to copy invite link"
               >
-                <span className="break-all select-all" id="invite-link">https://yourapp.com/invite/family/placeholder-link</span>
-                <LinkIcon className="h-5 w-5 text-gray-500" />
+                <span className="break-all select-all" id="invite-link" style={{ color: '#fff' }}>https://yourapp.com/invite/family/placeholder-link</span>
+                <LinkIcon className="h-5 w-5" style={{ color: '#a1a1aa' }} />
                 <Button
                   size="icon"
                   variant="ghost"
@@ -110,13 +123,13 @@ export default function FamilyInviteModal() {
                   }}
                   aria-label="Copy invite link"
                 >
-                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                  {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" style={{ color: '#a1a1aa' }} />}
                 </Button>
               </div>
             </div>
 
             {/* Footer placeholder */}
-            <div className="p-4 border-t text-center text-gray-400 text-sm italic">
+            <div className="p-4 border-t text-center text-gray-400 text-sm italic" style={{ borderTop: '1px solid #232336', background: '#181926', color: '#a1a1aa' }}>
               Footer placeholder
             </div>
           </div>

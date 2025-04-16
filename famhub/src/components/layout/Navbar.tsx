@@ -157,7 +157,12 @@ export function Navbar() {
         `)
         .eq('users.last_name', lastName)
         .order('created_at', { ascending: false })
-        .limit(10) as { data: CommentNotification[] | null };
+        .limit(10) as { data: Array<{
+  id: string;
+  content: string;
+  created_at: string;
+  users: { first_name: string; last_name: string };
+}> | null };
 
       // Fetch likes with user info
       const { data: likes } = await supabase
@@ -173,7 +178,12 @@ export function Navbar() {
         `)
         .eq('users.last_name', lastName)
         .order('created_at', { ascending: false })
-        .limit(10) as { data: LikeNotification[] | null };
+        .limit(10) as { data: Array<{
+  id: string;
+  created_at: string;
+  user_id: string;
+  users: { first_name: string; last_name: string };
+}> | null };
 
       const formattedNotifications = [
         ...(comments?.map(comment => ({
@@ -217,7 +227,10 @@ export function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <nav
+      className="sticky top-0 z-50 w-full"
+      style={{ background: '#1E1F29', borderBottom: '1px solid #232336' }}
+    >
       <div className="w-full px-4 flex h-16 items-center">
         <div className="flex items-center gap-4">
           <Image
@@ -227,15 +240,16 @@ export function Navbar() {
             height={40}
             className="rounded"
           />
-          <span className="font-bold text-xl">FamilyConnect</span>
+          <span className="font-bold text-xl" style={{ color: '#fff' }}>FamilyConnect</span>
         </div>
         
         <div className="ml-auto flex items-center gap-6 pr-8">
           <div className="relative">
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               className="relative"
+              style={{ background: '#232336', color: '#fff' }}
               onClick={() => setShowNotifications(!showNotifications)}
             >
               <Bell className="h-5 w-5" />
@@ -253,58 +267,79 @@ export function Navbar() {
             />
           </div>
 
+          {/*
           <Button
             variant="ghost"
             size="icon"
+            style={{ background: '#232336', color: '#fff' }}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           >
             <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
+          */}
 
           <div className="relative" ref={userMenuRef}>
-            <Avatar 
-              className="cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+            <div
+              className="h-8 w-8 rounded-full flex items-center justify-center font-semibold cursor-pointer transition-all hover:ring-2 hover:ring-blue-500"
+              style={{ background: '#23233b', color: '#60a5fa' }}
               onClick={() => setShowUserMenu(!showUserMenu)}
             >
-              <AvatarImage src="/default-avatar.png" alt={userData.name || 'User'} />
-              <AvatarFallback>{getInitial()}</AvatarFallback>
-            </Avatar>
+              {getInitial()}
+            </div>
             
             {/* User dropdown menu */}
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-50">
+              <div
+                className="absolute right-0 mt-2 w-56 rounded-md shadow-lg z-50"
+                style={{ background: '#232336', border: '1px solid #232336' }}
+              >
                 <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                  <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                  <div className="px-4 py-3 border-b" style={{ borderColor: '#232336' }}>
                     {isLoading ? (
                       <div className="flex items-center justify-center py-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
                       </div>
                     ) : (
                       <>
-                        <p className="text-sm leading-5 font-medium text-gray-900 dark:text-gray-100">
+                        <p className="text-sm leading-5 font-medium" style={{ color: '#fff' }}>
                           {userData.name || 'Guest User'}
                         </p>
-                        <p className="text-xs leading-4 text-gray-500 dark:text-gray-400 truncate">
+                        <p className="text-xs leading-4 truncate" style={{ color: '#e5e7eb' }}>
                           {userData.email || 'Not logged in'}
                         </p>
                       </>
                     )}
                   </div>
                   
-                  <Link href="/profile" className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                  <Link
+                    href="/profile"
+                    className="flex items-center px-4 py-2 text-sm transition-colors"
+                    style={{ color: '#e5e7eb', background: 'transparent' }}
+                    onMouseOver={e => (e.currentTarget.style.background = '#1E1F29')}
+                    onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+                  >
                     <UserIcon className="mr-3 h-4 w-4" />
                     Profile
                   </Link>
-                  
-                  <Link href="/settings" className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+
+                  <Link
+                    href="/settings"
+                    className="flex items-center px-4 py-2 text-sm transition-colors"
+                    style={{ color: '#e5e7eb', background: 'transparent' }}
+                    onMouseOver={e => (e.currentTarget.style.background = '#1E1F29')}
+                    onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+                  >
                     <Settings className="mr-3 h-4 w-4" />
                     Settings
                   </Link>
-                  
+
                   <button
                     onClick={handleLogout}
-                    className="flex w-full items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="flex w-full items-center px-4 py-2 text-sm transition-colors"
+                    style={{ color: '#ff6b6b', background: 'transparent' }}
+                    onMouseOver={e => (e.currentTarget.style.background = '#1E1F29')}
+                    onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     <LogOut className="mr-3 h-4 w-4" />
                     Logout

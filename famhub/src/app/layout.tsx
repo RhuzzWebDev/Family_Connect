@@ -21,7 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={geist.className}>
+      <body className={geist.className} style={{ background: '#0F1017', color: '#fff' }}>
         <Providers>
           <ThemeProvider
             attribute="class"
