@@ -86,14 +86,24 @@ export default function FamilyInviteModal() {
             {/* Placeholder: Invite Link */}
             <div className="p-6 flex-grow overflow-y-auto text-center text-gray-600">
               <div className="text-lg font-medium mb-2">Family Invite Link</div>
-              <div className="flex items-center justify-center gap-2 bg-gray-100 border border-dashed border-gray-400 p-4 rounded-lg text-sm italic">
+              <div className="mb-2">Copy the link below to invite people to your family</div>
+              <div
+                className="flex items-center justify-center gap-2 bg-gray-100 border border-dashed border-gray-400 p-4 rounded-lg text-sm italic transition-colors cursor-pointer hover:bg-gray-200"
+                onClick={() => {
+                  navigator.clipboard.writeText('https://yourapp.com/invite/family/placeholder-link');
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+                title="Click to copy invite link"
+              >
                 <span className="break-all select-all" id="invite-link">https://yourapp.com/invite/family/placeholder-link</span>
                 <LinkIcon className="h-5 w-5 text-gray-500" />
                 <Button
                   size="icon"
                   variant="ghost"
                   className="ml-2"
-                  onClick={() => {
+                  onClick={e => {
+                    e.stopPropagation();
                     navigator.clipboard.writeText('https://yourapp.com/invite/family/placeholder-link');
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1500);
