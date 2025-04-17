@@ -24,7 +24,7 @@ import {
   DialogFooter,
   DialogClose
 } from "@/components/ui/dialog"
-import { SupabaseService } from "@/services/supabaseService"
+import { FamilyService } from "@/services/familyService"
 import { cn } from "@/lib/utils"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
@@ -78,7 +78,7 @@ export function AddFamilyMemberModal({
         try {
           const userEmail = sessionStorage.getItem('userEmail');
           if (userEmail) {
-            const user = await SupabaseService.getUserByEmail(userEmail);
+            const user = await FamilyService.getUserByEmail(userEmail);
             if (user && user.family_id) {
               setCurrentUserFamilyId(user.family_id);
             }
@@ -208,7 +208,7 @@ export function AddFamilyMemberModal({
       
       if (isAdmin) {
         // Admin-specific logic if needed
-        await SupabaseService.addMemberToFamily(
+        await FamilyService.addMemberToFamily(
           familyId || formData.last_name, // Use familyId if provided, otherwise use last name
           {
             first_name: formData.first_name,
@@ -222,7 +222,7 @@ export function AddFamilyMemberModal({
         );
       } else {
         // For regular users, simply use addFamilyMember which handles family creation if needed
-        await SupabaseService.addFamilyMember({
+        await FamilyService.addFamilyMember({
           ...formData,
           family_id: currentUserFamilyId || undefined
         });
@@ -305,18 +305,18 @@ export function AddFamilyMemberModal({
           {buttonLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md bg-white border border-gray-200 shadow-lg rounded-xl p-0 overflow-hidden" style={{ backdropFilter: 'none' }}>
-        <Card className="border-0 shadow-none">
+      <DialogContent className="sm:max-w-md p-0 overflow-hidden bg-gradient-to-br from-gray-900 to-gray-950 text-white border border-gray-800 shadow-xl">
+        <Card className="border-0 shadow-none bg-transparent">
           <CardContent className="p-0">
-            <div className="p-6">
+            <div className="p-6 bg-transparent text-white">
               <div className="flex items-center justify-between mb-4">
-                <DialogTitle className="text-xl font-semibold">
+                <DialogTitle className="text-xl font-semibold text-white">
                   {formSuccess ? "Family Member Added" : "Add Family Member"}
                 </DialogTitle>
               </div>
               
               {formErrors.form && (
-                <Alert variant="destructive" className="mb-4 rounded-lg">
+                <Alert variant="destructive" className="mb-4 rounded-lg bg-red-900/30 text-white border border-red-800">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>{formErrors.form}</AlertDescription>
                 </Alert>
@@ -324,12 +324,12 @@ export function AddFamilyMemberModal({
               
               {formSuccess ? (
                 <div className="space-y-4">
-                  <Alert variant="default" className="bg-green-50 border-green-200 rounded-lg">
-                    <Check className="h-4 w-4 text-green-600" />
-                    <AlertDescription className="text-green-700">{formSuccess}</AlertDescription>
+                  <Alert variant="default" className="rounded-lg bg-green-900/30 border border-green-800 text-green-300">
+                    <Check className="h-4 w-4 text-green-400" />
+                    <AlertDescription className="text-green-300">{formSuccess}</AlertDescription>
                   </Alert>
                   
-                  <Card className="rounded-lg border border-gray-200 shadow-sm">
+                  <Card className="rounded-lg border shadow-sm bg-gray-800/50 border-gray-700 text-white">
                     <CardContent className="pt-6 space-y-4">
                       <h3 className="font-medium text-center">Login Credentials</h3>
                       <div className="space-y-2">
@@ -372,7 +372,7 @@ export function AddFamilyMemberModal({
                       
                       <div className="pt-2">
                         <Button 
-                          className="w-full rounded-lg"
+                          className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
                           onClick={() => {
                             setOpen(false);
                             resetForm();
@@ -385,14 +385,14 @@ export function AddFamilyMemberModal({
                   </Card>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 bg-transparent text-white">
                   {/* Step indicator */}
                   <div className="flex justify-between mb-6">
-                    <div className={`flex-1 h-1 rounded-full ${currentStep === 'personal' ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
+                    <div className={`flex-1 h-1 rounded-full ${currentStep === 'personal' ? 'bg-blue-600' : 'bg-gray-700'}`}></div>
                     <div className="mx-1"></div>
-                    <div className={`flex-1 h-1 rounded-full ${currentStep === 'role' ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
+                    <div className={`flex-1 h-1 rounded-full ${currentStep === 'role' ? 'bg-blue-600' : 'bg-gray-700'}`}></div>
                     <div className="mx-1"></div>
-                    <div className={`flex-1 h-1 rounded-full ${currentStep === 'confirmation' ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
+                    <div className={`flex-1 h-1 rounded-full ${currentStep === 'confirmation' ? 'bg-blue-600' : 'bg-gray-700'}`}></div>
                   </div>
                   
                   {/* Step 1: Personal Information */}
@@ -408,7 +408,7 @@ export function AddFamilyMemberModal({
                             name="first_name"
                             value={formData.first_name}
                             onChange={handleInputChange}
-                            className={cn(formErrors.first_name && "border-red-300 focus-visible:ring-red-500", "rounded-lg")}
+                            className={cn(formErrors.first_name && "border-red-300 focus-visible:ring-red-500", "rounded-lg bg-[#232336] text-white border-[#35364a] placeholder-gray-400 focus-visible:ring-blue-600 focus:bg-[#232336]")}
                           />
                           {formErrors.first_name && (
                             <p className="text-xs text-red-500 mt-1">{formErrors.first_name}</p>
@@ -423,7 +423,7 @@ export function AddFamilyMemberModal({
                             name="last_name"
                             value={formData.last_name}
                             onChange={handleInputChange}
-                            className={cn(formErrors.last_name && "border-red-300 focus-visible:ring-red-500", "rounded-lg")}
+                            className={cn(formErrors.last_name && "border-red-300 focus-visible:ring-red-500", "rounded-lg bg-[#232336] text-white border-[#35364a] placeholder-gray-400 focus-visible:ring-blue-600 focus:bg-[#232336]")}
                           />
                           {formErrors.last_name && (
                             <p className="text-xs text-red-500 mt-1">{formErrors.last_name}</p>
@@ -441,7 +441,7 @@ export function AddFamilyMemberModal({
                           value={formData.phone_number}
                           onChange={handleInputChange}
                           placeholder="+1 (555) 123-4567"
-                          className={cn(formErrors.phone_number && "border-red-300 focus-visible:ring-red-500", "rounded-lg")}
+                          className={cn(formErrors.phone_number && "border-red-300 focus-visible:ring-red-500", "rounded-lg bg-[#232336] text-white border-[#35364a] placeholder-gray-400 focus-visible:ring-blue-600 focus:bg-[#232336]")}
                         />
                         {formErrors.phone_number && (
                           <p className="text-xs text-red-500 mt-1">{formErrors.phone_number}</p>
@@ -456,7 +456,7 @@ export function AddFamilyMemberModal({
                           value={formData.bio}
                           onChange={handleInputChange}
                           placeholder="A short description about this family member"
-                          className="min-h-[80px] rounded-lg"
+                          className="min-h-[80px] rounded-lg bg-[#232336] text-white border-[#35364a] placeholder-gray-400 focus-visible:ring-blue-600 focus:bg-[#232336]"
                         />
                       </div>
                       
@@ -486,7 +486,7 @@ export function AddFamilyMemberModal({
                           value={formData.email}
                           onChange={handleInputChange}
                           placeholder="example@email.com"
-                          className={cn(formErrors.email && "border-red-300 focus-visible:ring-red-500", "rounded-lg")}
+                          className={cn(formErrors.email && "border-red-300 focus-visible:ring-red-500", "rounded-lg bg-[#232336] text-white border-[#35364a] placeholder-gray-400 focus-visible:ring-blue-600 focus:bg-[#232336]")}
                         />
                         {formErrors.email && (
                           <p className="text-xs text-red-500 mt-1">{formErrors.email}</p>
@@ -503,7 +503,7 @@ export function AddFamilyMemberModal({
                           value={formData.role}
                           onChange={(e) => handleRoleSelect(e.target.value as 'Father' | 'Mother' | 'Grandfather' | 'Grandmother' | 'Older Brother' | 'Older Sister' | 'Middle Brother' | 'Middle Sister' | 'Youngest Brother' | 'Youngest Sister')}
                           className={cn(
-                            "w-full rounded-lg border border-input bg-background px-3 py-2",
+                            "w-full rounded-lg border px-3 py-2 bg-[#232336] text-white border-[#35364a] focus-visible:ring-blue-600 focus:bg-[#232336]",
                             formErrors.role && "border-red-300 focus-visible:ring-red-500"
                           )}
                         >
@@ -524,7 +524,7 @@ export function AddFamilyMemberModal({
                           name="persona"
                           value={formData.persona}
                           onChange={(e) => handleSelectChange('persona', e.target.value as 'Parent' | 'Children')}
-                          className="w-full rounded-lg border border-input bg-background px-3 py-2"
+                          className="w-full rounded-lg border px-3 py-2 bg-[#232336] text-white border-[#35364a] focus-visible:ring-blue-600 focus:bg-[#232336]"
                         >
                           <option value="Parent">Parent</option>
                           <option value="Children">Children</option>
@@ -538,7 +538,7 @@ export function AddFamilyMemberModal({
                           name="status"
                           value={formData.status}
                           onChange={(e) => handleSelectChange('status', e.target.value as 'Active' | 'Validating' | 'Not Active')}
-                          className="w-full rounded-lg border border-input bg-background px-3 py-2"
+                          className="w-full rounded-lg border px-3 py-2 bg-[#232336] text-white border-[#35364a] focus-visible:ring-blue-600 focus:bg-[#232336]"
                         >
                           <option value="Active">Active</option>
                           <option value="Validating">Validating</option>
@@ -569,7 +569,7 @@ export function AddFamilyMemberModal({
                   {/* Step 3: Confirmation */}
                   {currentStep === 'confirmation' && (
                     <div className="space-y-4">
-                      <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+                      <div className="p-4 rounded-lg space-y-3 bg-gray-800/50 text-white">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <p className="text-sm text-gray-500">First Name</p>
@@ -609,18 +609,18 @@ export function AddFamilyMemberModal({
                         )}
                       </div>
                       
-                      <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                      <div className="p-4 border rounded-lg bg-blue-900/20 border-blue-800 text-blue-200">
                         <div className="flex items-center mb-2">
                           <Mail className="h-4 w-4 text-blue-600 mr-2" />
-                          <h3 className="font-medium text-blue-800">Auto-generated Password</h3>
+                          <h3 className="font-medium text-blue-400">Auto-generated Password</h3>
                         </div>
-                        <p className="text-sm text-blue-700 mb-3">
+                        <p className="text-sm mb-3 text-blue-200">
                           The following password will be created for this family member:
                         </p>
                         <div className="space-y-2">
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium">Password:</span>
-                            <span className="text-sm">{formData.password}</span>
+                            <span className="text-sm font-medium text-white">Password:</span>
+                            <span className="text-sm text-white">{formData.password}</span>
                           </div>
                         </div>
                       </div>

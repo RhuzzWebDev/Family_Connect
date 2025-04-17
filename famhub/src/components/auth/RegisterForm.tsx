@@ -1,85 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { UserService } from '../../services/userService';
+import { FamilyService } from '../../services/familyService';
 import { User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import bcrypt from 'bcryptjs';
 import { useSession } from '@/hooks/useSession';
 import { SupabaseService } from '@/services/supabaseService';
-
-const Input = ({ 
-  label, 
-  error, 
-  ...props 
-}: { 
-  label: string;
-  error?: string;
-} & React.InputHTMLAttributes<HTMLInputElement>) => (
-  <div className="mb-4">
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      {label}
-    </label>
-    <input
-      {...props}
-      className={`
-        w-full px-4 py-2 rounded-lg border
-        ${error ? 'border-red-500' : 'border-gray-300'}
-        focus:outline-none focus:ring-2
-        ${error ? 'focus:ring-red-500' : 'focus:ring-blue-500'}
-        focus:border-transparent
-        transition duration-200 ease-in-out
-        placeholder:text-gray-400
-      `}
-    />
-    {error && (
-      <p className="mt-1 text-sm text-red-600">{error}</p>
-    )}
-  </div>
-);
-
-const SelectInput = ({
-  label,
-  error,
-  options,
-  ...props
-}: {
-  label: string;
-  error?: string;
-  options: string[];
-} & React.SelectHTMLAttributes<HTMLSelectElement>) => (
-  <div className="mb-4">
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      {label}
-    </label>
-    <select
-      {...props}
-      className={`
-        w-full px-4 py-2 rounded-lg border
-        ${error ? 'border-red-500' : 'border-gray-300'}
-        focus:outline-none focus:ring-2
-        ${error ? 'focus:ring-red-500' : 'focus:ring-blue-500'}
-        focus:border-transparent
-        transition duration-200 ease-in-out
-        bg-white
-      `}
-    >
-      <option value="">Select {label}</option>
-      {options.map((option) => (
-        <option key={option} value={option}>
-          {option}
-        </option>
-      ))}
-    </select>
-    {error && (
-      <p className="mt-1 text-sm text-red-600">{error}</p>
-    )}
-  </div>
-);
+import { toast } from 'sonner';
 
 interface RegisterFormData {
   firstName: string;
@@ -97,6 +32,8 @@ interface RegisterFormData {
 export default function RegisterForm() {
   const router = useRouter();
   const { setUserEmail } = useSession();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState<RegisterFormData>({
     firstName: '',
     lastName: '',
@@ -138,291 +75,358 @@ export default function RegisterForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newErrors: Record<string, string> = {};
-
-    // Validate form
-    if (!formData.firstName.trim()) {
-      newErrors.firstName = 'First name is required';
-    }
-    if (!formData.lastName.trim()) {
-      newErrors.lastName = 'Last name is required';
-    }
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
-    }
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-    if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-    if (!formData.role) {
-      newErrors.role = 'Role is required';
-    }
-    if (!formData.persona) {
-      newErrors.persona = 'Persona is required';
-    }
-    if (!formData.createFamily && !formData.familyCode.trim()) {
-      newErrors.familyCode = 'Family code is required to join an existing family';
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-
+    setErrors({});
     setLoading(true);
     try {
-      // Check if user already exists
-      const { data: existingUser, error: checkError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', formData.email)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        throw new Error(checkError.message);
+      // Form validation
+      const validationErrors: Record<string, string> = {};
+      
+      if (formData.password !== formData.confirmPassword) {
+        validationErrors.confirmPassword = 'Passwords do not match';
+      }
+      
+      if (formData.createFamily && !formData.familyName.trim()) {
+        validationErrors.familyName = 'Family name is required';
+      }
+      
+      if (!formData.createFamily && !formData.familyCode.trim()) {
+        validationErrors.familyCode = 'Family code is required';
+      }
+      
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors(validationErrors);
+        setLoading(false);
+        return;
       }
 
-      if (existingUser) {
-        throw new Error('User with this email already exists');
-      }
-
-      // Hash the password
-      const hashedPassword = await bcrypt.hash(formData.password, 10);
-
-      let familyId: string | null = null;
-
-      if (formData.createFamily) {
-        // Create a new family based on last name
-        const { data: newFamily, error: familyError } = await supabase
-          .rpc('get_or_create_family', { 
-            p_family_name: formData.lastName,
-            p_user_id: null // Will be updated after user creation
-          });
-
-        if (familyError || !newFamily) {
-          throw new Error('Failed to create family. Please try again.');
-        }
-
-        familyId = newFamily;
-      } else {
-        // Verify family code (which is actually a family ID)
-        const { data: existingFamily, error: familyError } = await supabase
-          .from('families')
-          .select('id')
-          .eq('id', formData.familyCode)
-          .single();
-
-        if (familyError || !existingFamily) {
-          throw new Error('Invalid family code. Please check and try again.');
-        }
-
-        familyId = existingFamily.id;
-      }
-
-      // Create user in the users table
-      const { data: newUser, error: createError } = await supabase
-        .from('users')
-        .insert({
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          email: formData.email,
-          password: hashedPassword,
-          role: formData.role,
-          persona: formData.persona,
-          status: 'Validating',
-          family_id: familyId
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        throw new Error(createError.message);
-      }
-
-      // If this is a new family and the user is the first member, update the created_by field
-      if (formData.createFamily) {
-        await supabase
-          .from('families')
-          .update({ created_by: newUser.id })
-          .eq('id', familyId);
-          
-        // Create default questions for the new family
-        try {
-          await SupabaseService.createDefaultQuestions(newUser.id);
-          console.log('Default questions created successfully');
-        } catch (error) {
-          console.error('Error creating default questions:', error);
-          // Continue even if creating default questions fails
-        }
-      }
-
-      // Store email using the session hook
-      setUserEmail(formData.email);
-
-      // Show success message and redirect to login
-      alert('Registration successful! Please wait for your account to be validated.');
-      router.push('/login');
-    } catch (error) {
-      console.error('Registration error:', error);
-      setErrors({
-        email: error instanceof Error ? error.message : 'An unexpected error occurred during registration'
+      // Register user first (without family_id if creating a new family)
+      const userId = await UserService.registerUser({
+        email: formData.email,
+        password: formData.password,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        role: formData.role,
+        persona: formData.persona,
+        bio: '',
+        phone_number: '',
+        family_id: formData.createFamily ? undefined : formData.familyCode
       });
+      
+      // If creating a family, create it now and link the user to it
+      if (formData.createFamily && formData.familyName) {
+        await FamilyService.createFamily(formData.familyName, userId, formData.email);
+      }
+      
+      // Store user email in sessionStorage for session management
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('userEmail', formData.email);
+        setUserEmail(formData.email);
+      }
+      
+      // Show success message and redirect to login page
+      toast.success('Registration successful! Please log in to continue.');
+      router.push('/login');
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      toast.error(err.message || 'Registration failed');
+      setErrors({ general: err.message || 'Registration failed' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
+  const toggleConfirmPasswordVisibility = () => {
+    setShowConfirmPassword(!showConfirmPassword);
   };
 
   const familyRoles = ['Father', 'Mother', 'Grandfather', 'Grandmother', 'Older Brother', 'Older Sister', 'Middle Brother', 'Middle Sister', 'Youngest Brother', 'Youngest Sister'];
   const personaTypes = ['Parent', 'Children'];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <Card className="max-w-md w-full space-y-8 p-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
+    <div className="w-full max-w-3xl mx-auto bg-[#1a1d24] rounded-lg overflow-hidden shadow-lg flex flex-col md:flex-row">
+      {/* Image Section - Left side on desktop, top on mobile */}
+      <div className="relative w-full md:w-2/5 h-48 md:h-auto">
+        <Image 
+          src="/family.jpg" 
+          alt="Registration" 
+          fill 
+          className="object-cover" 
+          priority 
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#121418]/70 to-transparent"></div>
+        <div className="absolute bottom-4 left-4 text-white">
+          <h2 className="text-xl font-bold">Join Our Community</h2>
+          <p className="text-sm text-gray-300 mt-1">Connect with families and support groups</p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="First Name"
-              name="firstName"
-              type="text"
-              autoComplete="given-name"
-              required
-              placeholder="Enter first name"
-              value={formData.firstName}
-              onChange={handleChange}
-              error={errors.firstName}
-              disabled={loading}
-            />
-            <Input
-              label="Last Name"
-              name="lastName"
-              type="text"
-              autoComplete="family-name"
-              required
-              placeholder="Enter last name"
-              value={formData.lastName}
-              onChange={handleChange}
-              error={errors.lastName}
-              disabled={loading}
-            />
+      </div>
+
+      {/* Form Section - Right side on desktop, bottom on mobile */}
+      <div className="w-full md:w-3/5 p-6 md:p-8">
+        <h1 className="text-xl font-semibold text-white mb-6">Create an Account</h1>
+        
+        {errors.general && (
+          <div className="mb-5 p-2 bg-red-500/20 border border-red-500 rounded text-red-500 text-sm">
+            {errors.general}
           </div>
-          <Input
-            label="Email Address"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            placeholder="Enter your email"
-            value={formData.email}
-            onChange={handleChange}
-            error={errors.email}
-            disabled={loading}
-          />
-          <Input
-            label="Password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            placeholder="Create a password"
-            value={formData.password}
-            onChange={handleChange}
-            error={errors.password}
-            disabled={loading}
-          />
-          <Input
-            label="Confirm Password"
-            name="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            required
-            placeholder="Confirm your password"
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            error={errors.confirmPassword}
-            disabled={loading}
-          />
-          <SelectInput
-            label="Family Role"
-            name="role"
-            required
-            value={formData.role}
-            onChange={handleChange}
-            error={errors.role}
-            options={familyRoles}
-            disabled={loading}
-          />
-          <SelectInput
-            label="Persona"
-            name="persona"
-            required
-            value={formData.persona}
-            onChange={handleChange}
-            error={errors.persona}
-            options={personaTypes}
-            disabled={loading}
-          />
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Create Family
-            </label>
-            <input
-              type="checkbox"
-              name="createFamily"
-              checked={formData.createFamily}
-              onChange={handleChange}
-              className="mr-2"
-            />
-            {!formData.createFamily && (
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <Label htmlFor="firstName" className="text-sm text-white font-medium block mb-1.5">
+                First Name
+              </Label>
               <Input
-                label="Family Code"
-                name="familyCode"
-                type="text"
+                id="firstName"
+                name="firstName"
+                placeholder="Enter first name"
+                value={formData.firstName}
+                onChange={handleChange}
                 required
+                className={`bg-[#2a2d35] border-gray-700 text-white h-11 ${errors.firstName ? 'border-red-500' : ''}`}
+                disabled={loading}
+              />
+              {errors.firstName && (
+                <p className="text-xs text-red-500 mt-1">{errors.firstName}</p>
+              )}
+            </div>
+            
+            <div className="space-y-3">
+              <Label htmlFor="lastName" className="text-sm text-white font-medium block mb-1.5">
+                Last Name
+              </Label>
+              <Input
+                id="lastName"
+                name="lastName"
+                placeholder="Enter last name"
+                value={formData.lastName}
+                onChange={handleChange}
+                required
+                className={`bg-[#2a2d35] border-gray-700 text-white h-11 ${errors.lastName ? 'border-red-500' : ''}`}
+                disabled={loading}
+              />
+              {errors.lastName && (
+                <p className="text-xs text-red-500 mt-1">{errors.lastName}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="email" className="text-sm text-white font-medium block mb-1.5">
+              Email Address
+            </Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="Enter your email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              className={`bg-[#2a2d35] border-gray-700 text-white h-11 ${errors.email ? 'border-red-500' : ''}`}
+              disabled={loading}
+            />
+            {errors.email && (
+              <p className="text-xs text-red-500 mt-1">{errors.email}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="password" className="text-sm text-white font-medium block mb-1.5">
+              Password
+            </Label>
+            <div className="relative">
+              <Input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Create a password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                className={`bg-[#2a2d35] border-gray-700 text-white pr-10 h-11 ${errors.password ? 'border-red-500' : ''}`}
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={togglePasswordVisibility}
+                className="absolute right-3 top-3 text-gray-400 hover:text-white"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            {errors.password && (
+              <p className="text-xs text-red-500 mt-1">{errors.password}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="confirmPassword" className="text-sm text-white font-medium block mb-1.5">
+              Confirm Password
+            </Label>
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Confirm your password"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                required
+                className={`bg-[#2a2d35] border-gray-700 text-white pr-10 h-11 ${errors.confirmPassword ? 'border-red-500' : ''}`}
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={toggleConfirmPasswordVisibility}
+                className="absolute right-3 top-3 text-gray-400 hover:text-white"
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+              >
+                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            {errors.confirmPassword && (
+              <p className="text-xs text-red-500 mt-1">{errors.confirmPassword}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="role" className="text-sm text-white font-medium block mb-1.5">
+              Family Role
+            </Label>
+            <select
+              id="role"
+              name="role"
+              value={formData.role}
+              onChange={handleChange}
+              required
+              className={`w-full bg-[#2a2d35] border-gray-700 text-white h-11 rounded-md px-3 ${errors.role ? 'border-red-500' : ''}`}
+              disabled={loading}
+            >
+              <option value="">Select Family Role</option>
+              {familyRoles.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {errors.role && (
+              <p className="text-xs text-red-500 mt-1">{errors.role}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="persona" className="text-sm text-white font-medium block mb-1.5">
+              Persona
+            </Label>
+            <select
+              id="persona"
+              name="persona"
+              value={formData.persona}
+              onChange={handleChange}
+              required
+              className={`w-full bg-[#2a2d35] border-gray-700 text-white h-11 rounded-md px-3 ${errors.persona ? 'border-red-500' : ''}`}
+              disabled={loading}
+            >
+              <option value="">Select Persona</option>
+              {personaTypes.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {errors.persona && (
+              <p className="text-xs text-red-500 mt-1">{errors.persona}</p>
+            )}
+          </div>
+
+          <div className="space-y-3 mt-2">
+            <div className="flex items-center pt-1.5">
+              <input
+                type="checkbox"
+                id="createFamily"
+                name="createFamily"
+                checked={formData.createFamily}
+                onChange={handleChange}
+                className="mr-3 h-5 w-5 bg-[#2a2d35] border-gray-700 text-blue-600 rounded"
+                disabled={loading}
+              />
+              <Label htmlFor="createFamily" className="text-sm text-white cursor-pointer font-medium">
+                Create Family
+              </Label>
+            </div>
+          </div>
+
+          {formData.createFamily ? (
+            <div className="space-y-3 mt-1">
+              <Label htmlFor="familyName" className="text-sm text-white font-medium block mb-1.5">
+                Family Name
+              </Label>
+              <Input
+                id="familyName"
+                name="familyName"
+                placeholder="Enter family name"
+                value={formData.familyName}
+                onChange={handleChange}
+                required
+                className={`bg-[#2a2d35] border-gray-700 text-white h-11 ${errors.familyName ? 'border-red-500' : ''}`}
+                disabled={loading}
+              />
+              {errors.familyName && (
+                <p className="text-xs text-red-500 mt-1">{errors.familyName}</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 mt-1">
+              <Label htmlFor="familyCode" className="text-sm text-white font-medium block mb-1.5">
+                Family Code
+              </Label>
+              <Input
+                id="familyCode"
+                name="familyCode"
                 placeholder="Enter family code"
                 value={formData.familyCode}
                 onChange={handleChange}
-                error={errors.familyCode}
+                required
+                className={`bg-[#2a2d35] border-gray-700 text-white h-11 ${errors.familyCode ? 'border-red-500' : ''}`}
                 disabled={loading}
               />
-            )}
-          </div>
-          <div>
-            <Button
-              type="submit"
-              className="w-full"
+              {errors.familyCode && (
+                <p className="text-xs text-red-500 mt-1">{errors.familyCode}</p>
+              )}
+            </div>
+          )}
+
+          <div className="pt-5 mt-3">
+            <Button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 text-base font-medium"
               disabled={loading}
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Creating Account...
                 </>
               ) : (
-                'Create Account'
+                'Register'
               )}
             </Button>
           </div>
-          <div className="text-sm text-center">
-            <Link
-              href="/login"
-              className="font-medium text-blue-600 hover:text-blue-500"
-            >
-              Already have an account? Sign in
+
+          <p className="text-center text-sm text-gray-400 mt-4">
+            Already have an account?{" "}
+            <Link href="/login" className="text-blue-500 hover:underline">
+              Sign in
             </Link>
-          </div>
+          </p>
         </form>
-      </Card>
+      </div>
     </div>
   );
 }
