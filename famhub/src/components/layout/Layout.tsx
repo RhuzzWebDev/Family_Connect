@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from "@/hooks/useSession";
-import { Navbar } from "./Navbar";
+import Navbar from "./Navbar";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { HomeIcon, Users, Calendar, MessageSquare } from "lucide-react";

@@ -24,7 +24,7 @@ import {
   DialogFooter,
   DialogClose
 } from "@/components/ui/dialog"
-import { SupabaseService } from "@/services/supabaseService"
+import { FamilyService } from "@/services/familyService"
 import { cn } from "@/lib/utils"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
@@ -78,7 +78,7 @@ export function AddFamilyMemberModal({
         try {
           const userEmail = sessionStorage.getItem('userEmail');
           if (userEmail) {
-            const user = await SupabaseService.getUserByEmail(userEmail);
+            const user = await FamilyService.getUserByEmail(userEmail);
             if (user && user.family_id) {
               setCurrentUserFamilyId(user.family_id);
             }
@@ -208,7 +208,7 @@ export function AddFamilyMemberModal({
       
       if (isAdmin) {
         // Admin-specific logic if needed
-        await SupabaseService.addMemberToFamily(
+        await FamilyService.addMemberToFamily(
           familyId || formData.last_name, // Use familyId if provided, otherwise use last name
           {
             first_name: formData.first_name,
@@ -222,7 +222,7 @@ export function AddFamilyMemberModal({
         );
       } else {
         // For regular users, simply use addFamilyMember which handles family creation if needed
-        await SupabaseService.addFamilyMember({
+        await FamilyService.addFamilyMember({
           ...formData,
           family_id: currentUserFamilyId || undefined
         });
@@ -305,18 +305,18 @@ export function AddFamilyMemberModal({
           {buttonLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden" style={{ background: '#181926', color: '#fff', border: '1px solid #232336', backdropFilter: 'none' }}>
-        <Card className="border-0 shadow-none" style={{ background: 'transparent' }}>
+      <DialogContent className="sm:max-w-md p-0 overflow-hidden bg-gradient-to-br from-gray-900 to-gray-950 text-white border border-gray-800 shadow-xl">
+        <Card className="border-0 shadow-none bg-transparent">
           <CardContent className="p-0">
-            <div className="p-6" style={{ background: 'transparent', color: '#fff' }}>
+            <div className="p-6 bg-transparent text-white">
               <div className="flex items-center justify-between mb-4">
-                <DialogTitle className="text-xl font-semibold" style={{ color: '#fff' }}>
+                <DialogTitle className="text-xl font-semibold text-white">
                   {formSuccess ? "Family Member Added" : "Add Family Member"}
                 </DialogTitle>
               </div>
               
               {formErrors.form && (
-                <Alert variant="destructive" className="mb-4 rounded-lg" style={{ background: '#2d1d1d', color: '#fff', border: '1px solid #7f1d1d' }}>
+                <Alert variant="destructive" className="mb-4 rounded-lg bg-red-900/30 text-white border border-red-800">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>{formErrors.form}</AlertDescription>
                 </Alert>
@@ -324,12 +324,12 @@ export function AddFamilyMemberModal({
               
               {formSuccess ? (
                 <div className="space-y-4">
-                  <Alert variant="default" className="rounded-lg" style={{ background: '#193a29', border: '1px solid #14532d', color: '#bbf7d0' }}>
+                  <Alert variant="default" className="rounded-lg bg-green-900/30 border border-green-800 text-green-300">
                     <Check className="h-4 w-4 text-green-400" />
                     <AlertDescription className="text-green-300">{formSuccess}</AlertDescription>
                   </Alert>
                   
-                  <Card className="rounded-lg border shadow-sm" style={{ background: '#232336', borderColor: '#35364a', color: '#fff' }}>
+                  <Card className="rounded-lg border shadow-sm bg-gray-800/50 border-gray-700 text-white">
                     <CardContent className="pt-6 space-y-4">
                       <h3 className="font-medium text-center">Login Credentials</h3>
                       <div className="space-y-2">
@@ -385,7 +385,7 @@ export function AddFamilyMemberModal({
                   </Card>
                 </div>
               ) : (
-                <div className="space-y-4" style={{ background: '#181926', color: '#fff' }}>
+                <div className="space-y-4 bg-transparent text-white">
                   {/* Step indicator */}
                   <div className="flex justify-between mb-6">
                     <div className={`flex-1 h-1 rounded-full ${currentStep === 'personal' ? 'bg-blue-600' : 'bg-gray-700'}`}></div>
@@ -569,7 +569,7 @@ export function AddFamilyMemberModal({
                   {/* Step 3: Confirmation */}
                   {currentStep === 'confirmation' && (
                     <div className="space-y-4">
-                      <div className="p-4 rounded-lg space-y-3" style={{ background: '#232336', color: '#fff' }}>
+                      <div className="p-4 rounded-lg space-y-3 bg-gray-800/50 text-white">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <p className="text-sm text-gray-500">First Name</p>
@@ -609,18 +609,18 @@ export function AddFamilyMemberModal({
                         )}
                       </div>
                       
-                      <div className="p-4 border rounded-lg" style={{ background: '#1e293b', borderColor: '#2563eb', color: '#93c5fd' }}>
+                      <div className="p-4 border rounded-lg bg-blue-900/20 border-blue-800 text-blue-200">
                         <div className="flex items-center mb-2">
                           <Mail className="h-4 w-4 text-blue-600 mr-2" />
-                          <h3 className="font-medium" style={{ color: '#60a5fa' }}>Auto-generated Password</h3>
+                          <h3 className="font-medium text-blue-400">Auto-generated Password</h3>
                         </div>
-                        <p className="text-sm mb-3" style={{ color: '#bae6fd' }}>
+                        <p className="text-sm mb-3 text-blue-200">
                           The following password will be created for this family member:
                         </p>
                         <div className="space-y-2">
                           <div className="flex justify-between">
-                            <span className="text-sm font-medium" style={{ color: '#fff' }}>Password:</span>
-                            <span className="text-sm" style={{ color: '#fff' }}>{formData.password}</span>
+                            <span className="text-sm font-medium text-white">Password:</span>
+                            <span className="text-sm text-white">{formData.password}</span>
                           </div>
                         </div>
                       </div>

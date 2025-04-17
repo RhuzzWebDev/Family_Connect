@@ -1,58 +1,44 @@
 'use client';
 
 import { useState } from 'react';
-import { SupabaseService } from '@/services/supabaseService';
+import { UserService } from '../../services/userService';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
+import { toast } from 'sonner';
 
-// Reusable input component with error handling
-const Input = ({ 
-  label, 
-  error, 
-  ...props 
-}: { 
-  label: string;
-  error?: string;
-} & React.InputHTMLAttributes<HTMLInputElement>) => (
-  <div className="mb-4">
-    <label className="block text-sm font-medium text-gray-700 mb-1">
-      {label}
-    </label>
-    <input
-      {...props}
-      className={`
-        w-full px-4 py-2 rounded-lg border
-        ${error ? 'border-red-500' : 'border-gray-300'}
-        focus:outline-none focus:ring-2
-        ${error ? 'focus:ring-red-500' : 'focus:ring-blue-500'}
-        focus:border-transparent
-        transition duration-200 ease-in-out
-        placeholder:text-gray-400
-      `}
-    />
-    {error && (
-      <p className="mt-1 text-sm text-red-600">{error}</p>
-    )}
-  </div>
-);
+interface LoginFormData {
+  email: string;
+  password: string;
+}
 
 export default function LoginForm() {
   const router = useRouter();
   const { setUserEmail } = useSession();
-  const [formData, setFormData] = useState({
+  const [showPassword, setShowPassword] = useState(false);
+  const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: ''
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+    
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -60,38 +46,42 @@ export default function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newErrors: Record<string, string> = {};
-
-    // Validate form
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
-    }
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-
+    setErrors({});
     setLoading(true);
     try {
-      // Verify user credentials
-      const user = await SupabaseService.verifyUser(formData.email, formData.password);
+      // Validate form
+      const validationErrors: Record<string, string> = {};
       
-      if (!user) {
-        throw new Error('Invalid email or password');
+      if (!formData.email.trim()) {
+        validationErrors.email = 'Email is required';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        validationErrors.email = 'Invalid email format';
+      }
+      
+      if (!formData.password) {
+        validationErrors.password = 'Password is required';
+      }
+      
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors(validationErrors);
+        setLoading(false);
+        return;
       }
 
+      // Login with native authentication
+      const user = await UserService.loginUser(formData.email, formData.password);
+      
       // Check user status
       switch (user.status) {
         case 'Active':
-          // Store user email using the session hook
-          setUserEmail(user.email);
-          // Redirect to dashboard
+          // Store user email in sessionStorage for session management
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('userEmail', user.email);
+            setUserEmail(user.email);
+          }
+          
+          // Show success message and redirect to dashboard
+          toast.success('Login successful!');
           router.push('/dashboard');
           break;
         case 'Validating':
@@ -101,75 +91,128 @@ export default function LoginForm() {
         default:
           throw new Error('Invalid account status');
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      setErrors({
-        email: error instanceof Error ? error.message : 'An unexpected error occurred during login'
-      });
+    } catch (err: any) {
+      console.error('Login error:', err);
+      toast.error(err.message || 'Login failed');
+      setErrors({ general: err.message || 'Login failed' });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <Card className="max-w-md w-full space-y-8 p-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
+    <div className="flex min-h-screen flex-col md:flex-row bg-[#1a1c23]">
+      {/* Left side - Image */}
+      <div className="relative w-full md:w-1/2 bg-gradient-to-br from-blue-900/80 to-purple-900/80">
+        <div className="absolute inset-0 bg-black/30"></div>
+        <div className="relative h-60 md:h-full w-full">
+          <Image 
+            src="/family.jpg" 
+            alt="Family Connect" 
+            fill 
+            className="object-contain md:object-cover"
+            priority
+          />
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <Input
-            label="Email Address"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            placeholder="Enter your email"
-            value={formData.email}
-            onChange={handleChange}
-            error={errors.email}
-            disabled={loading}
-          />
-          <Input
-            label="Password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            placeholder="Enter your password"
-            value={formData.password}
-            onChange={handleChange}
-            error={errors.password}
-            disabled={loading}
-          />
-          <div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                'Sign in'
+      </div>
+      
+      {/* Right side - Login Form */}
+      <div className="w-full md:w-1/2 p-6 md:p-12 flex items-center justify-center bg-[#1a1c23]">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-white">
+              Welcome back
+            </h2>
+            <p className="mt-2 text-sm text-gray-400">
+              Sign in to your account to continue
+            </p>
+          </div>
+          
+          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+            {errors.general && (
+              <div className="p-3 mb-3 text-sm text-red-500 bg-red-100/10 rounded-md">
+                {errors.general}
+              </div>
+            )}
+            
+            <div className="space-y-3">
+              <Label htmlFor="email" className="text-sm text-white font-medium block mb-1.5">
+                Email Address
+              </Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="Enter your email"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                className={`bg-[#2a2d35] border-gray-700 text-white h-11 ${errors.email ? 'border-red-500' : ''}`}
+                disabled={loading}
+              />
+              {errors.email && (
+                <p className="text-xs text-red-500 mt-1">{errors.email}</p>
               )}
-            </Button>
-          </div>
-          <div className="text-sm text-center">
-            <Link
-              href="/register"
-              className="font-medium text-blue-600 hover:text-blue-500"
-            >
-              Don&apos;t have an account? Sign up
-            </Link>
-          </div>
-        </form>
-      </Card>
+            </div>
+
+            <div className="space-y-3 mt-1">
+              <Label htmlFor="password" className="text-sm text-white font-medium block mb-1.5">
+                Password
+              </Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  className={`bg-[#2a2d35] border-gray-700 text-white pr-10 h-11 ${errors.password ? 'border-red-500' : ''}`}
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  onClick={togglePasswordVisibility}
+                  className="absolute right-3 top-3 text-gray-400 hover:text-white"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="text-xs text-red-500 mt-1">{errors.password}</p>
+              )}
+            </div>
+
+            <div className="pt-5 mt-3">
+              <Button 
+                type="submit" 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white h-11 text-base font-medium"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </Button>
+            </div>
+            
+            <div className="text-center mt-4">
+              <Link 
+                href="/register" 
+                className="text-sm text-blue-400 hover:text-blue-300"
+              >
+                Don&apos;t have an account? Sign up
+              </Link>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

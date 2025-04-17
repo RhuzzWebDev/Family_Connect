@@ -124,7 +124,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
 
       const familyUserIds = familyUsers.map(user => user.id);
 
-      // Fetch questions with likes information
+      // Fetch questions and user info only (old code)
       const { data, error } = await supabase
         .from('questions')
         .select(`
@@ -135,13 +135,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             role,
             persona,
             family_id
-          ),
-          question_likes!left (
-            user_id
-          ),
-          like_count,
-          comments:comments!left (
-            id
           )
         `)
         .in('user_id', familyUserIds)
@@ -151,22 +144,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         throw error;
       }
 
-      // Process questions to add has_liked field
-      const processedQuestions = (data || []).map(question => {
-        // Get the actual like count from question_likes array length
-        const actualLikeCount = question.question_likes?.length || 0;
-        // Get the actual comment count from comments array length
-        const actualCommentCount = question.comments?.length || 0;
-        
-        return {
-          ...question,
-          has_liked: question.question_likes?.some((like: QuestionLike) => like.user_id === userData.id) || false,
-          like_count: actualLikeCount, // Use the actual count from the likes array
-          comment_count: actualCommentCount // Use the actual count from the comments array
-        };
-      });
-
-      setQuestions(processedQuestions);
+      setQuestions(data || []);
     } catch (err) {
       console.error('Error fetching questions:', err);
       setError('Failed to load questions. Please try again.');

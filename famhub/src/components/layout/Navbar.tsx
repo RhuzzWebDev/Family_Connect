@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import ProfileViewModal from '@/components/profile-modal';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Bell, Moon, Sun, LogOut, User as UserIcon, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -16,7 +17,8 @@ import {
   LikeNotification 
 } from '@/components/ui/notifications-dialog';
 
-export function Navbar() {
+export default function Navbar() {
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -143,30 +145,32 @@ export function Navbar() {
 
   const fetchNotifications = async (lastName: string) => {
     try {
-      // Fetch comments
+      // Fetch comments (no direct filter on users.last_name)
       const { data: comments } = await supabase
         .from('comments')
         .select(`
           id,
           content,
           created_at,
-          users!inner(
+          users (
             first_name,
             last_name
           )
         `)
-        .eq('users.last_name', lastName)
         .order('created_at', { ascending: false })
-        .limit(10) as { data: Array<{
+        .limit(50) as { data: Array<{
   id: string;
   content: string;
   created_at: string;
   users: { first_name: string; last_name: string };
 }> | null };
 
-      // Fetch likes with user info
+      // Filter comments by lastName in JS
+      const filteredComments = comments?.filter(comment => comment.users?.last_name === lastName) || [];
+
+      // Fetch likes with user info (no direct filter on users.last_name)
       const { data: likes } = await supabase
-        .from('questions_like')
+        .from('question_likes')
         .select(`
           id,
           created_at,
@@ -176,17 +180,19 @@ export function Navbar() {
             last_name
           )
         `)
-        .eq('users.last_name', lastName)
         .order('created_at', { ascending: false })
-        .limit(10) as { data: Array<{
+        .limit(50) as { data: Array<{
   id: string;
   created_at: string;
   user_id: string;
   users: { first_name: string; last_name: string };
 }> | null };
 
+      // Filter likes by lastName in JS
+      const filteredLikes = likes?.filter(like => like.users?.last_name === lastName) || [];
+
       const formattedNotifications = [
-        ...(comments?.map(comment => ({
+        ...(filteredComments.map(comment => ({
           id: comment.id,
           type: 'comment' as const,
           content: comment.content || '',
@@ -196,7 +202,7 @@ export function Navbar() {
             last_name: comment.users.last_name
           }
         })) || []),
-        ...(likes?.map(like => ({
+        ...(filteredLikes.map(like => ({
           id: like.id,
           type: 'like' as const,
           content: 'liked a post',
@@ -312,16 +318,16 @@ export function Navbar() {
                     )}
                   </div>
                   
-                  <Link
-                    href="/profile"
-                    className="flex items-center px-4 py-2 text-sm transition-colors"
+                  <button
+                    className="flex w-full items-center px-4 py-2 text-sm transition-colors"
                     style={{ color: '#e5e7eb', background: 'transparent' }}
                     onMouseOver={e => (e.currentTarget.style.background = '#1E1F29')}
                     onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+                    onClick={() => setIsProfileModalOpen(true)}
                   >
                     <UserIcon className="mr-3 h-4 w-4" />
                     Profile
-                  </Link>
+                  </button>
 
                   <Link
                     href="/settings"
@@ -350,6 +356,12 @@ export function Navbar() {
           </div>
         </div>
       </div>
+      
+      {/* Profile Modal */}
+      <ProfileViewModal 
+        isOpen={isProfileModalOpen} 
+        onClose={() => setIsProfileModalOpen(false)} 
+      />
     </nav>
   );
 }
