@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { SupabaseService } from '@/services/supabaseService';
+import { AdminFamiliesService } from '@/services/AdminFamiliesService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -115,7 +115,7 @@ export default function AdminFamiliesPage() {
   const fetchFamilies = async () => {
     try {
       setLoading(true);
-      const data = await SupabaseService.getAllFamilies();
+      const data = await AdminFamiliesService.getAllFamilies();
       setFamilies(data);
     } catch (err) {
       console.error('Error fetching families:', err);
@@ -149,7 +149,7 @@ export default function AdminFamiliesPage() {
       }
       
       // Create the family with the parent member
-      const result = await SupabaseService.createFamilyWithMember(
+      const result = await AdminFamiliesService.createFamilyWithMember(
         newFamilyData.familyName,
         {
           first_name: newFamilyData.firstName,
@@ -261,7 +261,7 @@ export default function AdminFamiliesPage() {
       }
       
       // Add the member to the family
-      await SupabaseService.addMemberToFamily(
+      await AdminFamiliesService.addMemberToFamily(
         selectedFamilyId,
         {
           first_name: newMemberData.firstName,
@@ -312,7 +312,7 @@ export default function AdminFamiliesPage() {
       };
       
       // Update the user with all data including password if provided
-      await SupabaseService.updateFamilyMember(selectedMember.id, updateData);
+      await AdminFamiliesService.updateFamilyMember(selectedMember.id, updateData);
       
       // Refresh the families list
       handleRefreshFamilies();
@@ -334,7 +334,7 @@ export default function AdminFamiliesPage() {
     
     try {
       setLoading(true);
-      await SupabaseService.deleteUser(userId);
+      await AdminFamiliesService.deleteUser(userId);
       
       // Show success message
       toast.success('Family member deleted successfully');
@@ -357,7 +357,7 @@ export default function AdminFamiliesPage() {
     try {
       setLoading(true);
       
-      const result = await SupabaseService.deleteFamily(selectedFamilyId);
+      const result = await AdminFamiliesService.deleteFamily(selectedFamilyId);
       
       // Refresh the families list
       handleRefreshFamilies();

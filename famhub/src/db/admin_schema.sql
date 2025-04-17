@@ -159,3 +159,18 @@ BEGIN
     PERFORM set_config(claim, value, true);
 END;
 $$ LANGUAGE plpgsql;
+
+-- Function to set admin context for RLS policies
+CREATE OR REPLACE FUNCTION set_admin_context(
+    admin_email TEXT
+) RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  -- Set the user email for RLS policies
+  PERFORM set_config('app.user_email', admin_email, false);
+  -- Set admin flag to true
+  PERFORM set_config('app.is_admin', 'true', false);
+END;
+$$;
