@@ -120,15 +120,18 @@ export default function ProfileViewModal({ isOpen, onClose }: ProfileViewModalPr
           <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/30"></div>
           
           {/* Name and title overlay on cover image */}
-          <div className="absolute bottom-4 left-45 text-right">
+          <div className="absolute bottom-11 left-40 text-right">
             <h1 className="text-3xl font-bold text-white">
               {userData.first_name} {userData.last_name}
             </h1>
+            </div>
+            <div className="absolute bottom-4 left-38 text-right m-2">
             <p className="text-gray-200">
               {userData.role} • {userData.persona}
             </p>
+            </div>
           </div>
-        </div>
+       
 
         {/* Profile Image */}
         <div className="absolute top-24 left-6 w-32 h-32 rounded-full border-4 border-[#1E1F29] overflow-hidden bg-[#232336] z-10">
@@ -164,15 +167,15 @@ export default function ProfileViewModal({ isOpen, onClose }: ProfileViewModalPr
                   </div>
                   <span>•</span>
                   <div className="flex items-center gap-1">
-                    <span className="font-medium">1 Post</span>
+                    <span className="font-medium">1 Comment</span>
                   </div>
                   <span>•</span>
                   <div className="flex items-center gap-1">
-                    <span className="font-medium">1 Follower</span>
+                    <span className="font-medium">1 Likes</span>
                   </div>
                   <span>•</span>
                   <div className="flex items-center gap-1">
-                    <span className="font-medium">0 Following</span>
+                    <span className="font-medium">1 Family Members</span>
                   </div>
                 </div>
               </div>

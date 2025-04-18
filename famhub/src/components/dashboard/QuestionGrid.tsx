@@ -513,10 +513,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
               {/* User info and actions in the footer */}
               <CardFooter className="flex items-center justify-between p-4 pt-0">
                 <div className="flex items-center gap-2">
-                  <Avatar className="h-6 w-6">
-                    <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-                    <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
-                  </Avatar>
+                  <div className="h-6 w-6 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                    {getInitials(question.user.first_name, question.user.last_name)}
+                  </div>
                   <div>
                     <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
                     <div className="flex items-center gap-2">
@@ -562,10 +561,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
               onClick={() => handleCommentClick(question.id)}
             >
               <div className="flex items-start gap-3 sm:w-1/4">
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-                  <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
-                </Avatar>
+                <div className="h-10 w-10 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                  {getInitials(question.user.first_name, question.user.last_name)}
+                </div>
                 <div>
                   <p className="font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
@@ -675,11 +673,8 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             {/* Author info */}
             <div className="p-4 border-b" style={{ background: '#20212b', color: '#e5e7eb', borderColor: '#232336' }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={`/avatars/${selectedQuestion.user.role.toLowerCase()}.png`} alt={selectedQuestion.user.first_name} />
-                    <AvatarFallback>{getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}</AvatarFallback>
-                  </Avatar>
+                <div className="h-10 w-10 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                  {selectedQuestion.user.first_name.charAt(0)}{selectedQuestion.user.last_name.charAt(0)}
                 </div>
                 <div>
                   <div className="font-medium flex items-center gap-2">

@@ -1784,11 +1784,9 @@ export function CommentSection({ questionId }: CommentSectionProps) {
         {parentComments.map((comment) => (
           <div key={comment.id} className="space-y-2">
             <div className="flex items-start gap-2">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback>
-                  {comment.user.first_name[0]}{comment.user.last_name[0]}
-                </AvatarFallback>
-              </Avatar>
+              <div className="h-8 w-8 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                {comment.user.first_name[0]}{comment.user.last_name[0]}
+              </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
