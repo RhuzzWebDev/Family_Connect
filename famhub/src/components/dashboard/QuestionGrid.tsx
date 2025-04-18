@@ -167,6 +167,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         setError('You must be logged in to like questions');
         return;
       }
+      
+      // Set user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
 
       // Get user from database
       const { data: userData, error: userError } = await supabase
@@ -241,16 +244,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
           console.error('Delete like error:', deleteError);
           throw new Error('Failed to unlike question');
         }
-
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: currentLikeCount - 1 })
-          .eq('id', questionId);
-
-        if (updateError) {
-          console.error('Update count error:', updateError);
-          throw new Error('Failed to update like count');
-        }
       } else {
         // Like the question
         const { error: insertError } = await supabase
@@ -263,16 +256,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         if (insertError) {
           console.error('Insert like error:', insertError);
           throw new Error('Failed to like question');
-        }
-
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: currentLikeCount + 1 })
-          .eq('id', questionId);
-
-        if (updateError) {
-          console.error('Update count error:', updateError);
-          throw new Error('Failed to update like count');
         }
       }
     } catch (err) {
