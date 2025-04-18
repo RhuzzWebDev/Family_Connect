@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { SupabaseService } from '@/services/supabaseService';
+import { AdminDashboardService } from '@/services/AdminDashboardService';
 import { Card } from '@/components/ui/card';
 import { 
   Users, 
@@ -32,7 +32,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const fetchDashboardStats = async () => {
       try {
-        const data = await SupabaseService.getDashboardStats();
+        const data = await AdminDashboardService.getDashboardStats();
         setStats(data);
       } catch (err) {
         console.error('Error fetching dashboard stats:', err);
@@ -53,7 +53,7 @@ export default function AdminDashboardPage() {
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
-      const data = await SupabaseService.getDashboardStats();
+      const data = await AdminDashboardService.getDashboardStats();
       setStats(data);
     } catch (err) {
       console.error('Error fetching dashboard stats:', err);

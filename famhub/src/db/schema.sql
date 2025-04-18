@@ -54,12 +54,23 @@ CREATE TABLE users (
     CONSTRAINT email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 );
 
+-- Create admins table for admin authentication
+CREATE TABLE IF NOT EXISTS admins (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL, -- Stores bcrypt hashed passwords
+    is_system_admin BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT admin_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+);
+
 -- Create families table
 CREATE TABLE families (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     family_name TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    user_ref UUID
+    user_ref UUID,
+    admin_id UUID REFERENCES admins(id) ON DELETE SET NULL
 );
 
 -- Create questions table
@@ -109,11 +120,35 @@ CREATE TABLE question_likes (
 
 -- Row Level Security for question_likes
 ALTER TABLE question_likes ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies first
 DROP POLICY IF EXISTS "Users can like questions" ON question_likes;
+DROP POLICY IF EXISTS "Anyone can view question likes" ON question_likes;
+DROP POLICY IF EXISTS "Users can unlike questions" ON question_likes;
+
+-- Create comprehensive policies for question_likes
+CREATE POLICY "Anyone can view question likes"
+  ON question_likes
+  FOR SELECT
+  USING (true);
+
 CREATE POLICY "Users can like questions"
   ON question_likes
   FOR INSERT
   WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE email = current_setting('app.user_email', true)
+      AND status = 'Active'
+      AND users.id = question_likes.user_id
+    )
+    OR current_setting('app.is_admin', true)::boolean = true
+  );
+
+CREATE POLICY "Users can unlike questions"
+  ON question_likes
+  FOR DELETE
+  USING (
     EXISTS (
       SELECT 1 FROM users
       WHERE email = current_setting('app.user_email', true)
@@ -146,6 +181,7 @@ ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE families ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comment_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies first
 DROP POLICY IF EXISTS "Users can view their own data" ON users;
@@ -165,6 +201,8 @@ DROP POLICY IF EXISTS "Users can delete their own comments" ON comments;
 DROP POLICY IF EXISTS "Anyone can view comment likes" ON comment_likes;
 DROP POLICY IF EXISTS "Users can like comments" ON comment_likes;
 DROP POLICY IF EXISTS "Users can unlike comments" ON comment_likes;
+DROP POLICY IF EXISTS "Admin authentication" ON admins;
+DROP POLICY IF EXISTS "Admin can update own data" ON admins;
 
 -- Enable RLS on users table
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -444,6 +482,29 @@ AFTER INSERT OR DELETE ON comment_likes
 FOR EACH ROW
 EXECUTE FUNCTION update_comment_like_count();
 
+-- Create trigger function to update like_count in questions table
+CREATE OR REPLACE FUNCTION update_question_like_count()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE questions
+        SET like_count = like_count + 1
+        WHERE id = NEW.question_id;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE questions
+        SET like_count = like_count - 1
+        WHERE id = OLD.question_id;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to update question like_count
+CREATE TRIGGER update_question_like_count_trigger
+AFTER INSERT OR DELETE ON question_likes
+FOR EACH ROW
+EXECUTE FUNCTION update_question_like_count();
+
 -- Create function to delete family members safely
 CREATE OR REPLACE FUNCTION delete_family_member(member_id UUID, current_user_email TEXT)
 RETURNS BOOLEAN
@@ -531,6 +592,30 @@ BEGIN
   RETURNING to_jsonb(users.*) INTO result;
   
   RETURN result;
+END;
+$$;
+
+-- Admin policies for native authentication
+-- These policies allow admin authentication similar to the user native auth approach
+CREATE POLICY "Admin authentication"
+    ON admins
+    FOR SELECT
+    USING (true);
+
+CREATE POLICY "Admin can update own data"
+    ON admins
+    FOR UPDATE
+    USING (email = current_setting('app.user_email', true));
+
+-- Create function to set admin context for RLS policies
+CREATE OR REPLACE FUNCTION set_admin_context(p_email TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  PERFORM set_config('app.user_email', p_email, false);
+  PERFORM set_config('app.is_admin', 'true', false);
 END;
 $$;
 

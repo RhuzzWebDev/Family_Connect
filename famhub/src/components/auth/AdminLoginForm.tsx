@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { SupabaseService } from '@/services/supabaseService';
+import { AdminLoginService } from '@/services/AdminLoginService';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -78,7 +78,7 @@ export default function AdminLoginForm() {
     setLoading(true);
     try {
       // Verify admin credentials
-      const admin = await SupabaseService.verifyAdmin(formData.email, formData.password);
+      const admin = await AdminLoginService.verifyAdmin(formData.email, formData.password);
       
       if (!admin) {
         throw new Error('Invalid email or password');

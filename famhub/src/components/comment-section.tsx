@@ -1728,14 +1728,14 @@ export function CommentSection({ questionId }: CommentSectionProps) {
           </div>
         )}
         {/* comment upload options */}
-        <div className="p-4 border-t bg-gray-50">
+        <div className="p-4 border-t bg-blue-50/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Button 
                 variant={activeTab === 'text' ? 'secondary' : 'ghost'} 
                 size="sm" 
                 onClick={() => setActiveTab('text')}
-                className="px-3"
+                className={`px-3 ${activeTab === 'text' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-blue-50 hover:text-blue-600'}`}
               >
                 Text
               </Button>
@@ -1743,7 +1743,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                 variant={activeTab === 'audio' ? 'secondary' : 'ghost'} 
                 size="sm" 
                 onClick={() => setActiveTab('audio')}
-                className="px-3"
+                className={`px-3 ${activeTab === 'audio' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-blue-50 hover:text-blue-600'}`}
               >
                 <Mic className="w-4 h-4 mr-1" />
                 Audio
@@ -1752,7 +1752,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                 variant={activeTab === 'video' ? 'secondary' : 'ghost'} 
                 size="sm" 
                 onClick={() => setActiveTab('video')}
-                className="px-3"
+                className={`px-3 ${activeTab === 'video' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-blue-50 hover:text-blue-600'}`}
               >
                 <Video className="w-4 h-4 mr-1" />
                 Video
@@ -1761,7 +1761,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
                 variant={activeTab === 'file' ? 'secondary' : 'ghost'} 
                 size="sm" 
                 onClick={() => setActiveTab('file')}
-                className="px-3"
+                className={`px-3 ${activeTab === 'file' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-blue-50 hover:text-blue-600'}`}
               >
                 <FileIcon className="w-4 h-4 mr-1" />
                 File
@@ -1770,7 +1770,7 @@ export function CommentSection({ questionId }: CommentSectionProps) {
             <Button 
               onClick={submitComment}
               disabled={submitting || (activeTab === 'text' && !newComment.trim() && !selectedFile)}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white transition-colors duration-200 shadow-sm"
               size="sm"
             >
               <Send className="mr-2 h-4 w-4" />

@@ -36,6 +36,7 @@ interface Question {
   has_liked?: boolean;
   question_likes?: QuestionLike[];
   comments?: any[];
+  sortKey?: number; // Added for stable sorting
 }
 
 interface Comment {
@@ -143,8 +144,33 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       if (error) {
         throw error;
       }
+      
+      // Fetch the current user's likes
+      const { data: userLikes, error: likesError } = await supabase
+        .from('question_likes')
+        .select('question_id')
+        .eq('user_id', userData.id);
+        
+      if (likesError) {
+        console.error('Error fetching user likes:', likesError);
+        // Continue anyway, just won't show liked status
+      }
+      
+      // Create a set of liked question IDs for faster lookup
+      const likedQuestionIds = new Set(userLikes?.map(like => like.question_id) || []);
+      
+      // Add has_liked property to each question and preserve order
+      const questionsWithLikes = (data || []).map(question => ({
+        ...question,
+        has_liked: likedQuestionIds.has(question.id),
+        // Add a stable sort key based on creation date
+        sortKey: new Date(question.created_at).getTime()
+      }));
+      
+      // Sort by the stable sort key (creation date timestamp)
+      const sortedQuestions = [...questionsWithLikes].sort((a, b) => b.sortKey - a.sortKey);
 
-      setQuestions(data || []);
+      setQuestions(sortedQuestions);
     } catch (err) {
       console.error('Error fetching questions:', err);
       setError('Failed to load questions. Please try again.');
@@ -167,6 +193,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         setError('You must be logged in to like questions');
         return;
       }
+      
+      // Set user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
 
       // Get user from database
       const { data: userData, error: userError } = await supabase
@@ -208,13 +237,15 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       // Ensure like_count is a number and default to 0 if null
       const currentLikeCount = currentQuestion.like_count || 0;
 
-      // Optimistic update for questions list
+      // Optimistic update for questions list while preserving order
       setQuestions(questions.map(q => {
         if (q.id === questionId) {
           return {
             ...q,
             like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
-            has_liked: !q.has_liked
+            has_liked: !q.has_liked,
+            // Preserve the sortKey to maintain position
+            sortKey: q.sortKey
           };
         }
         return q;
@@ -225,7 +256,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         setSelectedQuestion({
           ...selectedQuestion,
           like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
-          has_liked: !question.has_liked
+          has_liked: !question.has_liked,
+          // Preserve the sortKey to maintain position
+          sortKey: selectedQuestion.sortKey
         });
       }
 
@@ -241,16 +274,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
           console.error('Delete like error:', deleteError);
           throw new Error('Failed to unlike question');
         }
-
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: currentLikeCount - 1 })
-          .eq('id', questionId);
-
-        if (updateError) {
-          console.error('Update count error:', updateError);
-          throw new Error('Failed to update like count');
-        }
       } else {
         // Like the question
         const { error: insertError } = await supabase
@@ -263,16 +286,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         if (insertError) {
           console.error('Insert like error:', insertError);
           throw new Error('Failed to like question');
-        }
-
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: currentLikeCount + 1 })
-          .eq('id', questionId);
-
-        if (updateError) {
-          console.error('Update count error:', updateError);
-          throw new Error('Failed to update like count');
         }
       }
     } catch (err) {
