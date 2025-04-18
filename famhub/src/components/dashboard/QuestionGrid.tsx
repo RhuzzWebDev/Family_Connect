@@ -36,6 +36,7 @@ interface Question {
   has_liked?: boolean;
   question_likes?: QuestionLike[];
   comments?: any[];
+  sortKey?: number; // Added for stable sorting
 }
 
 interface Comment {
@@ -124,7 +125,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
 
       const familyUserIds = familyUsers.map(user => user.id);
 
-      // Fetch questions with likes information
+      // Fetch questions and user info only (old code)
       const { data, error } = await supabase
         .from('questions')
         .select(`
@@ -135,13 +136,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             role,
             persona,
             family_id
-          ),
-          question_likes!left (
-            user_id
-          ),
-          like_count,
-          comments:comments!left (
-            id
           )
         `)
         .in('user_id', familyUserIds)
@@ -150,23 +144,33 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       if (error) {
         throw error;
       }
-
-      // Process questions to add has_liked field
-      const processedQuestions = (data || []).map(question => {
-        // Get the actual like count from question_likes array length
-        const actualLikeCount = question.question_likes?.length || 0;
-        // Get the actual comment count from comments array length
-        const actualCommentCount = question.comments?.length || 0;
+      
+      // Fetch the current user's likes
+      const { data: userLikes, error: likesError } = await supabase
+        .from('question_likes')
+        .select('question_id')
+        .eq('user_id', userData.id);
         
-        return {
-          ...question,
-          has_liked: question.question_likes?.some((like: QuestionLike) => like.user_id === userData.id) || false,
-          like_count: actualLikeCount, // Use the actual count from the likes array
-          comment_count: actualCommentCount // Use the actual count from the comments array
-        };
-      });
+      if (likesError) {
+        console.error('Error fetching user likes:', likesError);
+        // Continue anyway, just won't show liked status
+      }
+      
+      // Create a set of liked question IDs for faster lookup
+      const likedQuestionIds = new Set(userLikes?.map(like => like.question_id) || []);
+      
+      // Add has_liked property to each question and preserve order
+      const questionsWithLikes = (data || []).map(question => ({
+        ...question,
+        has_liked: likedQuestionIds.has(question.id),
+        // Add a stable sort key based on creation date
+        sortKey: new Date(question.created_at).getTime()
+      }));
+      
+      // Sort by the stable sort key (creation date timestamp)
+      const sortedQuestions = [...questionsWithLikes].sort((a, b) => b.sortKey - a.sortKey);
 
-      setQuestions(processedQuestions);
+      setQuestions(sortedQuestions);
     } catch (err) {
       console.error('Error fetching questions:', err);
       setError('Failed to load questions. Please try again.');
@@ -189,6 +193,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         setError('You must be logged in to like questions');
         return;
       }
+      
+      // Set user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
 
       // Get user from database
       const { data: userData, error: userError } = await supabase
@@ -230,13 +237,15 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       // Ensure like_count is a number and default to 0 if null
       const currentLikeCount = currentQuestion.like_count || 0;
 
-      // Optimistic update for questions list
+      // Optimistic update for questions list while preserving order
       setQuestions(questions.map(q => {
         if (q.id === questionId) {
           return {
             ...q,
             like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
-            has_liked: !q.has_liked
+            has_liked: !q.has_liked,
+            // Preserve the sortKey to maintain position
+            sortKey: q.sortKey
           };
         }
         return q;
@@ -247,7 +256,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         setSelectedQuestion({
           ...selectedQuestion,
           like_count: question.has_liked ? currentLikeCount - 1 : currentLikeCount + 1,
-          has_liked: !question.has_liked
+          has_liked: !question.has_liked,
+          // Preserve the sortKey to maintain position
+          sortKey: selectedQuestion.sortKey
         });
       }
 
@@ -263,16 +274,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
           console.error('Delete like error:', deleteError);
           throw new Error('Failed to unlike question');
         }
-
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: currentLikeCount - 1 })
-          .eq('id', questionId);
-
-        if (updateError) {
-          console.error('Update count error:', updateError);
-          throw new Error('Failed to update like count');
-        }
       } else {
         // Like the question
         const { error: insertError } = await supabase
@@ -285,16 +286,6 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         if (insertError) {
           console.error('Insert like error:', insertError);
           throw new Error('Failed to like question');
-        }
-
-        const { error: updateError } = await supabase
-          .from('questions')
-          .update({ like_count: currentLikeCount + 1 })
-          .eq('id', questionId);
-
-        if (updateError) {
-          console.error('Update count error:', updateError);
-          throw new Error('Failed to update like count');
         }
       }
     } catch (err) {
@@ -408,7 +399,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+      <div className="flex flex-col items-center justify-center py-12 space-y-4" style={{ background: '#0F1017', color: '#fff' }}>
         <div className="w-10 h-10 border-4 border-t-blue-600 border-blue-200 rounded-full animate-spin"></div>
         <p className="text-gray-500">Loading questions...</p>
       </div>
@@ -417,7 +408,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-4 bg-red-50 rounded-lg">
+      <div className="flex flex-col items-center justify-center py-12 space-y-4 rounded-lg" style={{ background: '#232336', color: '#fff' }}>
         <AlertTriangle className="w-12 h-12 text-red-500" />
         <p className="text-red-600 font-medium">{error}</p>
         <Button 
@@ -432,10 +423,10 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ background: '#0F1017', color: '#fff', minHeight: '100vh', padding: '1.5rem' }}>
       {showHeader && (
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
+          <h2 className="text-xl font-semibold text-gray-300">Recent Questions</h2>
           <div className="flex items-center gap-2">
             <FilterDropdown 
               viewType={viewType}
@@ -470,7 +461,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       )}
 
       {questions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 space-y-4 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+        <div className="flex flex-col items-center justify-center py-16 space-y-4 rounded-lg border border-dashed" style={{ background: '#181926', color: '#fff', borderColor: '#232336' }}>
           <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
           <p className="text-gray-500 text-center">No questions yet!</p>
           {false && (
@@ -497,12 +488,14 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             </Dialog>
           )}
         </div>
+        // card of question display
       ) : viewType === "card" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-4 gap-4 md:gap-6 2xl:gap-8">
           {questions.slice(0, limitCards || questions.length).map((question) => (
             <Card 
               key={question.id} 
               className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+              style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
               onClick={() => handleCommentClick(question.id)}
             >
               {/* Media at the top if available */}
@@ -520,10 +513,9 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
               {/* User info and actions in the footer */}
               <CardFooter className="flex items-center justify-between p-4 pt-0">
                 <div className="flex items-center gap-2">
-                  <Avatar className="h-6 w-6">
-                    <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-                    <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
-                  </Avatar>
+                  <div className="h-6 w-6 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                    {getInitials(question.user.first_name, question.user.last_name)}
+                  </div>
                   <div>
                     <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
                     <div className="flex items-center gap-2">
@@ -560,18 +552,18 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
           ))}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4" style={{ background: '#0F1017', color: '#fff' }}>
           {questions.map((question) => (
             <div 
               key={question.id}
-              className="flex flex-col sm:flex-row gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+              className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border"
+              style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
               onClick={() => handleCommentClick(question.id)}
             >
               <div className="flex items-start gap-3 sm:w-1/4">
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-                  <AvatarFallback>{getInitials(question.user.first_name, question.user.last_name)}</AvatarFallback>
-                </Avatar>
+                <div className="h-10 w-10 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                  {getInitials(question.user.first_name, question.user.last_name)}
+                </div>
                 <div>
                   <p className="font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
@@ -630,11 +622,12 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
           }}
         >
           <div
-            className="h-full bg-white flex flex-col overflow-hidden rounded-l-2xl"
+            className="h-full flex flex-col overflow-hidden rounded-l-2xl"
+            style={{ background: '#181926', color: '#fff' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-4">
+            <div className="flex items-center justify-between p-4" style={{ background: '#20212b', color: '#e5e7eb' }}>
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -678,13 +671,10 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             </div>
 
             {/* Author info */}
-            <div className="p-4 border-b">
+            <div className="p-4 border-b" style={{ background: '#20212b', color: '#e5e7eb', borderColor: '#232336' }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={`/avatars/${selectedQuestion.user.role.toLowerCase()}.png`} alt={selectedQuestion.user.first_name} />
-                    <AvatarFallback>{getInitials(selectedQuestion.user.first_name, selectedQuestion.user.last_name)}</AvatarFallback>
-                  </Avatar>
+                <div className="h-10 w-10 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                  {selectedQuestion.user.first_name.charAt(0)}{selectedQuestion.user.last_name.charAt(0)}
                 </div>
                 <div>
                   <div className="font-medium flex items-center gap-2">
@@ -697,8 +687,8 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             </div>
 
             {/* Content */}
-            <div className="p-6 flex-grow overflow-y-auto">
-              <div className="max-w-lg mx-auto">
+            <div className="p-6 flex-grow overflow-y-auto" style={{ background: '#181926', color: '#fff' }}>
+              <div className="max-w-lg mx-auto" style={{ color: '#fff' }}>
                 {/* Media if available */}
                 {selectedQuestion.file_url && (
                   <div className="w-full rounded-md overflow-hidden mb-6">
@@ -706,7 +696,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
                   </div>
                 )}
                 
-                <h2 className="text-2xl font-semibold mb-6">{selectedQuestion.question}</h2>
+                <h2 className="text-2xl font-semibold mb-6" style={{ color: '#fff' }}>{selectedQuestion.question}</h2>
                 
                 {/* Comments section */}
                 <div className="mt-8">
@@ -718,7 +708,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t">
+            <div className="p-4 border-t" style={{ background: '#20212b', color: '#e5e7eb', borderColor: '#232336' }}>
              
 
               <div className="flex items-center justify-center mb-4">

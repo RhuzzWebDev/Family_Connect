@@ -245,10 +245,9 @@ export function QuestionCard({ question }: QuestionCardProps) {
         
         {/* User info at the bottom */}
         <div className="flex items-center gap-2 pt-3">
-          <Avatar className="h-6 w-6">
-            <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-            <AvatarFallback>{`${question.user.first_name[0]}${question.user.last_name[0]}`}</AvatarFallback>
-          </Avatar>
+          <div className="h-6 w-6 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+            {`${question.user.first_name[0]}${question.user.last_name[0]}`}
+          </div>
           <div>
             <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
             <div className="flex items-center gap-2">
@@ -282,10 +281,9 @@ export function QuestionCard({ question }: QuestionCardProps) {
       {/* User info and actions in the footer */}
       <CardFooter className="flex items-center justify-between p-4 pt-0">
         <div className="flex items-center gap-2">
-          <Avatar className="h-6 w-6">
-            <AvatarImage src={`/avatars/${question.user.role.toLowerCase()}.png`} alt={question.user.first_name} />
-            <AvatarFallback>{`${question.user.first_name[0]}${question.user.last_name[0]}`}</AvatarFallback>
-          </Avatar>
+          <div className="h-6 w-6 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+            {`${question.user.first_name[0]}${question.user.last_name[0]}`}
+          </div>
           <div>
             <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
             <div className="flex items-center gap-2">

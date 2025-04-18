@@ -40,55 +40,55 @@ export default function DashboardPage() {
   return (
     <Layout>
       <InnerNavbar />
-      <div className="pl-6 pr-6 md:pl-8">
+      <div className="pl-6 pr-6 md:pl-8" style={{ background: '#0F1017', color: '#fff', minHeight: '100vh' }}>
         {/* Welcome Section */}
         <div className="mb-8 pt-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold mb-2" style={{ color: '#fff' }}>
             Welcome!
           </h1>
-          <p className="text-gray-600">
+          <p style={{ color: '#e5e7eb' }}>
             Here's what's happening in the Community.
           </p>
         </div>
 
         {/* Featured Content */}
         <div className="mb-10">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Featured</h2>
+          <h2 className="text-xl font-semibold mb-4" style={{ color: '#fff' }}>Featured</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Family Photos</CardTitle>
-                <CardDescription>Latest shared memories</CardDescription>
+            <Card style={{ background: '#181926', color: '#fff', border: 'none', boxShadow: '0 2px 8px #0002' }}>
+              <CardHeader style={{ color: '#fff' }}>
+                <CardTitle style={{ color: '#fff' }}>Family Photos</CardTitle>
+                <CardDescription style={{ color: '#e5e7eb' }}>Latest shared memories</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent style={{ color: '#e5e7eb' }}>
                 <p>View the latest photos shared by your family members.</p>
               </CardContent>
-              <CardFooter>
-                <Button variant="outline">View Gallery</Button>
+              <CardFooter style={{ borderTop: '1px solid #232336' }}>
+                <Button variant="outline" style={{ background: '#232336', color: '#fff', borderColor: '#35364a' }}>View Gallery</Button>
               </CardFooter>
             </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Family Chat</CardTitle>
-                <CardDescription>Stay connected</CardDescription>
+            <Card style={{ background: '#181926', color: '#fff', border: 'none', boxShadow: '0 2px 8px #0002' }}>
+              <CardHeader style={{ color: '#fff' }}>
+                <CardTitle style={{ color: '#fff' }}>Family Chat</CardTitle>
+                <CardDescription style={{ color: '#e5e7eb' }}>Stay connected</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent style={{ color: '#e5e7eb' }}>
                 <p>Join the conversation with your family members.</p>
               </CardContent>
-              <CardFooter>
-                <Button variant="outline">Open Chat</Button>
+              <CardFooter style={{ borderTop: '1px solid #232336' }}>
+                <Button variant="outline" style={{ background: '#232336', color: '#fff', borderColor: '#35364a' }}>Open Chat</Button>
               </CardFooter>
             </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Family Resources</CardTitle>
-                <CardDescription>Important documents</CardDescription>
+            <Card style={{ background: '#181926', color: '#fff', border: 'none', boxShadow: '0 2px 8px #0002' }}>
+              <CardHeader style={{ color: '#fff' }}>
+                <CardTitle style={{ color: '#fff' }}>Family Resources</CardTitle>
+                <CardDescription style={{ color: '#e5e7eb' }}>Important documents</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent style={{ color: '#e5e7eb' }}>
                 <p>Access important family documents and resources.</p>
               </CardContent>
-              <CardFooter>
-                <Button variant="outline">View Resources</Button>
+              <CardFooter style={{ borderTop: '1px solid #232336' }}>
+                <Button variant="outline" style={{ background: '#232336', color: '#fff', borderColor: '#35364a' }}>View Resources</Button>
               </CardFooter>
             </Card>
           </div>
@@ -96,33 +96,33 @@ export default function DashboardPage() {
 
         {/* Upcoming Events */}
         <div className="mb-10">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Upcoming Events</h2>
+          <h2 className="text-xl font-semibold mb-4" style={{ color: '#fff' }}>Upcoming Events</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card>
+            <Card style={{ background: '#181926', color: '#fff', border: 'none', boxShadow: '0 2px 8px #0002' }}>
               <CardHeader className="flex flex-row items-center gap-4">
-                <div className="bg-blue-100 p-3 rounded-full">
+                <div style={{ background: '#232336', padding: '12px', borderRadius: '9999px' }}>
                   <CalendarDays className="h-6 w-6 text-blue-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Family Dinner</CardTitle>
-                  <CardDescription>Friday, 7:00 PM</CardDescription>
+                  <CardTitle className="text-base" style={{ color: '#fff' }}>Family Dinner</CardTitle>
+                  <CardDescription style={{ color: '#e5e7eb' }}>Friday, 7:00 PM</CardDescription>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent style={{ color: '#e5e7eb' }}>
                 <p className="text-sm">Weekly family dinner at home.</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card style={{ background: '#181926', color: '#fff', border: 'none', boxShadow: '0 2px 8px #0002' }}>
               <CardHeader className="flex flex-row items-center gap-4">
-                <div className="bg-green-100 p-3 rounded-full">
+                <div style={{ background: '#232336', padding: '12px', borderRadius: '9999px' }}>
                   <Users className="h-6 w-6 text-green-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Family Meeting</CardTitle>
-                  <CardDescription>Saturday, 10:00 AM</CardDescription>
+                  <CardTitle className="text-base" style={{ color: '#fff' }}>Family Meeting</CardTitle>
+                  <CardDescription style={{ color: '#e5e7eb' }}>Saturday, 10:00 AM</CardDescription>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent style={{ color: '#e5e7eb' }}>
                 <p className="text-sm">Monthly family planning meeting.</p>
               </CardContent>
             </Card>
@@ -132,9 +132,9 @@ export default function DashboardPage() {
         {/* Recent Questions with limit */}
         <div className="mb-10">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-800">Recent Questions</h2>
+            <h2 className="text-xl font-semibold" style={{ color: '#fff' }}>Recent Questions</h2>
             <Link href="/questions">
-              <Button variant="ghost" className="text-blue-600 hover:text-blue-800 flex items-center gap-1">
+              <Button variant="ghost" style={{ color: '#60a5fa' }} className="flex items-center gap-1">
                 See More <ChevronRight className="h-4 w-4" />
               </Button>
             </Link>
