@@ -68,14 +68,49 @@ export class FamilyService {
       
       if (!data) throw new Error('Failed to create family');
       
-      // Update the user's family_id
-      const { error: updateError } = await supabase
+      // Set RLS context
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+
+      // Try updating by userId first
+      let updateResult = await supabase
         .from('users')
         .update({ family_id: familyId })
-        .eq('id', userId);
-        
-      if (updateError) throw updateError;
-      
+        .eq('id', userId)
+        .select();
+
+      console.log('[FAMILY CREATE] Update by userId result:', updateResult);
+
+      if (updateResult.error || !updateResult.data?.length) {
+        // Fallback: Try updating by email
+        updateResult = await supabase
+          .from('users')
+          .update({ family_id: familyId })
+          .eq('email', userEmail)
+          .select();
+
+        console.log('[FAMILY CREATE] Update by email result:', updateResult);
+      }
+
+      if (updateResult.error) {
+        console.error('[FAMILY CREATE] Failed to update user family_id:', updateResult.error);
+        throw new Error('Failed to update user with new family_id');
+      }
+      if (!updateResult.data?.length) {
+        console.error('[FAMILY CREATE] No user updated for family_id!');
+        throw new Error('No user updated for family_id');
+      }
+
+      // Fetch user to confirm family_id is set
+      const { data: updatedUser, error: fetchUserError } = await supabase
+        .from('users')
+        .select('id, family_id')
+        .eq('id', userId)
+        .single();
+      if (fetchUserError) {
+        console.error('[FAMILY CREATE] Could not fetch user after update:', fetchUserError);
+      } else {
+        console.log('[FAMILY CREATE] User after update:', updatedUser);
+      }
       return familyId;
     } catch (error) {
       console.error('Family creation error:', error);
