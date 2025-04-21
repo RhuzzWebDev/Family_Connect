@@ -9,10 +9,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { CalendarDays, ChevronRight, Users } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { CreateFamilyModal } from '@/components/create-family-modal';
 
 export default function DashboardPage() {
   const [userName, setUserName] = useState('');
   const [limitCards, setLimitCards] = useState(6);
+  const [showFamilyModal, setShowFamilyModal] = useState(false);
+  const [userHasFamily, setUserHasFamily] = useState(true);
 
   useEffect(() => {
     const userEmail = sessionStorage.getItem('userEmail');
@@ -21,25 +24,58 @@ export default function DashboardPage() {
       return;
     }
 
-    // Fetch user name
-    const fetchUserName = async () => {
+    // Fetch user name and family status
+    const fetchUserProfile = async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('first_name')
+        .select('first_name, family_id, id')
         .eq('email', userEmail)
         .single();
 
       if (!error && data) {
         setUserName(data.first_name);
+        if (!data.family_id) {
+          setUserHasFamily(false);
+          setShowFamilyModal(true);
+          // Store userId for modal
+          sessionStorage.setItem('userId', data.id);
+        } else {
+          setUserHasFamily(true);
+        }
       }
     };
 
-    fetchUserName();
+    fetchUserProfile();
   }, []);
 
   return (
     <Layout>
       <InnerNavbar />
+      {/* Show family creation modal if user has no family */}
+      {!userHasFamily && (
+        <CreateFamilyModal
+          onFamilyCreated={async () => {
+            // Refetch user profile to ensure family_id is set
+            const userEmail = sessionStorage.getItem('userEmail');
+            if (userEmail) {
+              const { data, error } = await supabase
+                .from('users')
+                .select('family_id')
+                .eq('email', userEmail)
+                .single();
+              if (!error && data && data.family_id) {
+                setShowFamilyModal(false);
+                setUserHasFamily(true);
+              } else {
+                setShowFamilyModal(true);
+                setUserHasFamily(false);
+              }
+            }
+          }}
+          trigger={null}
+          forceOpen={true}
+        />
+      )}
       <div className="pl-6 pr-6 md:pl-8" style={{ background: '#0F1017', color: '#fff', minHeight: '100vh' }}>
         {/* Welcome Section */}
         <div className="mb-8 pt-6">
