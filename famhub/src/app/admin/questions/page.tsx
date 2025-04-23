@@ -9,13 +9,13 @@ import QuestionFilters from "@/components/question/question-filters";
 import CreateEditQuestionSetDialog from "@/components/question/create-edit-question-set-dialog";
 import QuestionSetDialog from "@/components/question/question-set-dialog";
 import AdminLayout from "@/components/layout/AdminLayout";
-import { SupabaseService } from '@/services/supabaseService';
+import { adminQuestionServices } from '@/services/AdminQuestionServices';
 
-// Define types for our question sets and questions
+// Define types for our component to match what the UI components expect
 type Question = {
   id: string;
   question: string;
-  mediaType: "text" | "file" | "audio" | "video" | "image";
+  mediaType: "text" | "image" | "audio" | "video" | "file";
   type: string;
   createdAt: string;
 };
@@ -28,58 +28,34 @@ type QuestionSet = {
   questions: Question[];
 };
 
-// Mock data for initial state - will be replaced with data from Supabase
-const initialQuestionSets: QuestionSet[] = [
-  {
-    id: "1",
-    title: "Initial Assessment",
-    description: "Questions for new family members to understand their needs",
-    questionCount: 5,
-    questions: [],
-  },
-  {
-    id: "2",
-    title: "Support Group Feedback",
-    description: "Questions to gather feedback after support group sessions",
-    questionCount: 3,
-    questions: [],
-  },
-  {
-    id: "3",
-    title: "Terminal Care Needs",
-    description: "Assessment for families with terminal care needs",
-    questionCount: 4,
-    questions: [],
-  },
-  {
-    id: "4",
-    title: "Family Leadership",
-    description: "Questions for family leaders to guide community initiatives",
-    questionCount: 2,
-    questions: [],
-  },
-];
-
 export default function QuestionsPage() {
   const [view, setView] = useState<"card" | "list">("card");
   const [filters, setFilters] = useState({});
-  const [questionSets, setQuestionSets] = useState<QuestionSet[]>(initialQuestionSets);
+  const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
   const [createEditDialogOpen, setCreateEditDialogOpen] = useState(false);
   const [selectedQuestionSet, setSelectedQuestionSet] = useState<QuestionSet | null>(null);
   const [questionSetDialogOpen, setQuestionSetDialogOpen] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Using a default admin email for now - in a real app, this would come from authentication
+  const adminEmail = 'admin@familyconnect.com';
   
   useEffect(() => {
     const fetchQuestionSets = async () => {
       try {
-        // This would be replaced with your actual API call to get question sets
-        // const data = await SupabaseService.getAllQuestionSets();
-        // setQuestionSets(data);
+        const data = await adminQuestionServices.getAllQuestionSets(adminEmail);
         
-        // For now, we'll use the mock data
-        setQuestionSets(initialQuestionSets);
+        // Convert the data to match our component's QuestionSet type
+        const formattedData: QuestionSet[] = data.map(set => ({
+          id: set.id,
+          title: set.title || '',
+          description: set.description,
+          questionCount: set.questionCount || 0,
+          questions: [] // Empty array as we're not loading questions at this point
+        }));
+        
+        setQuestionSets(formattedData);
       } catch (err) {
         console.error('Error fetching question sets:', err);
         setError(err instanceof Error ? err.message : 'Failed to load question sets');
@@ -91,10 +67,36 @@ export default function QuestionsPage() {
     fetchQuestionSets();
   }, []);
   
-  const handleViewQuestionSet = (id: string) => {
-    const questionSet = questionSets.find((qs) => qs.id === id) || null;
-    setSelectedQuestionSet(questionSet);
-    setQuestionSetDialogOpen(true);
+  const handleViewQuestionSet = async (id: string) => {
+    try {
+      setLoading(true);
+      
+      const questionSetData = await adminQuestionServices.getQuestionSetById(id, adminEmail);
+      
+      // Convert to our component's QuestionSet type with required fields
+      const formattedQuestionSet: QuestionSet = {
+        id: questionSetData.id,
+        title: questionSetData.title || '',
+        description: questionSetData.description,
+        questionCount: questionSetData.questionCount || 0,
+        questions: questionSetData.questions?.map(q => ({
+          id: q.id,
+          question: q.question,
+          // Convert media_type to the expected enum type with fallback to "text"
+          mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+          type: q.media_type || "text", // Use media_type as type if available
+          createdAt: q.created_at || new Date().toISOString()
+        })) || [] // Provide empty array as fallback
+      };
+      
+      setSelectedQuestionSet(formattedQuestionSet);
+      setQuestionSetDialogOpen(true);
+    } catch (err) {
+      console.error(`Error fetching question set ${id}:`, err);
+      setError(err instanceof Error ? err.message : 'Failed to load question set');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEditQuestionSet = (id: string) => {
@@ -103,22 +105,23 @@ export default function QuestionsPage() {
     setCreateEditDialogOpen(true);
   };
 
-  const handleCreateQuestionSet = async (data: any) => {
+  const handleCreateQuestionSet = async (data: Partial<QuestionSet>) => {
     try {
       setLoading(true);
-      // This would be your actual API call
-      // const newQuestionSet = await SupabaseService.createQuestionSet(data);
       
-      // For now, we'll simulate it
-      const newQuestionSet = {
-        id: `${Date.now()}`,
-        title: data.title,
-        description: data.description,
-        questionCount: 0,
-        questions: [],
+      const newQuestionSet = await adminQuestionServices.createQuestionSet(data, adminEmail);
+      
+      // Convert to our component's QuestionSet type with required fields
+      const formattedQuestionSet: QuestionSet = {
+        id: newQuestionSet.id,
+        title: newQuestionSet.title || '',
+        description: newQuestionSet.description,
+        questionCount: newQuestionSet.questionCount || 0,
+        questions: [] // Empty array for new question set
       };
       
-      setQuestionSets([...questionSets, newQuestionSet]);
+      setQuestionSets([...questionSets, formattedQuestionSet]);
+      setCreateEditDialogOpen(false);
     } catch (err) {
       console.error('Error creating question set:', err);
       setError(err instanceof Error ? err.message : 'Failed to create question set');
@@ -127,25 +130,31 @@ export default function QuestionsPage() {
     }
   };
 
-  const handleUpdateQuestionSet = async (data: any) => {
+  const handleUpdateQuestionSet = async (data: Partial<QuestionSet>) => {
     try {
       setLoading(true);
-      // This would be your actual API call
-      // await SupabaseService.updateQuestionSet(data.id, data);
+      if (!data.id) {
+        setError('Missing question set ID');
+        return;
+      }
       
-      // For now, we'll simulate it
+      const updatedQuestionSet = await adminQuestionServices.updateQuestionSet(data.id, data, adminEmail);
+      
+      // Convert to our component's QuestionSet type and update the list
       setQuestionSets(
         questionSets.map((qs) => {
           if (qs.id === data.id) {
             return {
               ...qs,
-              title: data.title,
-              description: data.description,
+              title: updatedQuestionSet.title || qs.title,
+              description: updatedQuestionSet.description,
+              questionCount: updatedQuestionSet.questionCount || qs.questionCount
             };
           }
           return qs;
         })
       );
+      setCreateEditDialogOpen(false);
     } catch (err) {
       console.error('Error updating question set:', err);
       setError(err instanceof Error ? err.message : 'Failed to update question set');
@@ -157,11 +166,10 @@ export default function QuestionsPage() {
   const handleDeleteQuestionSet = async (id: string) => {
     try {
       setLoading(true);
-      // This would be your actual API call
-      // await SupabaseService.deleteQuestionSet(id);
       
-      // For now, we'll simulate it
+      await adminQuestionServices.deleteQuestionSet(id, adminEmail);
       setQuestionSets(questionSets.filter((qs) => qs.id !== id));
+      setCreateEditDialogOpen(false);
     } catch (err) {
       console.error('Error deleting question set:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete question set');
@@ -173,25 +181,48 @@ export default function QuestionsPage() {
   const handleAddQuestion = async (questionData: any) => {
     try {
       setLoading(true);
-      // This would be your actual API call
-      // const newQuestion = await SupabaseService.createQuestion(questionData);
       
-      // For now, we'll simulate it
-      const newQuestion = {
-        id: `q${Date.now()}`,
+      // Prepare the question data
+      const questionToCreate = {
+        user_id: questionData.userId || '00000000-0000-0000-0000-000000000000', // Default user ID if not provided
         question: questionData.question,
-        mediaType: questionData.mediaType,
-        type: questionData.type,
-        createdAt: new Date().toISOString(),
+        media_type: questionData.mediaType,
+        file_url: questionData.fileUrl,
+        folder_path: questionData.folderPath,
+        question_set_id: questionData.questionSetId
       };
       
+      const newQuestion = await adminQuestionServices.createQuestion(questionToCreate, adminEmail);
+      
+      // Refresh the question set to get the updated question count
+      if (selectedQuestionSet && selectedQuestionSet.id === questionData.questionSetId) {
+        const updatedQuestionSetData = await adminQuestionServices.getQuestionSetById(questionData.questionSetId, adminEmail);
+        
+        // Convert to our component's QuestionSet type with required fields
+        const updatedQuestionSet: QuestionSet = {
+          id: updatedQuestionSetData.id,
+          title: updatedQuestionSetData.title || '',
+          description: updatedQuestionSetData.description,
+          questionCount: updatedQuestionSetData.questionCount || 0,
+          questions: updatedQuestionSetData.questions?.map(q => ({
+            id: q.id,
+            question: q.question,
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+            type: q.media_type || "text",
+            createdAt: q.created_at || new Date().toISOString()
+          })) || []
+        };
+        
+        setSelectedQuestionSet(updatedQuestionSet);
+      }
+      
+      // Update the question sets list
       setQuestionSets(
         questionSets.map((qs) => {
           if (qs.id === questionData.questionSetId) {
             return {
               ...qs,
               questionCount: qs.questionCount + 1,
-              questions: [...qs.questions, newQuestion],
             };
           }
           return qs;
@@ -208,27 +239,38 @@ export default function QuestionsPage() {
   const handleEditQuestion = async (questionId: string, updatedQuestion: Partial<Question>) => {
     try {
       setLoading(true);
-      // This would be your actual API call
-      // await SupabaseService.updateQuestion(questionId, updatedQuestion);
       
-      // For now, we'll simulate it
-      setQuestionSets(
-        questionSets.map((qs) => {
-          const questionIndex = qs.questions.findIndex((q) => q.id === questionId);
-          if (questionIndex !== -1) {
-            const updatedQuestions = [...qs.questions];
-            updatedQuestions[questionIndex] = {
-              ...updatedQuestions[questionIndex],
-              ...updatedQuestion,
-            };
-            return {
-              ...qs,
-              questions: updatedQuestions,
-            };
-          }
-          return qs;
-        })
-      );
+      // Convert from our component Question type to the service Question type
+      const questionToUpdate = {
+        question: updatedQuestion.question,
+        media_type: updatedQuestion.mediaType,
+        // We don't have file_url in our Question type, so we'll handle it separately if needed
+        file_url: undefined
+      };
+      
+      await adminQuestionServices.updateQuestion(questionId, questionToUpdate, adminEmail);
+      
+      // If we have a selected question set, refresh it to get the updated question
+      if (selectedQuestionSet) {
+        const refreshedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
+        
+        // Convert to our component's QuestionSet type with required fields
+        const refreshedQuestionSet: QuestionSet = {
+          id: refreshedQuestionSetData.id,
+          title: refreshedQuestionSetData.title || '',
+          description: refreshedQuestionSetData.description,
+          questionCount: refreshedQuestionSetData.questionCount || 0,
+          questions: refreshedQuestionSetData.questions?.map(q => ({
+            id: q.id,
+            question: q.question,
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+            type: q.media_type || "text",
+            createdAt: q.created_at || new Date().toISOString()
+          })) || []
+        };
+        
+        setSelectedQuestionSet(refreshedQuestionSet);
+      }
     } catch (err) {
       console.error('Error updating question:', err);
       setError(err instanceof Error ? err.message : 'Failed to update question');
@@ -240,24 +282,43 @@ export default function QuestionsPage() {
   const handleDeleteQuestion = async (questionId: string) => {
     try {
       setLoading(true);
-      // This would be your actual API call
-      // await SupabaseService.deleteQuestion(questionId);
       
-      // For now, we'll simulate it
-      setQuestionSets(
-        questionSets.map((qs) => {
-          const questionIndex = qs.questions.findIndex((q) => q.id === questionId);
-          if (questionIndex !== -1) {
-            const updatedQuestions = qs.questions.filter((q) => q.id !== questionId);
-            return {
-              ...qs,
-              questionCount: qs.questionCount - 1,
-              questions: updatedQuestions,
-            };
-          }
-          return qs;
-        })
-      );
+      await adminQuestionServices.deleteQuestion(questionId, adminEmail);
+      
+      // If we have a selected question set, refresh it to get the updated question count
+      if (selectedQuestionSet) {
+        const refreshedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
+        
+        // Convert to our component's QuestionSet type with required fields
+        const refreshedQuestionSet: QuestionSet = {
+          id: refreshedQuestionSetData.id,
+          title: refreshedQuestionSetData.title || '',
+          description: refreshedQuestionSetData.description,
+          questionCount: refreshedQuestionSetData.questionCount || 0,
+          questions: refreshedQuestionSetData.questions?.map(q => ({
+            id: q.id,
+            question: q.question,
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+            type: q.media_type || "text",
+            createdAt: q.created_at || new Date().toISOString()
+          })) || []
+        };
+        
+        setSelectedQuestionSet(refreshedQuestionSet);
+        
+        // Also update the question sets list
+        setQuestionSets(
+          questionSets.map((qs) => {
+            if (qs.id === selectedQuestionSet.id) {
+              return {
+                ...qs,
+                questionCount: Math.max(0, qs.questionCount - 1)
+              };
+            }
+            return qs;
+          })
+        );
+      }
     } catch (err) {
       console.error('Error deleting question:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete question');
