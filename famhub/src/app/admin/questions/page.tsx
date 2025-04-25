@@ -24,6 +24,10 @@ type QuestionSet = {
   id: string;
   title: string;
   description?: string;
+  author_name?: string;
+  resource_url?: string;
+  donate_url?: string;
+  cover_image?: string;
   questionCount: number;
   questions: Question[];
 };
@@ -78,6 +82,11 @@ export default function QuestionsPage() {
         id: questionSetData.id,
         title: questionSetData.title || '',
         description: questionSetData.description,
+        // Include the new fields
+        author_name: questionSetData.author_name,
+        resource_url: questionSetData.resource_url,
+        donate_url: questionSetData.donate_url,
+        cover_image: questionSetData.cover_image,
         questionCount: questionSetData.questionCount || 0,
         questions: questionSetData.questions?.map(q => ({
           id: q.id,
@@ -88,6 +97,8 @@ export default function QuestionsPage() {
           createdAt: q.created_at || new Date().toISOString()
         })) || [] // Provide empty array as fallback
       };
+      
+      console.log('Viewing question set with data:', formattedQuestionSet);
       
       setSelectedQuestionSet(formattedQuestionSet);
       setQuestionSetDialogOpen(true);
@@ -109,13 +120,30 @@ export default function QuestionsPage() {
     try {
       setLoading(true);
       
-      const newQuestionSet = await adminQuestionServices.createQuestionSet(data, adminEmail);
+      // Map the component's field names to the database field names
+      const questionSetData = {
+        title: data.title,
+        description: data.description,
+        // Map the fields to match the database schema
+        author_name: data.author_name,
+        resource_url: data.resource_url,
+        donate_url: data.donate_url,
+        cover_image: data.cover_image
+      };
+      
+      console.log('Creating question set with data:', questionSetData);
+      
+      const newQuestionSet = await adminQuestionServices.createQuestionSet(questionSetData, adminEmail);
       
       // Convert to our component's QuestionSet type with required fields
       const formattedQuestionSet: QuestionSet = {
         id: newQuestionSet.id,
         title: newQuestionSet.title || '',
         description: newQuestionSet.description,
+        author_name: newQuestionSet.author_name,
+        resource_url: newQuestionSet.resource_url,
+        donate_url: newQuestionSet.donate_url,
+        cover_image: newQuestionSet.cover_image,
         questionCount: newQuestionSet.questionCount || 0,
         questions: [] // Empty array for new question set
       };
@@ -138,7 +166,20 @@ export default function QuestionsPage() {
         return;
       }
       
-      const updatedQuestionSet = await adminQuestionServices.updateQuestionSet(data.id, data, adminEmail);
+      // Map the component's field names to the database field names
+      const questionSetData = {
+        title: data.title,
+        description: data.description,
+        // Map the fields to match the database schema
+        author_name: data.author_name,
+        resource_url: data.resource_url,
+        donate_url: data.donate_url,
+        cover_image: data.cover_image
+      };
+      
+      console.log('Updating question set with data:', questionSetData);
+      
+      const updatedQuestionSet = await adminQuestionServices.updateQuestionSet(data.id, questionSetData, adminEmail);
       
       // Convert to our component's QuestionSet type and update the list
       setQuestionSets(
@@ -148,6 +189,10 @@ export default function QuestionsPage() {
               ...qs,
               title: updatedQuestionSet.title || qs.title,
               description: updatedQuestionSet.description,
+              author_name: updatedQuestionSet.author_name,
+              resource_url: updatedQuestionSet.resource_url,
+              donate_url: updatedQuestionSet.donate_url,
+              cover_image: updatedQuestionSet.cover_image,
               questionCount: updatedQuestionSet.questionCount || qs.questionCount
             };
           }

@@ -5,6 +5,10 @@ export interface QuestionSet {
   id: string;
   title: string;
   description?: string;
+  author_name?: string;
+  resource_url?: string;
+  donate_url?: string;
+  cover_image?: string;
   created_at?: string;
   updated_at?: string;
   questionCount?: number;
@@ -125,7 +129,11 @@ export class AdminQuestionServices {
         .insert([
           {
             title: questionSet.title,
-            description: questionSet.description
+            description: questionSet.description,
+            author_name: questionSet.author_name,
+            resource_url: questionSet.resource_url,
+            donate_url: questionSet.donate_url,
+            cover_image: questionSet.cover_image
           }
         ])
         .select()
@@ -154,7 +162,11 @@ export class AdminQuestionServices {
         .from('question_sets')
         .update({
           title: questionSet.title,
-          description: questionSet.description
+          description: questionSet.description,
+          author_name: questionSet.author_name,
+          resource_url: questionSet.resource_url,
+          donate_url: questionSet.donate_url,
+          cover_image: questionSet.cover_image
         })
         .eq('id', id)
         .select()

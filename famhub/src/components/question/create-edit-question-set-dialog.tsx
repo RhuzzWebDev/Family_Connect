@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { X, Save, Plus, Trash2, FolderPlus } from "lucide-react"
+import { X, Save, Plus, Trash2, FolderPlus, Upload, Heart, Link as LinkIcon } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,10 @@ interface QuestionSet {
   id: string
   title: string
   description?: string
+  author_name?: string
+  resource_url?: string
+  donate_url?: string
+  cover_image?: string
   questionCount: number
 }
 
@@ -44,7 +48,14 @@ export default function CreateEditQuestionSetDialog({
   const [formData, setFormData] = useState({
     title: "",
     description: "",
+    author_name: "",
+    resource_url: "",
+    donate_url: "",
+    cover_image: ""
   })
+  
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   useEffect(() => {
@@ -52,26 +63,67 @@ export default function CreateEditQuestionSetDialog({
       setFormData({
         title: questionSet.title,
         description: questionSet.description || "",
+        author_name: questionSet.author_name || "",
+        resource_url: questionSet.resource_url || "",
+        donate_url: questionSet.donate_url || "",
+        cover_image: questionSet.cover_image || ""
       })
+      
+      if (questionSet.cover_image) {
+        setImagePreview(questionSet.cover_image)
+      } else {
+        setImagePreview(null)
+      }
     } else {
       setFormData({
         title: "",
         description: "",
+        author_name: "",
+        resource_url: "",
+        donate_url: "",
+        cover_image: ""
       })
+      setImagePreview(null)
     }
+    setImageFile(null)
   }, [questionSet, open])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
+  
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Check file size (15MB limit)
+      const maxSize = 15 * 1024 * 1024 // 15MB in bytes
+      if (file.size > maxSize) {
+        alert('File size exceeds 15MB limit. Please choose a smaller file.')
+        return
+      }
+      
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit({
+    // In a real implementation, you would upload the image file to your storage service
+    // and get back a URL to store in the database
+    // For now, we'll just use the preview URL for demonstration
+    const submissionData = {
       ...(questionSet ? { id: questionSet.id } : {}),
       ...formData,
-    })
+      // Cover image is optional, so only include if it exists
+      ...(imagePreview || formData.cover_image ? { cover_image: imagePreview || formData.cover_image } : {})
+    }
+    onSubmit(submissionData)
     onOpenChange(false)
   }
 
@@ -133,6 +185,35 @@ export default function CreateEditQuestionSetDialog({
             {/* Content */}
             <div className="flex-grow overflow-y-auto p-6">
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Cover Image Upload */}
+                <div className="space-y-2">
+                  <Label htmlFor="cover_image">Cover Image (Optional)</Label>
+                  <div className="mt-1 flex items-center">
+                    <div className="relative w-full h-40 bg-[#111318] border border-gray-800 rounded-md overflow-hidden">
+                      {imagePreview ? (
+                        <img 
+                          src={imagePreview} 
+                          alt="Cover preview" 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                          <Upload className="h-8 w-8 mb-2" />
+                          <span>Upload cover image</span>
+                        </div>
+                      )}
+                      <Input
+                        id="cover_image"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400">Recommended size: 1200 x 630 pixels. Maximum size: 15MB</p>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="title">Title</Label>
                   <Input
@@ -147,6 +228,35 @@ export default function CreateEditQuestionSetDialog({
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="author_name">Author Name</Label>
+                  <Input
+                    id="author_name"
+                    name="author_name"
+                    value={formData.author_name}
+                    onChange={handleChange}
+                    placeholder="Enter author name"
+                    className="bg-[#111318] border-gray-800 text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="resource_url">Resource URL (Optional)</Label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                      <LinkIcon className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <Input
+                      id="resource_url"
+                      name="resource_url"
+                      value={formData.resource_url}
+                      onChange={handleChange}
+                      placeholder="https://example.com/resource"
+                      className="bg-[#111318] border-gray-800 text-white pl-10"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="description">Description (Optional)</Label>
                   <Textarea
                     id="description"
@@ -157,6 +267,26 @@ export default function CreateEditQuestionSetDialog({
                     className="bg-[#111318] border-gray-800 text-white min-h-[100px]"
                   />
                 </div>
+                
+                {/* Donate URL Field */}
+                <div className="space-y-2">
+                  <Label htmlFor="donate_url">Donation Link (Optional)</Label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                      <Heart className="h-4 w-4 text-pink-400" />
+                    </div>
+                    <Input
+                      id="donate_url"
+                      name="donate_url"
+                      value={formData.donate_url}
+                      onChange={handleChange}
+                      placeholder="https://example.com/donate"
+                      className="bg-[#111318] border-gray-800 text-white pl-10"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400">This will be displayed as a donate button on the question set</p>
+                </div>
+                
               </form>
             </div>
 

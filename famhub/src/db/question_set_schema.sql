@@ -3,6 +3,10 @@ CREATE TABLE question_sets (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title TEXT NOT NULL,
     description TEXT,
+    author_name TEXT,
+    resource_url TEXT,
+    donate_url TEXT,
+    cover_image TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

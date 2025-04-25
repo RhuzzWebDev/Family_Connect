@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { X, Maximize2, Minimize2, Plus, FileText, ImageIcon, Mic, Video, File, Edit, Trash2 } from "lucide-react"
+import { X, Maximize2, Minimize2, Plus, FileText, ImageIcon, Mic, Video, File, Edit, Trash2, User, Link, Heart, ExternalLink } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import CreateQuestionDialog from "@/components/question/create-question-dialog"
 import QuestionDetailDialog from "@/components/question/question-detail-dialog"
@@ -19,6 +19,10 @@ interface QuestionSet {
   id: string
   title: string
   description?: string
+  author_name?: string
+  resource_url?: string
+  donate_url?: string
+  cover_image?: string
   questionCount: number
   questions: Question[]
 }
@@ -143,6 +147,65 @@ export default function QuestionSetDialog({
 
           {/* Content */}
           <div className="flex-grow overflow-y-auto p-6">
+            {/* Cover Image */}
+            {questionSet.cover_image && (
+              <div className="w-full h-48 mb-6 rounded-lg overflow-hidden">
+                <img 
+                  src={questionSet.cover_image} 
+                  alt={questionSet.title} 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+            
+            {/* Author Information */}
+            <div className="mb-6 space-y-3">
+              {questionSet.author_name && (
+                <div className="flex items-center text-gray-300">
+                  <User className="h-4 w-4 mr-2 text-blue-500" />
+                  <span>Author: {questionSet.author_name}</span>
+                </div>
+              )}
+              
+              {/* Resource URL */}
+              {questionSet.resource_url && (
+                <div className="flex items-center mb-2">
+                  <Link className="h-4 w-4 mr-2 text-blue-500" />
+                  <a 
+                    href={questionSet.resource_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 flex items-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Resource <ExternalLink className="h-3 w-3 ml-1" />
+                  </a>
+                </div>
+              )}
+              
+              {/* Donate URL - Always displayed, but only opens tab if URL exists */}
+              <div className="flex items-center mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`bg-transparent flex items-center ${questionSet.donate_url ? 'border-pink-700 hover:bg-pink-900/30 text-pink-400' : 'border-gray-700 text-gray-400'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (questionSet.donate_url) {
+                      console.log('Opening donate URL:', questionSet.donate_url);
+                      window.open(questionSet.donate_url, '_blank');
+                    } else {
+                      console.log('No donate URL available');
+                    }
+                  }}
+                >
+                  <Heart className={`h-4 w-4 mr-2 ${questionSet.donate_url ? 'text-pink-500' : 'text-gray-500'}`} />
+                  Support Creator
+                </Button>
+              </div>
+            </div>
+            
+            {/* Description */}
             {questionSet.description && <p className="text-gray-400 mb-6">{questionSet.description}</p>}
 
             <div className="flex justify-between items-center mb-6">

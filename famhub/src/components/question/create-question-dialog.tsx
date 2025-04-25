@@ -51,6 +51,7 @@ export default function CreateQuestionDialog({
     sliderStep: 1, // For slider
     sliderDefaultValue: 50, // For slider
     dichotomousOptions: ["Yes", "No"], // For dichotomous
+    rankingItems: ["", ""], // For ranking
   })
   const [fileError, setFileError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -187,6 +188,9 @@ export default function CreateQuestionDialog({
         case 'dichotomous':
           questionData.dichotomousOptions = formData.dichotomousOptions;
           break;
+        case 'ranking':
+          questionData.rankingItems = formData.rankingItems.filter(item => item.trim() !== '');
+          break;
       }
       
       // Handle file upload if media type is not text
@@ -244,6 +248,7 @@ export default function CreateQuestionDialog({
         sliderStep: 1,
         sliderDefaultValue: 50,
         dichotomousOptions: ["Yes", "No"],
+        rankingItems: ["", ""],
       })
       
       // Close the dialog
@@ -442,6 +447,9 @@ export default function CreateQuestionDialog({
                     </SelectItem>
                     <SelectItem value="dichotomous" className="focus:bg-gray-700">
                       Dichotomous questions
+                    </SelectItem>
+                    <SelectItem value="ranking" className="focus:bg-gray-700">
+                      Ranking questions
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -935,6 +943,68 @@ export default function CreateQuestionDialog({
                           <span>{option || (index === 0 ? "Yes" : "No")}</span>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {formData.type === 'ranking' && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Ranking Items</Label>
+                  <div className="text-sm text-gray-400 mb-2">
+                    Add items that respondents will rank in order of preference
+                  </div>
+                  {formData.rankingItems.map((item, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#0d0f14] border border-gray-700 flex items-center justify-center">
+                        {index + 1}
+                      </div>
+                      <Input
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('rankingItems', index, e.target.value)}
+                        placeholder={`Item ${index + 1}`}
+                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeArrayItem('rankingItems', index)}
+                        className="text-gray-400 hover:text-white"
+                        disabled={formData.rankingItems.length <= 2}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addArrayItem('rankingItems')}
+                    className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Item
+                  </Button>
+                  
+                  {/* Preview */}
+                  <div className="mt-4">
+                    <Label className="mb-2 block">Preview</Label>
+                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700">
+                      <div className="space-y-2">
+                        {formData.rankingItems.map((item, index) => (
+                          <div key={index} className="flex items-center p-2 bg-[#1a1d24] rounded border border-gray-700">
+                            <div className="mr-2 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">{item || `Item ${index + 1}`}</div>
+                            <div className="flex-shrink-0">
+                              <ChevronDown className="h-4 w-4 text-gray-500" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
