@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { QuestionTypeEnum, adminQuestionServices } from '@/services/AdminQuestionServices'
 
 interface CreateQuestionDialogProps {
   open: boolean
@@ -29,12 +30,12 @@ export default function CreateQuestionDialog({
   onOpenChange,
   onSubmit,
   questionSetId,
-  userId = '00000000-0000-0000-0000-000000000000', // Default user ID if not provided
 }: CreateQuestionDialogProps) {
+  const [userId, setUserId] = useState<string>('');
   const [formData, setFormData] = useState({
     question: "",
     mediaType: "text" as "text" | "image" | "audio" | "video" | "file",
-    type: "open-ended",
+    type: QuestionTypeEnum.OPEN_ENDED,
     file: null as File | null,
     // Fields for different question types
     options: ["", ""], // For multiple-choice
@@ -55,6 +56,24 @@ export default function CreateQuestionDialog({
   })
   const [fileError, setFileError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+
+  useEffect(() => {
+    const fetchAdminUserId = async () => {
+      try {
+        // Get the admin email from session storage
+        const adminEmail = sessionStorage.getItem('adminEmail') || 'admin@example.com';
+        
+        // Get the default admin user ID from AdminQuestionServices
+        const adminUserId = await adminQuestionServices.getAdminUserId(adminEmail);
+        setUserId(adminUserId);
+      } catch (error) {
+        console.error('Error fetching admin user ID:', error);
+        setFileError('Error: Unable to get the admin user ID. Please try again.');
+      }
+    };
+    
+    fetchAdminUserId();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -93,7 +112,7 @@ export default function CreateQuestionDialog({
     setFormData((prev) => ({ ...prev, mediaType: value }))
   }
 
-  const handleTypeChange = (value: string) => {
+  const handleTypeChange = (value: QuestionTypeEnum) => {
     setFormData((prev) => ({ ...prev, type: value }))
   }
   
@@ -139,6 +158,12 @@ export default function CreateQuestionDialog({
     e.preventDefault()
     setFileError(null)
     
+    // Check if we have a valid user ID
+    if (!userId) {
+      setFileError('Authentication error: No user ID available. Please try again.');
+      return;
+    }
+    
     try {
       setIsUploading(true)
       
@@ -146,50 +171,92 @@ export default function CreateQuestionDialog({
       const questionData: any = {
         question: formData.question,
         type: formData.type,
-        mediaType: formData.mediaType,
-        questionSetId: questionSetId,
-        userId: userId,
+        user_id: userId,
+        question_set_id: questionSetId,
         file_url: null,
         folder_path: null,
-        media_type: formData.mediaType,
-        like_count: 0,
-        comment_count: 0,
+        media_type: formData.mediaType !== 'text' ? formData.mediaType : undefined,
       }
       
       // Add question type-specific data
       switch (formData.type) {
-        case 'multiple-choice':
-          questionData.options = formData.options.filter(opt => opt.trim() !== '');
+        case QuestionTypeEnum.MULTIPLE_CHOICE:
+        case QuestionTypeEnum.DROPDOWN:
+        case QuestionTypeEnum.LIKERT_SCALE:
+        case QuestionTypeEnum.DICHOTOMOUS:
+        case QuestionTypeEnum.RANKING:
+          // For options-based questions
+          const options = formData.type === QuestionTypeEnum.MULTIPLE_CHOICE ? formData.options :
+                          formData.type === QuestionTypeEnum.DROPDOWN ? formData.dropdownOptions :
+                          formData.type === QuestionTypeEnum.LIKERT_SCALE ? formData.likertOptions :
+                          formData.type === QuestionTypeEnum.DICHOTOMOUS ? formData.dichotomousOptions :
+                          formData.rankingItems;
+          
+          questionData.options = options
+            .filter(opt => opt.trim() !== '')
+            .map((text, index) => ({
+              option_text: text,
+              option_order: index
+            }));
           break;
-        case 'rating-scale':
-          questionData.minRating = formData.minRating;
-          questionData.maxRating = formData.maxRating;
+          
+        case QuestionTypeEnum.RATING_SCALE:
+        case QuestionTypeEnum.SLIDER:
+          // For scale-based questions
+          questionData.scale = {
+            min_value: formData.type === QuestionTypeEnum.RATING_SCALE ? formData.minRating : formData.sliderMin,
+            max_value: formData.type === QuestionTypeEnum.RATING_SCALE ? formData.maxRating : formData.sliderMax,
+            step_value: formData.type === QuestionTypeEnum.SLIDER ? formData.sliderStep : 1,
+            default_value: formData.type === QuestionTypeEnum.SLIDER ? formData.sliderDefaultValue : undefined
+          };
           break;
-        case 'likert-scale':
-          questionData.likertOptions = formData.likertOptions.filter(opt => opt.trim() !== '');
+          
+        case QuestionTypeEnum.MATRIX:
+          // For matrix questions
+          questionData.matrix = {
+            rows: formData.matrixRows
+              .filter(row => row.trim() !== '')
+              .map((content, index) => ({
+                is_row: true,
+                content,
+                item_order: index
+              })),
+            columns: formData.matrixColumns
+              .filter(col => col.trim() !== '')
+              .map((content, index) => ({
+                is_row: false,
+                content,
+                item_order: index
+              }))
+          };
           break;
-        case 'matrix':
-          questionData.matrixRows = formData.matrixRows.filter(row => row.trim() !== '');
-          questionData.matrixColumns = formData.matrixColumns.filter(col => col.trim() !== '');
+          
+        case QuestionTypeEnum.IMAGE_CHOICE:
+          // For image choice questions
+          // In a real implementation, you would upload the images to storage
+          // and get the URLs to store in the database
+          questionData.imageOptions = formData.imageOptions
+            .filter(opt => opt.trim() !== '')
+            .map((text, index) => ({
+              option_text: text,
+              image_url: formData.imageFiles[index] ? 
+                `https://example.com/images/${Date.now()}_${index}` : 
+                'https://example.com/images/placeholder.png',
+              option_order: index
+            }));
           break;
-        case 'dropdown':
-          questionData.dropdownOptions = formData.dropdownOptions.filter(opt => opt.trim() !== '');
-          break;
-        case 'image-choice':
-          questionData.imageOptions = formData.imageOptions.filter(opt => opt.trim() !== '');
-          // Handle image files separately if needed
-          break;
-        case 'slider':
-          questionData.sliderMin = formData.sliderMin;
-          questionData.sliderMax = formData.sliderMax;
-          questionData.sliderStep = formData.sliderStep;
-          questionData.sliderDefaultValue = formData.sliderDefaultValue;
-          break;
-        case 'dichotomous':
-          questionData.dichotomousOptions = formData.dichotomousOptions;
-          break;
-        case 'ranking':
-          questionData.rankingItems = formData.rankingItems.filter(item => item.trim() !== '');
+          
+        case QuestionTypeEnum.OPEN_ENDED:
+          // For open-ended questions
+          // Get the answer format and character limit from the form
+          const answerFormatSelect = document.querySelector('select[name="answer-format"]') as HTMLSelectElement;
+          const characterLimitInput = document.getElementById('character-limit') as HTMLInputElement;
+          const requiredCheckbox = document.getElementById('required') as HTMLInputElement;
+          
+          questionData.openEndedSettings = {
+            answer_format: answerFormatSelect?.value || 'text',
+            character_limit: characterLimitInput?.value ? parseInt(characterLimitInput.value, 10) : undefined
+          };
           break;
       }
       
@@ -232,7 +299,7 @@ export default function CreateQuestionDialog({
       setFormData({
         question: "",
         mediaType: "text",
-        type: "open-ended",
+        type: QuestionTypeEnum.OPEN_ENDED,
         file: null,
         options: ["", ""],
         minRating: 1,
@@ -421,34 +488,34 @@ export default function CreateQuestionDialog({
                     <SelectValue placeholder="Select question type" />
                   </SelectTrigger>
                   <SelectContent className="bg-[#1a1d24] border-gray-800 text-white max-h-[300px]">
-                    <SelectItem value="multiple-choice" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.MULTIPLE_CHOICE} className="focus:bg-gray-700">
                       Multiple choice questions
                     </SelectItem>
-                    <SelectItem value="rating-scale" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.RATING_SCALE} className="focus:bg-gray-700">
                       Rating scale questions
                     </SelectItem>
-                    <SelectItem value="likert-scale" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.LIKERT_SCALE} className="focus:bg-gray-700">
                       Likert scale questions
                     </SelectItem>
-                    <SelectItem value="matrix" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.MATRIX} className="focus:bg-gray-700">
                       Matrix questions
                     </SelectItem>
-                    <SelectItem value="dropdown" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.DROPDOWN} className="focus:bg-gray-700">
                       Dropdown questions
                     </SelectItem>
-                    <SelectItem value="open-ended" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.OPEN_ENDED} className="focus:bg-gray-700">
                       Open-ended questions
                     </SelectItem>
-                    <SelectItem value="image-choice" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.IMAGE_CHOICE} className="focus:bg-gray-700">
                       Image choice questions
                     </SelectItem>
-                    <SelectItem value="slider" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.SLIDER} className="focus:bg-gray-700">
                       Slider questions
                     </SelectItem>
-                    <SelectItem value="dichotomous" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.DICHOTOMOUS} className="focus:bg-gray-700">
                       Dichotomous questions
                     </SelectItem>
-                    <SelectItem value="ranking" className="focus:bg-gray-700">
+                    <SelectItem value={QuestionTypeEnum.RANKING} className="focus:bg-gray-700">
                       Ranking questions
                     </SelectItem>
                   </SelectContent>
@@ -456,7 +523,7 @@ export default function CreateQuestionDialog({
               </div>
               
               {/* Question Type Specific Fields */}
-              {formData.type === 'multiple-choice' && (
+              {formData.type === QuestionTypeEnum.MULTIPLE_CHOICE && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Multiple Choice Options</Label>
                   {formData.options.map((option, index) => (
@@ -492,7 +559,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'rating-scale' && (
+              {formData.type === QuestionTypeEnum.RATING_SCALE && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Rating Scale</Label>
                   <div className="grid grid-cols-2 gap-4">
@@ -533,7 +600,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'likert-scale' && (
+              {formData.type === QuestionTypeEnum.LIKERT_SCALE && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Likert Scale Options</Label>
                   {formData.likertOptions.map((option, index) => (
@@ -569,7 +636,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'matrix' && (
+              {formData.type === QuestionTypeEnum.MATRIX && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <div>
                     <Label className="mb-2 block">Matrix Rows (Questions)</Label>
@@ -671,7 +738,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'dropdown' && (
+              {formData.type === QuestionTypeEnum.DROPDOWN && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Dropdown Options</Label>
                   {formData.dropdownOptions.map((option, index) => (
@@ -707,7 +774,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'open-ended' && (
+              {formData.type === QuestionTypeEnum.OPEN_ENDED && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Open-Ended Question Settings</Label>
                   <div className="space-y-2">
@@ -751,7 +818,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'image-choice' && (
+              {formData.type === QuestionTypeEnum.IMAGE_CHOICE && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Image Choice Options</Label>
                   <div className="text-sm text-gray-400 mb-2">
@@ -840,7 +907,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'slider' && (
+              {formData.type === QuestionTypeEnum.SLIDER && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Slider Settings</Label>
                   <div className="grid grid-cols-2 gap-4">
@@ -916,7 +983,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'dichotomous' && (
+              {formData.type === QuestionTypeEnum.DICHOTOMOUS && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Dichotomous Question Options</Label>
                   <div className="text-sm text-gray-400 mb-2">
@@ -948,7 +1015,7 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
-              {formData.type === 'ranking' && (
+              {formData.type === QuestionTypeEnum.RANKING && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Ranking Items</Label>
                   <div className="text-sm text-gray-400 mb-2">

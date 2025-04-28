@@ -227,9 +227,12 @@ export default function QuestionsPage() {
     try {
       setLoading(true);
       
+      // Get the admin user ID
+      const adminUserId = await adminQuestionServices.getAdminUserId(adminEmail);
+      
       // Prepare the question data
       const questionToCreate = {
-        user_id: questionData.userId || '00000000-0000-0000-0000-000000000000', // Default user ID if not provided
+        user_id: questionData.userId || adminUserId, // Use the admin user ID if not provided
         question: questionData.question,
         media_type: questionData.mediaType,
         file_url: questionData.fileUrl,
