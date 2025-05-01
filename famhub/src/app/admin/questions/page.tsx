@@ -3,15 +3,18 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
+// Import types but use them with type assertions to avoid compatibility issues
+import type { Question as SharedQuestion, QuestionSet as SharedQuestionSet } from "@/types/question";
 import QuestionSetCard from "@/components/question/question-set-card";
 import QuestionSetListItem from "@/components/question/question-set-list-item";
 import QuestionFilters from "@/components/question/question-filters";
 import CreateEditQuestionSetDialog from "@/components/question/create-edit-question-set-dialog";
 import QuestionSetDialog from "@/components/question/question-set-dialog";
 import AdminLayout from "@/components/layout/AdminLayout";
-import { adminQuestionServices } from '@/services/AdminQuestionServices';
+import { adminQuestionServices, QuestionTypeEnum } from '@/services/AdminQuestionServices';
 
-// Define types for our component to match what the UI components expect
+// Define local types to maintain compatibility with existing code
 type Question = {
   id: string;
   question: string;
@@ -92,7 +95,8 @@ export default function QuestionsPage() {
           id: q.id,
           question: q.question,
           // Convert media_type to the expected enum type with fallback to "text"
-          mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+          // Ensure we only use valid mediaType values (text, image, audio, video)
+          mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
           type: q.media_type || "text", // Use media_type as type if available
           createdAt: q.created_at || new Date().toISOString()
         })) || [] // Provide empty array as fallback
@@ -158,11 +162,22 @@ export default function QuestionsPage() {
     }
   };
 
+  // Helper function to convert between type formats
+  const convertQuestionFormat = (question: any): Question => {
+    return {
+      id: question.id,
+      question: question.question,
+      mediaType: question.mediaType || question.media_type || "text",
+      type: question.type,
+      createdAt: question.createdAt || question.created_at || new Date().toISOString()
+    };
+  };
+
   const handleUpdateQuestionSet = async (data: Partial<QuestionSet>) => {
     try {
       setLoading(true);
       if (!data.id) {
-        setError('Missing question set ID');
+        toast.error("Question set ID is required for updating");
         return;
       }
       
@@ -211,7 +226,6 @@ export default function QuestionsPage() {
   const handleDeleteQuestionSet = async (id: string) => {
     try {
       setLoading(true);
-      
       await adminQuestionServices.deleteQuestionSet(id, adminEmail);
       setQuestionSets(questionSets.filter((qs) => qs.id !== id));
       setCreateEditDialogOpen(false);
@@ -227,24 +241,113 @@ export default function QuestionsPage() {
     try {
       setLoading(true);
       
-      // Get the admin user ID
+      // Add the question to the selected question set
+      if (!selectedQuestionSet) {
+        setError('No question set selected');
+        return;
+      }
+      
+      // Get the admin user ID first
       const adminUserId = await adminQuestionServices.getAdminUserId(adminEmail);
       
-      // Prepare the question data
-      const questionToCreate = {
-        user_id: questionData.userId || adminUserId, // Use the admin user ID if not provided
+      // Convert from our component Question type to the service Question type
+      // The service only accepts 'image', 'audio', 'video' for media_type
+      // If mediaType is 'file' or 'document', we'll map it to a compatible type for the service
+      let mediaType: 'image' | 'audio' | 'video' | undefined = undefined;
+      
+      if (questionData.mediaType && questionData.mediaType !== 'text') {
+        if (questionData.mediaType === 'file' || questionData.mediaType === 'document') {
+          // Map 'file' or 'document' to a type the service accepts (e.g., 'image')
+          // This is a workaround for the type mismatch
+          mediaType = 'image';
+        } else {
+          // For other types (image, audio, video), use as is
+          mediaType = questionData.mediaType as 'image' | 'audio' | 'video';
+        }
+      }
+      
+      console.log('Question data received:', questionData); // Debug log
+      
+      // Ensure we have a valid question type
+      // The database requires a non-null type value
+      let questionType = questionData.type;
+      
+      // If type is missing or invalid, set a default
+      if (!questionType || typeof questionType !== 'string' || 
+          !Object.values(QuestionTypeEnum).includes(questionType as QuestionTypeEnum)) {
+        console.log('Using default question type because:', { receivedType: questionType });
+        questionType = QuestionTypeEnum.OPEN_ENDED;
+      } else {
+        // Ensure the type is properly cast as QuestionTypeEnum
+        questionType = questionType as QuestionTypeEnum;
+      }
+      
+      // Create the question object with the base fields
+      const questionToAdd: any = {
+        user_id: adminUserId, // Add the user_id to satisfy the not-null constraint
         question: questionData.question,
-        media_type: questionData.mediaType,
-        file_url: questionData.fileUrl,
-        folder_path: questionData.folderPath,
-        question_set_id: questionData.questionSetId
+        media_type: mediaType,
+        question_set_id: questionData.questionSetId,
+        type: questionType, // Use the validated question type
       };
       
-      const newQuestion = await adminQuestionServices.createQuestion(questionToCreate, adminEmail);
+      // Add type-specific data based on the question type
+      // This is crucial for storing data in the dedicated tables
+      switch (questionType) {
+        case QuestionTypeEnum.MULTIPLE_CHOICE:
+        case QuestionTypeEnum.DROPDOWN:
+        case QuestionTypeEnum.LIKERT_SCALE:
+        case QuestionTypeEnum.RANKING:
+          // For options-based questions
+          if (questionData.options && Array.isArray(questionData.options)) {
+            questionToAdd.options = questionData.options;
+          }
+          break;
+          
+        case QuestionTypeEnum.RATING_SCALE:
+        case QuestionTypeEnum.SLIDER:
+          // For scale-based questions
+          if (questionData.scale) {
+            questionToAdd.scale = questionData.scale;
+          }
+          break;
+          
+        case QuestionTypeEnum.MATRIX:
+          // For matrix questions
+          if (questionData.matrix) {
+            questionToAdd.matrix = questionData.matrix;
+          }
+          break;
+          
+        case QuestionTypeEnum.IMAGE_CHOICE:
+          // For image choice questions
+          if (questionData.imageOptions) {
+            questionToAdd.imageOptions = questionData.imageOptions;
+          }
+          break;
+          
+        case QuestionTypeEnum.OPEN_ENDED:
+          // For open-ended questions
+          if (questionData.openEndedSettings) {
+            questionToAdd.openEndedSettings = questionData.openEndedSettings;
+          }
+          break;
+          
+        case QuestionTypeEnum.DICHOTOMOUS:
+          // For dichotomous questions
+          if (questionData.options && Array.isArray(questionData.options)) {
+            questionToAdd.options = questionData.options;
+          }
+          break;
+      }
       
-      // Refresh the question set to get the updated question count
-      if (selectedQuestionSet && selectedQuestionSet.id === questionData.questionSetId) {
-        const updatedQuestionSetData = await adminQuestionServices.getQuestionSetById(questionData.questionSetId, adminEmail);
+      console.log('Question to add:', questionToAdd); // Debug log
+      
+      const newQuestion = await adminQuestionServices.createQuestion(questionToAdd, adminEmail);
+      
+      // If we have a selected question set, refresh it to get the updated questions
+      if (selectedQuestionSet) {
+        const updatedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
         
         // Convert to our component's QuestionSet type with required fields
         const updatedQuestionSet: QuestionSet = {
@@ -255,13 +358,26 @@ export default function QuestionsPage() {
           questions: updatedQuestionSetData.questions?.map(q => ({
             id: q.id,
             question: q.question,
-            mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+            mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
             type: q.media_type || "text",
             createdAt: q.created_at || new Date().toISOString()
           })) || []
         };
         
         setSelectedQuestionSet(updatedQuestionSet);
+        
+        // Update the question sets list
+        setQuestionSets(
+          questionSets.map((qs) => {
+            if (qs.id === selectedQuestionSet.id) {
+              return {
+                ...qs,
+                questionCount: qs.questionCount + 1,
+              };
+            }
+            return qs;
+          })
+        );
       }
       
       // Update the question sets list
@@ -289,9 +405,24 @@ export default function QuestionsPage() {
       setLoading(true);
       
       // Convert from our component Question type to the service Question type
+      // The service only accepts 'image', 'audio', 'video' for media_type
+      // If mediaType is 'file', we'll map it to a compatible type for the service
+      let mediaType: 'image' | 'audio' | 'video' | undefined = undefined;
+      
+      if (updatedQuestion.mediaType && updatedQuestion.mediaType !== 'text') {
+        if (updatedQuestion.mediaType === 'file') {
+          // Map 'file' to a type the service accepts (e.g., 'image')
+          // This is a workaround for the type mismatch
+          mediaType = 'image';
+        } else {
+          // For other types (image, audio, video), use as is
+          mediaType = updatedQuestion.mediaType as 'image' | 'audio' | 'video';
+        }
+      }
+      
       const questionToUpdate = {
         question: updatedQuestion.question,
-        media_type: updatedQuestion.mediaType,
+        media_type: mediaType,
         // We don't have file_url in our Question type, so we'll handle it separately if needed
         file_url: undefined
       };
@@ -311,7 +442,7 @@ export default function QuestionsPage() {
           questions: refreshedQuestionSetData.questions?.map(q => ({
             id: q.id,
             question: q.question,
-            mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video") || "text",
             type: q.media_type || "text",
             createdAt: q.created_at || new Date().toISOString()
           })) || []
@@ -346,7 +477,7 @@ export default function QuestionsPage() {
           questions: refreshedQuestionSetData.questions?.map(q => ({
             id: q.id,
             question: q.question,
-            mediaType: (q.media_type as "text" | "image" | "audio" | "video" | "file") || "text",
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video") || "text",
             type: q.media_type || "text",
             createdAt: q.created_at || new Date().toISOString()
           })) || []
@@ -433,7 +564,14 @@ export default function QuestionsPage() {
         <CreateEditQuestionSetDialog
           open={createEditDialogOpen}
           onOpenChange={setCreateEditDialogOpen}
-          onSubmit={selectedQuestionSet ? handleUpdateQuestionSet : handleCreateQuestionSet}
+          onSubmit={(data) => {
+            // Use type assertion to handle the type compatibility issue
+            if (selectedQuestionSet) {
+              handleUpdateQuestionSet(data as Partial<QuestionSet>);
+            } else {
+              handleCreateQuestionSet(data as Partial<QuestionSet>);
+            }
+          }}
           onDelete={handleDeleteQuestionSet}
           questionSet={selectedQuestionSet}
         />

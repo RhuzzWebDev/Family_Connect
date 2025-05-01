@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { X, Save, Plus, Trash2, FolderPlus, Upload, Heart, Link as LinkIcon } from "lucide-react"
+import { X, Save, Plus, Trash2, FolderPlus, Upload, Heart, Link as LinkIcon, Eye } from "lucide-react"
+import { Question, QuestionSet } from "@/types/question"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,17 +19,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import QuestionViewDialog from "@/components/question/question-view-dialog"
 
-interface QuestionSet {
-  id: string
-  title: string
-  description?: string
-  author_name?: string
-  resource_url?: string
-  donate_url?: string
-  cover_image?: string
-  questionCount: number
-}
+
 
 interface CreateEditQuestionSetDialogProps {
   open: boolean
@@ -54,9 +47,12 @@ export default function CreateEditQuestionSetDialog({
     cover_image: ""
   })
   
+  const [viewDialogOpen, setViewDialogOpen] = useState(false)
+  
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [viewQuestionSet, setViewQuestionSet] = useState<QuestionSet | null>(null)
 
   useEffect(() => {
     if (questionSet) {
@@ -74,6 +70,9 @@ export default function CreateEditQuestionSetDialog({
       } else {
         setImagePreview(null)
       }
+      
+      // Set the question set for viewing
+      setViewQuestionSet(questionSet)
     } else {
       setFormData({
         title: "",
@@ -84,6 +83,7 @@ export default function CreateEditQuestionSetDialog({
         cover_image: ""
       })
       setImagePreview(null)
+      setViewQuestionSet(null)
     }
     setImageFile(null)
   }, [questionSet, open])
@@ -306,6 +306,17 @@ export default function CreateEditQuestionSetDialog({
                 )}
               </div>
               <div className="flex gap-2">
+                {isEditing && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setViewDialogOpen(true)}
+                    className="border-blue-700 text-blue-400 hover:bg-blue-900/30"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Questions
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="outline"
@@ -355,6 +366,30 @@ export default function CreateEditQuestionSetDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {viewQuestionSet && (
+        <QuestionViewDialog
+          open={viewDialogOpen}
+          onOpenChange={setViewDialogOpen}
+          questionSet={{
+            ...viewQuestionSet,
+            // Ensure questionCount is available
+            questionCount: viewQuestionSet.questionCount || 0,
+            // Ensure questions array is available and properly formatted
+            // Use type assertion to fix type compatibility issues
+            questions: Array.isArray(viewQuestionSet.questions) ? viewQuestionSet.questions.map(q => ({
+              ...q,
+              // Ensure all required fields are present with correct naming
+              media_type: q.media_type || q.mediaType || 'text',
+              mediaType: (q.mediaType || q.media_type || 'text') as "text" | "image" | "audio" | "video" | "file",
+              created_at: q.created_at || q.createdAt || new Date().toISOString(),
+              createdAt: q.createdAt || q.created_at || new Date().toISOString(),
+              like_count: q.like_count || 0,
+              comment_count: q.comment_count || 0
+            })) : []
+          }}
+        />
+      )}
     </>
   )
 }

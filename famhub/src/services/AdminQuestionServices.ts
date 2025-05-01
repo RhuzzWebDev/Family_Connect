@@ -35,7 +35,7 @@ export interface Question {
   file_url?: string;
   like_count?: number;
   comment_count?: number;
-  media_type?: 'image' | 'video' | 'audio' | 'document';
+  media_type?: 'image' | 'video' | 'audio';
   folder_path?: string;
   created_at?: string;
   question_set_id?: string;
@@ -108,7 +108,21 @@ export class AdminQuestionServices {
 
   // Set the admin context for RLS policies
   private async setAdminContext(email: string): Promise<void> {
-    await this.supabase.rpc('set_app_user', { p_email: email });
+    try {
+      // Using the correct function name and parameter from schema.sql
+      const { error } = await this.supabase.rpc('set_app_user', { p_email: email });
+      
+      if (error) {
+        console.error('Error setting admin context:', error);
+        throw error;
+      }
+      
+      // For debugging
+      console.log(`Admin context set for user: ${email}`);
+    } catch (error) {
+      console.error('Failed to set admin context:', error);
+      throw error;
+    }
   }
   
   /**
@@ -248,7 +262,10 @@ export class AdminQuestionServices {
    */
   async getQuestionWithTypeData(questionId: string, adminEmail: string): Promise<QuestionData> {
     try {
+      // Make sure to set admin context before each database operation
       await this.setAdminContext(adminEmail);
+      
+      console.log(`Fetching question data for ID: ${questionId} with admin email: ${adminEmail}`);
       
       // Get the basic question data
       const { data: question, error: questionError } = await this.supabase
@@ -267,40 +284,43 @@ export class AdminQuestionServices {
       // Get type-specific data based on question type
       switch (question.type) {
         case QuestionTypeEnum.MULTIPLE_CHOICE:
-          // Get multiple choice options
-          const { data: multipleChoiceOptions, error: multipleChoiceError } = await this.supabase
-            .from('question_multiple_choice')
-            .select('*')
-            .eq('question_id', questionId)
-            .order('option_order', { ascending: true });
-          
-          if (multipleChoiceError) throw multipleChoiceError;
-          questionData.options = multipleChoiceOptions;
-          break;
+  // Get multiple choice options
+  const { data: multipleChoiceOptions, error: multipleChoiceError } = await this.supabase
+    .from('question_multiple_choice')
+    .select('*')
+    .eq('question_id', questionId)
+    .order('option_order', { ascending: true });
+  
+  console.log('Fetched MULTIPLE_CHOICE options:', multipleChoiceOptions);
+  if (multipleChoiceError) throw multipleChoiceError;
+  questionData.options = multipleChoiceOptions;
+  break;
           
         case QuestionTypeEnum.DROPDOWN:
-          // Get dropdown options
-          const { data: dropdownOptions, error: dropdownError } = await this.supabase
-            .from('question_dropdown')
-            .select('*')
-            .eq('question_id', questionId)
-            .order('option_order', { ascending: true });
-          
-          if (dropdownError) throw dropdownError;
-          questionData.options = dropdownOptions;
-          break;
+  // Get dropdown options
+  const { data: dropdownOptions, error: dropdownError } = await this.supabase
+    .from('question_dropdown')
+    .select('*')
+    .eq('question_id', questionId)
+    .order('option_order', { ascending: true });
+  
+  console.log('Fetched DROPDOWN options:', dropdownOptions);
+  if (dropdownError) throw dropdownError;
+  questionData.options = dropdownOptions;
+  break;
           
         case QuestionTypeEnum.LIKERT_SCALE:
-          // Get likert scale options
-          const { data: likertOptions, error: likertError } = await this.supabase
-            .from('question_likert_scale')
-            .select('*')
-            .eq('question_id', questionId)
-            .order('option_order', { ascending: true });
-          
-          if (likertError) throw likertError;
-          questionData.options = likertOptions;
-          break;
+  // Get likert scale options
+  const { data: likertOptions, error: likertError } = await this.supabase
+    .from('question_likert_scale')
+    .select('*')
+    .eq('question_id', questionId)
+    .order('option_order', { ascending: true });
+  
+  console.log('Fetched LIKERT_SCALE options:', likertOptions);
+  if (likertError) throw likertError;
+  questionData.options = likertOptions;
+  break;
           
         case QuestionTypeEnum.MATRIX:
           // Get matrix rows and columns
@@ -335,15 +355,32 @@ export class AdminQuestionServices {
           break;
           
         case QuestionTypeEnum.RATING_SCALE:
-          // Get rating scale data
-          const { data: ratingScale, error: ratingScaleError } = await this.supabase
+          // Make sure to set admin context again before fetching rating scale data
+          if (adminEmail) {
+            await this.setAdminContext(adminEmail);
+          }
+          
+          console.log(`Fetching rating scale data for question ID: ${questionId}`);
+          // Get rating scale data with improved error handling - use maybeSingle() instead of single()
+          // This will return null instead of throwing an error when no data is found
+          const { data: ratingScaleData, error: ratingScaleError } = await this.supabase
             .from('question_rating_scale')
             .select('*')
             .eq('question_id', questionId)
-            .single();
+            .maybeSingle();
+            
+          console.log('Rating scale fetch result:', { data: ratingScaleData, error: ratingScaleError });
           
-          if (ratingScaleError && ratingScaleError.code !== 'PGRST116') throw ratingScaleError;
-          questionData.scale = ratingScale || undefined;
+          // Improved error handling for rating scale data
+          if (ratingScaleError) {
+            // Log the error but don't throw if it's just a "not found" error
+            console.error('Error fetching rating scale data:', ratingScaleError);
+            if (ratingScaleError.code !== 'PGRST116') {
+              // Only throw for errors other than "not found"
+              throw ratingScaleError;
+            }
+          }
+          questionData.scale = ratingScaleData || undefined;
           break;
           
         case QuestionTypeEnum.SLIDER:
@@ -359,50 +396,53 @@ export class AdminQuestionServices {
           break;
           
         case QuestionTypeEnum.IMAGE_CHOICE:
-          // Get image options
-          const { data: imageOptions, error: imageOptionsError } = await this.supabase
-            .from('question_image_choice')
-            .select('*')
-            .eq('question_id', questionId)
-            .order('option_order', { ascending: true });
-          
-          if (imageOptionsError) throw imageOptionsError;
-          questionData.imageOptions = imageOptions;
-          break;
+  // Get image options
+  const { data: imageOptions, error: imageOptionsError } = await this.supabase
+    .from('question_image_choice')
+    .select('*')
+    .eq('question_id', questionId)
+    .order('option_order', { ascending: true });
+  
+  console.log('Fetched IMAGE_CHOICE options:', imageOptions);
+  if (imageOptionsError) throw imageOptionsError;
+  questionData.imageOptions = imageOptions;
+  break;
           
         case QuestionTypeEnum.DICHOTOMOUS:
-          // Get dichotomous options
-          const { data: dichotomousData, error: dichotomousError } = await this.supabase
-            .from('question_dichotomous')
-            .select('*')
-            .eq('question_id', questionId)
-            .single();
-          
-          if (dichotomousError && dichotomousError.code !== 'PGRST116') throw dichotomousError;
-          if (dichotomousData) {
-            questionData.options = [
-              { id: `${questionId}-yes`, question_id: questionId, option_text: dichotomousData.positive_option, option_order: 0 },
-              { id: `${questionId}-no`, question_id: questionId, option_text: dichotomousData.negative_option, option_order: 1 }
-            ];
-          }
-          break;
+  // Get dichotomous options
+  const { data: dichotomousData, error: dichotomousError } = await this.supabase
+    .from('question_dichotomous')
+    .select('*')
+    .eq('question_id', questionId)
+    .single();
+  
+  console.log('Fetched DICHOTOMOUS data:', dichotomousData);
+  if (dichotomousError && dichotomousError.code !== 'PGRST116') throw dichotomousError;
+  if (dichotomousData) {
+    questionData.options = [
+      { id: `${questionId}-yes`, question_id: questionId, option_text: dichotomousData.positive_option, option_order: 0 },
+      { id: `${questionId}-no`, question_id: questionId, option_text: dichotomousData.negative_option, option_order: 1 }
+    ];
+  }
+  break;
           
         case QuestionTypeEnum.RANKING:
-          // Get ranking items
-          const { data: rankingItems, error: rankingError } = await this.supabase
-            .from('question_ranking')
-            .select('*')
-            .eq('question_id', questionId)
-            .order('item_order', { ascending: true });
-          
-          if (rankingError) throw rankingError;
-          questionData.options = rankingItems.map(item => ({
-            id: item.id,
-            question_id: item.question_id,
-            option_text: item.item_text,
-            option_order: item.item_order
-          }));
-          break;
+  // Get ranking items
+  const { data: rankingItems, error: rankingError } = await this.supabase
+    .from('question_ranking')
+    .select('*')
+    .eq('question_id', questionId)
+    .order('item_order', { ascending: true });
+  
+  console.log('Fetched RANKING items:', rankingItems);
+  if (rankingError) throw rankingError;
+  questionData.options = rankingItems.map(item => ({
+    id: item.id,
+    question_id: item.question_id,
+    option_text: item.item_text,
+    option_order: item.item_order
+  }));
+  break;
       }
       
       return questionData;
@@ -509,6 +549,9 @@ export class AdminQuestionServices {
    */
   async createQuestion(questionData: Partial<QuestionData>, adminEmail: string): Promise<QuestionData> {
     try {
+      // Debug logging to see what data is being received
+      console.log('Creating question with data:', JSON.stringify(questionData, null, 2));
+      
       await this.setAdminContext(adminEmail);
       
       // First, insert the base question
@@ -649,6 +692,12 @@ export class AdminQuestionServices {
             break;
             
           case QuestionTypeEnum.RATING_SCALE:
+          // Make sure to set admin context again before fetching rating scale data
+          if (adminEmail) {
+            await this.setAdminContext(adminEmail);
+          }
+          
+          console.log(`Fetching rating scale data for question ID: ${questionId}`);
             if (questionData.scale) {
               const { data: scale, error: scaleError } = await this.supabase
                 .from('question_rating_scale')
@@ -755,7 +804,21 @@ export class AdminQuestionServices {
       
       return result;
     } catch (error) {
+      // Log detailed error information
       console.error('Error creating question:', error);
+      
+      // If it's a Supabase error, it might have code and details properties
+      if (error && typeof error === 'object' && 'code' in error) {
+        console.error(`Supabase error code: ${(error as any).code}`);
+        console.error(`Error details: ${JSON.stringify(error)}`);
+      }
+      
+      // If it's related to media_type, provide a more helpful message
+      if (error && typeof error === 'object' && 'message' in error && 
+          (error as any).message?.includes('media_type')) {
+        throw new Error(`Media type validation failed. Only 'image', 'audio', and 'video' are supported. Error: ${JSON.stringify(error)}`);
+      }
+      
       throw error;
     }
   }
@@ -794,7 +857,7 @@ export class AdminQuestionServices {
       
       // If the question type has changed, delete data from the old type's table
       if (currentQuestion.type !== questionData.type) {
-        await this.deleteQuestionTypeData(id, currentQuestion.type);
+        await this.deleteQuestionTypeData(id, currentQuestion.type, adminEmail);
       }
       
       // Then, update type-specific data based on question type
@@ -949,6 +1012,10 @@ export class AdminQuestionServices {
             break;
             
           case QuestionTypeEnum.RATING_SCALE:
+          // Make sure to set admin context again before fetching rating scale data
+          await this.setAdminContext(adminEmail);
+          
+          console.log(`Fetching rating scale data for question ID: ${id}`);
             if (questionData.scale) {
               // Delete existing rating scale
               await this.supabase
@@ -1098,9 +1165,14 @@ export class AdminQuestionServices {
   /**
    * Helper method to delete type-specific data when changing question type
    */
-  private async deleteQuestionTypeData(questionId: string, questionType: QuestionTypeEnum): Promise<void> {
+  private async deleteQuestionTypeData(questionId: string, questionType: QuestionTypeEnum, adminEmail?: string): Promise<void> {
     try {
-      // Delete data from the appropriate table based on question type
+      // Set admin context if provided
+      if (adminEmail) {
+        await this.setAdminContext(adminEmail);
+      }
+      
+      // Delete type-specific data based on question type
       switch (questionType) {
         case QuestionTypeEnum.MULTIPLE_CHOICE:
           await this.supabase
@@ -1110,6 +1182,12 @@ export class AdminQuestionServices {
           break;
           
         case QuestionTypeEnum.RATING_SCALE:
+          // Make sure to set admin context again before fetching rating scale data
+          if (adminEmail) {
+            await this.setAdminContext(adminEmail);
+          }
+          
+          console.log(`Fetching rating scale data for question ID: ${questionId}`);
           await this.supabase
             .from('question_rating_scale')
             .delete()

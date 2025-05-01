@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { X, Maximize2, Minimize2, Plus, FileText, ImageIcon, Mic, Video, File, Edit, Trash2, User, Link, Heart, ExternalLink } from "lucide-react"
+import { X, Maximize2, Minimize2, Plus, FileText, ImageIcon, Mic, Video, File, Edit, Trash2, User, Link, Heart, ExternalLink, Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import CreateQuestionDialog from "@/components/question/create-question-dialog"
 import QuestionDetailDialog from "@/components/question/question-detail-dialog"
+import QuestionViewDialog from "@/components/question/question-view-dialog"
+import { adminQuestionServices } from '@/services/AdminQuestionServices'
+import { QuestionTypeData } from '@/types/question'
 
 interface Question {
   id: string
@@ -47,6 +50,8 @@ export default function QuestionSetDialog({
   const [createQuestionOpen, setCreateQuestionOpen] = useState(false)
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [viewDialogOpen, setViewDialogOpen] = useState(false)
+  const [viewQuestionSet, setViewQuestionSet] = useState<QuestionSet | null>(null)
   const [isFullWidth, setIsFullWidth] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -71,6 +76,7 @@ export default function QuestionSetDialog({
   }
 
   const handleAddQuestion = (questionData: any) => {
+    console.log('Question data in dialog:', questionData); // Debug log
     onAddQuestion({
       ...questionData,
       questionSetId: questionSet.id,
@@ -249,6 +255,165 @@ export default function QuestionSetDialog({
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-blue-400"
+                          onClick={async () => {
+                            try {
+                              // Get admin email from session storage (or use a default for demo)
+                              const adminEmail = sessionStorage.getItem('adminEmail') || 'admin@example.com';
+                              
+                              console.log(`Fetching question data for ID: ${question.id}`);
+                              // Fetch the full question data with type-specific details
+                              const questionData = await adminQuestionServices.getQuestionWithTypeData(question.id, adminEmail);
+                              console.log('Fetched question data:', questionData);
+                              
+                              // Create a temporary question set with the enhanced question data
+                              const enhancedQuestion = {
+                                id: question.id,
+                                question: question.question,
+                                mediaType: question.mediaType || questionData.media_type,
+                                media_type: question.mediaType || questionData.media_type,
+                                type: question.type,
+                                createdAt: question.createdAt,
+                                file_url: questionData.file_url,
+                                // Add type-specific data from the fetched data
+                                typeData: [] as QuestionTypeData[]
+                              };
+                              
+                              // Add the appropriate type data based on question type
+                              switch(question.type) {
+                                case 'multiple-choice':
+                                case 'dropdown':
+                                case 'likert-scale':
+                                case 'ranking':
+                                  if (questionData.options && questionData.options.length > 0) {
+                                    console.log(`Processing ${questionData.options.length} options for ${question.type}`);
+                                    enhancedQuestion.typeData = questionData.options.map(option => ({
+                                      question_id: option.question_id,
+                                      option_text: option.option_text,
+                                      option_order: option.option_order,
+                                      item_text: option.option_text // For ranking compatibility
+                                    }));
+                                  }
+                                  break;
+                                  
+                                case 'image-choice':
+                                  if (questionData.imageOptions && questionData.imageOptions.length > 0) {
+                                    console.log(`Processing ${questionData.imageOptions.length} image options`);
+                                    enhancedQuestion.typeData = questionData.imageOptions.map(option => ({
+                                      question_id: option.question_id,
+                                      option_text: option.option_text,
+                                      option_order: option.option_order,
+                                      image_url: option.image_url
+                                    }));
+                                  }
+                                  break;
+                                  
+                                case 'rating-scale':
+                                case 'slider':
+                                  if (questionData.scale) {
+                                    console.log('Processing scale data:', questionData.scale);
+                                    const scaleData: QuestionTypeData = {
+                                      question_id: questionData.scale.question_id,
+                                      min_value: questionData.scale.min_value,
+                                      max_value: questionData.scale.max_value,
+                                      step_value: questionData.scale.step_value,
+                                      default_value: questionData.scale.default_value
+                                    };
+                                    enhancedQuestion.typeData = [scaleData];
+                                  }
+                                  break;
+                                  
+                                case 'matrix':
+                                  if (questionData.matrix) {
+                                    console.log(`Processing matrix with ${questionData.matrix.rows.length} rows and ${questionData.matrix.columns.length} columns`);
+                                    const matrixItems: QuestionTypeData[] = [];
+                                    
+                                    // Add rows
+                                    questionData.matrix.rows.forEach(row => {
+                                      matrixItems.push({
+                                        question_id: row.question_id,
+                                        is_row: true,
+                                        content: row.content,
+                                        item_order: row.item_order
+                                      });
+                                    });
+                                    
+                                    // Add columns
+                                    questionData.matrix.columns.forEach(col => {
+                                      matrixItems.push({
+                                        question_id: col.question_id,
+                                        is_row: false,
+                                        content: col.content,
+                                        item_order: col.item_order
+                                      });
+                                    });
+                                    
+                                    enhancedQuestion.typeData = matrixItems;
+                                  }
+                                  break;
+                                  
+                                case 'open-ended':
+                                  if (questionData.openEndedSettings) {
+                                    console.log('Processing open-ended settings:', questionData.openEndedSettings);
+                                    enhancedQuestion.typeData = [{
+                                      question_id: question.id,
+                                      answer_format: questionData.openEndedSettings.answer_format,
+                                      character_limit: questionData.openEndedSettings.character_limit
+                                    }];
+                                  }
+                                  break;
+                                  
+                                case 'dichotomous':
+                                  if (questionData.options && questionData.options.length > 0) {
+                                    console.log('Processing dichotomous options');
+                                    // For dichotomous questions, we might have the data in options
+                                    enhancedQuestion.typeData = questionData.options.map(option => ({
+                                      question_id: option.question_id,
+                                      option_text: option.option_text,
+                                      option_order: option.option_order,
+                                      positive_option: option.option_order === 0 ? option.option_text : undefined,
+                                      negative_option: option.option_order === 1 ? option.option_text : undefined
+                                    }));
+                                  }
+                                  break;
+                                  
+                                default:
+                                  console.log(`No specific handling for question type: ${question.type}`);
+                                  break;
+                              }
+                              
+                              const singleQuestionSet = {
+                                id: 'single-question-' + question.id,
+                                title: question.question,
+                                description: 'Individual question view',
+                                questionCount: 1,
+                                questions: [enhancedQuestion]
+                              };
+                              
+                              // Set the question set to view and open the dialog
+                              setViewQuestionSet(singleQuestionSet);
+                              setViewDialogOpen(true);
+                            } catch (error) {
+                              console.error('Error fetching question data:', error);
+                              // Fallback to basic question data if fetch fails
+                              const singleQuestionSet = {
+                                id: 'single-question-' + question.id,
+                                title: question.question,
+                                description: 'Individual question view',
+                                questionCount: 1,
+                                questions: [question]
+                              };
+                              setViewQuestionSet(singleQuestionSet);
+                              setViewDialogOpen(true);
+                            }
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span className="sr-only">View Question</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="h-8 w-8 p-0 text-gray-400 hover:text-white"
                           onClick={() => {
                             setSelectedQuestion(question)
@@ -297,6 +462,12 @@ export default function QuestionSetDialog({
           onSave={handleSaveQuestion}
         />
       )}
+
+      <QuestionViewDialog
+        open={viewDialogOpen}
+        onOpenChange={setViewDialogOpen}
+        questionSet={viewQuestionSet}
+      />
     </div>
   )
 }

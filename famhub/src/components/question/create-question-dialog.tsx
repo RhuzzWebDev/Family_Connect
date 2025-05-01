@@ -34,7 +34,7 @@ export default function CreateQuestionDialog({
   const [userId, setUserId] = useState<string>('');
   const [formData, setFormData] = useState({
     question: "",
-    mediaType: "text" as "text" | "image" | "audio" | "video" | "file",
+    mediaType: "text" as "text" | "image" | "audio" | "video",
     type: QuestionTypeEnum.OPEN_ENDED,
     file: null as File | null,
     // Fields for different question types
@@ -95,8 +95,8 @@ export default function CreateQuestionDialog({
       const validTypes: Record<string, string[]> = {
         image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
         audio: ['audio/mpeg', 'audio/wav', 'audio/ogg'],
-        video: ['video/mp4', 'video/webm', 'video/quicktime'],
-        file: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
+        video: ['video/mp4', 'video/webm', 'video/quicktime']
+        // Note: 'file'/'document' type removed to match database enum constraints
       }
       
       if (formData.mediaType !== 'text' && !validTypes[formData.mediaType]?.includes(file.type)) {
@@ -108,7 +108,7 @@ export default function CreateQuestionDialog({
     setFormData((prev) => ({ ...prev, file }))
   }
 
-  const handleMediaTypeChange = (value: "text" | "image" | "audio" | "video" | "file") => {
+  const handleMediaTypeChange = (value: "text" | "image" | "audio" | "video") => {
     setFormData((prev) => ({ ...prev, mediaType: value }))
   }
 
@@ -298,7 +298,7 @@ export default function CreateQuestionDialog({
       // Reset form after successful submission
       setFormData({
         question: "",
-        mediaType: "text",
+        mediaType: "text" as "text" | "image" | "audio" | "video",
         type: QuestionTypeEnum.OPEN_ENDED,
         file: null,
         options: ["", ""],
@@ -426,12 +426,6 @@ export default function CreateQuestionDialog({
                         <span>Video</span>
                       </div>
                     </SelectItem>
-                    <SelectItem value="file" className="focus:bg-gray-700">
-                      <div className="flex items-center">
-                        <File className="h-4 w-4 mr-2" />
-                        <span>File</span>
-                      </div>
-                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -454,7 +448,6 @@ export default function CreateQuestionDialog({
                             {formData.mediaType === 'image' && 'JPG, PNG, GIF, WEBP (MAX. 5MB)'}
                             {formData.mediaType === 'audio' && 'MP3, WAV, OGG (MAX. 5MB)'}
                             {formData.mediaType === 'video' && 'MP4, WEBM, MOV (MAX. 5MB)'}
-                            {formData.mediaType === 'file' && 'PDF, DOC, DOCX, TXT (MAX. 5MB)'}
                           </p>
                         </div>
                         <input
@@ -464,8 +457,7 @@ export default function CreateQuestionDialog({
                           onChange={handleFileChange}
                           accept={formData.mediaType === 'image' ? 'image/*' :
                                   formData.mediaType === 'audio' ? 'audio/*' :
-                                  formData.mediaType === 'video' ? 'video/*' :
-                                  formData.mediaType === 'file' ? '.pdf,.doc,.docx,.txt' : ''}
+                                  formData.mediaType === 'video' ? 'video/*' : ''}
                         />
                       </label>
                     </div>
@@ -820,10 +812,7 @@ export default function CreateQuestionDialog({
               
               {formData.type === QuestionTypeEnum.IMAGE_CHOICE && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
-                  <Label>Image Choice Options</Label>
-                  <div className="text-sm text-gray-400 mb-2">
-                    Add images and labels for each choice option
-                  </div>
+                  {/* Document/file type removed to match database constraints */}
                   {formData.imageOptions.map((option, index) => (
                     <div key={index} className="space-y-2 p-3 border border-gray-700 rounded-md">
                       <div className="flex items-center justify-between">

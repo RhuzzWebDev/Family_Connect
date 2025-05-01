@@ -1,8 +1,8 @@
 -- Enable UUID extension if not already enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Extend media_type enum to include document type
-ALTER TYPE media_type ADD VALUE IF NOT EXISTS 'document';
+-- Media type enum is defined in schema.sql with values: 'image', 'video', 'audio'
+-- We're not supporting 'document' type to match the enum constraint
 
 -- Create question_type enum
 DO $$ BEGIN

@@ -30,6 +30,12 @@ export default function QuestionDetailDialog({
   question,
   onSave,
 }: QuestionDetailDialogProps) {
+  // Debug log for the incoming question and form data
+  if (question) {
+    // eslint-disable-next-line no-console
+    console.log('DetailDialog Question Prop:', question);
+  }
+
   const [formData, setFormData] = useState({
     question: "",
     mediaType: "text" as "text" | "image" | "audio" | "video" | "file",
@@ -95,6 +101,51 @@ export default function QuestionDetailDialog({
     }
   }, [open])
 
+  // Render options if present and type is option-based
+  const optionBasedTypes = [
+    "multiple-choice",
+    "dropdown",
+    "likert-scale",
+    "dichotomous",
+    "ranking",
+    "image-choice",
+  ];
+
+  // Type guard: is QuestionData
+  function isQuestionData(q: unknown): q is import("../../services/AdminQuestionServices").QuestionData {
+    return typeof q === 'object' && q !== null && ('options' in q || 'imageOptions' in q);
+  }
+
+  let typeSpecificOptions = null;
+  if (question && optionBasedTypes.includes(question.type) && isQuestionData(question)) {
+    // For image-choice, use imageOptions; otherwise use options
+    const options = question.type === "image-choice" ? question.imageOptions : question.options;
+    if (Array.isArray(options) && options.length > 0) {
+      typeSpecificOptions = (
+        <div className="my-4">
+          <div className="text-xs text-blue-300 mb-1">Options:</div>
+          <ul className="space-y-2 bg-gray-900/30 p-3 rounded-md border border-gray-800">
+            {options.map((option: any, idx: number) => (
+              <li key={option.id || idx} className="flex items-center gap-3 text-gray-300 mb-2 p-2 bg-gray-800/30 rounded border border-gray-700">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 font-mono text-sm">{option.option_order}</span>
+                  <span className="text-white">{option.option_text || option.item_text}</span>
+                </div>
+                {option.image_url && (
+                  <img
+                    src={option.image_url}
+                    alt={option.option_text || "Image option"}
+                    className="w-12 h-12 object-cover rounded ml-2 border border-blue-800"
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+  }
+
   if (!open) return null
 
   return (
@@ -140,20 +191,19 @@ export default function QuestionDetailDialog({
               <span>Created: {formatDate(question.createdAt)}</span>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="question">Question</Label>
+                <Label htmlFor="edit-question">Question</Label>
                 <Textarea
-                  id="question"
+                  id="edit-question"
                   name="question"
                   value={formData.question}
                   onChange={handleChange}
-                  placeholder="Enter your question"
-                  className="bg-[#111318] border-gray-800 text-white min-h-[100px]"
-                  required
+                  className="bg-[#111318] border border-gray-800 text-white"
+                  rows={3}
                 />
               </div>
-
+              {typeSpecificOptions}
               <div className="space-y-2">
                 <Label>Media Type</Label>
                 <RadioGroup
