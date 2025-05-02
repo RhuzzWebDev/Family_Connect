@@ -1,110 +1,534 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import AdminLayout from '@/components/layout/AdminLayout';
-import { SupabaseService } from '@/services/supabaseService';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { 
-  Search, 
-  MessageSquare,
-  ChevronRight, 
-  Trash2,
-  Eye,
-  Filter,
-  Image,
-  Video,
-  FileAudio,
-  FileText,
-  ThumbsUp,
-  MessageCircle
-} from 'lucide-react';
-import { Question, User } from '@/lib/supabase';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"; 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
+// Import types but use them with type assertions to avoid compatibility issues
+import type { Question as SharedQuestion, QuestionSet as SharedQuestionSet } from "@/types/question";
+import QuestionSetCard from "@/components/question/question-set-card";
+import QuestionSetListItem from "@/components/question/question-set-list-item";
+import QuestionFilters from "@/components/question/question-filters";
+import CreateEditQuestionSetDialog from "@/components/question/create-edit-question-set-dialog";
+import QuestionSetDialog from "@/components/question/question-set-dialog";
+import AdminLayout from "@/components/layout/AdminLayout";
+import { adminQuestionServices, QuestionTypeEnum } from '@/services/AdminQuestionServices';
 
-// Extended Question type with user information
-type QuestionWithUser = Question & {
-  user: User | null;
+// Define local types to maintain compatibility with existing code
+type Question = {
+  id: string;
+  question: string;
+  mediaType: "text" | "image" | "audio" | "video" | "file";
+  type: string;
+  createdAt: string;
 };
 
-export default function AdminQuestionsPage() {
-  const [questions, setQuestions] = useState<QuestionWithUser[]>([]);
+type QuestionSet = {
+  id: string;
+  title: string;
+  description?: string;
+  author_name?: string;
+  resource_url?: string;
+  donate_url?: string;
+  cover_image?: string;
+  questionCount: number;
+  questions: Question[];
+};
+
+export default function QuestionsPage() {
+  const [view, setView] = useState<"card" | "list">("card");
+  const [filters, setFilters] = useState({});
+  const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
+  const [createEditDialogOpen, setCreateEditDialogOpen] = useState(false);
+  const [selectedQuestionSet, setSelectedQuestionSet] = useState<QuestionSet | null>(null);
+  const [questionSetDialogOpen, setQuestionSetDialogOpen] = useState(false);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedQuestion, setSelectedQuestion] = useState<QuestionWithUser | null>(null);
-  const [isViewQuestionOpen, setIsViewQuestionOpen] = useState(false);
-  const [mediaFilter, setMediaFilter] = useState<string>('all');
-  const [currentTab, setCurrentTab] = useState<string>('all');
+  // Using a default admin email for now - in a real app, this would come from authentication
+  const adminEmail = 'admin@familyconnect.com';
   
   useEffect(() => {
-    const fetchQuestions = async () => {
+    const fetchQuestionSets = async () => {
       try {
-        const data = await SupabaseService.getAllQuestionsWithUserDetails();
-        setQuestions(data);
+        const data = await adminQuestionServices.getAllQuestionSets(adminEmail);
+        
+        // Convert the data to match our component's QuestionSet type
+        const formattedData: QuestionSet[] = data.map(set => ({
+          id: set.id,
+          title: set.title || '',
+          description: set.description,
+          questionCount: set.questionCount || 0,
+          questions: [] // Empty array as we're not loading questions at this point
+        }));
+        
+        setQuestionSets(formattedData);
       } catch (err) {
-        console.error('Error fetching questions:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load questions');
+        console.error('Error fetching question sets:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load question sets');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchQuestions();
+    fetchQuestionSets();
   }, []);
-
-  const handleDeleteQuestion = async (questionId: string) => {
-    if (!confirm('Are you sure you want to delete this question? This action cannot be undone.')) {
-      return;
-    }
-    
+  
+  const handleViewQuestionSet = async (id: string) => {
     try {
       setLoading(true);
-      await SupabaseService.deleteQuestion(questionId);
       
-      // Refresh the questions list
-      const updatedQuestions = await SupabaseService.getAllQuestionsWithUserDetails();
-      setQuestions(updatedQuestions);
+      const questionSetData = await adminQuestionServices.getQuestionSetById(id, adminEmail);
       
-      // Close dialog if open
-      if (isViewQuestionOpen) {
-        setIsViewQuestionOpen(false);
-        setSelectedQuestion(null);
+      // Convert to our component's QuestionSet type with required fields
+      const formattedQuestionSet: QuestionSet = {
+        id: questionSetData.id,
+        title: questionSetData.title || '',
+        description: questionSetData.description,
+        // Include the new fields
+        author_name: questionSetData.author_name,
+        resource_url: questionSetData.resource_url,
+        donate_url: questionSetData.donate_url,
+        cover_image: questionSetData.cover_image,
+        questionCount: questionSetData.questionCount || 0,
+        questions: questionSetData.questions?.map(q => ({
+          id: q.id,
+          question: q.question,
+          // Convert media_type to the expected enum type with fallback to "text"
+          // Ensure we only use valid mediaType values (text, image, audio, video)
+          mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
+          type: q.media_type || "text", // Use media_type as type if available
+          createdAt: q.created_at || new Date().toISOString()
+        })) || [] // Provide empty array as fallback
+      };
+      
+      console.log('Viewing question set with data:', formattedQuestionSet);
+      
+      setSelectedQuestionSet(formattedQuestionSet);
+      setQuestionSetDialogOpen(true);
+    } catch (err) {
+      console.error(`Error fetching question set ${id}:`, err);
+      setError(err instanceof Error ? err.message : 'Failed to load question set');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditQuestionSet = async (id: string) => {
+    try {
+      setLoading(true);
+      
+      // Fetch the complete question set data including author_name and resource_url
+      const questionSetData = await adminQuestionServices.getQuestionSetById(id, adminEmail);
+      
+      // Convert to our component's QuestionSet type with all required fields
+      const formattedQuestionSet: QuestionSet = {
+        id: questionSetData.id,
+        title: questionSetData.title || '',
+        description: questionSetData.description,
+        author_name: questionSetData.author_name,
+        resource_url: questionSetData.resource_url,
+        donate_url: questionSetData.donate_url,
+        cover_image: questionSetData.cover_image,
+        questionCount: questionSetData.questionCount || 0,
+        questions: questionSetData.questions?.map(q => ({
+          id: q.id,
+          question: q.question,
+          mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
+          type: q.media_type || "text",
+          createdAt: q.created_at || new Date().toISOString()
+        })) || []
+      };
+      
+      console.log('Editing question set with complete data:', formattedQuestionSet);
+      
+      setSelectedQuestionSet(formattedQuestionSet);
+      setCreateEditDialogOpen(true);
+    } catch (err) {
+      console.error(`Error fetching question set ${id} for editing:`, err);
+      toast.error('Failed to load question set for editing');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateQuestionSet = async (data: Partial<QuestionSet>) => {
+    try {
+      setLoading(true);
+      
+      // Map the component's field names to the database field names
+      const questionSetData = {
+        title: data.title,
+        description: data.description,
+        // Map the fields to match the database schema
+        author_name: data.author_name,
+        resource_url: data.resource_url,
+        donate_url: data.donate_url,
+        cover_image: data.cover_image
+      };
+      
+      console.log('Creating question set with data:', questionSetData);
+      
+      const newQuestionSet = await adminQuestionServices.createQuestionSet(questionSetData, adminEmail);
+      
+      // Convert to our component's QuestionSet type with required fields
+      const formattedQuestionSet: QuestionSet = {
+        id: newQuestionSet.id,
+        title: newQuestionSet.title || '',
+        description: newQuestionSet.description,
+        author_name: newQuestionSet.author_name,
+        resource_url: newQuestionSet.resource_url,
+        donate_url: newQuestionSet.donate_url,
+        cover_image: newQuestionSet.cover_image,
+        questionCount: newQuestionSet.questionCount || 0,
+        questions: [] // Empty array for new question set
+      };
+      
+      setQuestionSets([...questionSets, formattedQuestionSet]);
+      setCreateEditDialogOpen(false);
+    } catch (err) {
+      console.error('Error creating question set:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create question set');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to convert between type formats
+  const convertQuestionFormat = (question: any): Question => {
+    return {
+      id: question.id,
+      question: question.question,
+      mediaType: question.mediaType || question.media_type || "text",
+      type: question.type,
+      createdAt: question.createdAt || question.created_at || new Date().toISOString()
+    };
+  };
+
+  const handleUpdateQuestionSet = async (data: Partial<QuestionSet>) => {
+    try {
+      setLoading(true);
+      if (!data.id) {
+        toast.error("Question set ID is required for updating");
+        return;
+      }
+      
+      // Map the component's field names to the database field names
+      const questionSetData = {
+        title: data.title,
+        description: data.description,
+        // Map the fields to match the database schema
+        author_name: data.author_name,
+        resource_url: data.resource_url,
+        donate_url: data.donate_url,
+        cover_image: data.cover_image
+      };
+      
+      console.log('Updating question set with data:', questionSetData);
+      
+      const updatedQuestionSet = await adminQuestionServices.updateQuestionSet(data.id, questionSetData, adminEmail);
+      
+      // Convert to our component's QuestionSet type and update the list
+      setQuestionSets(
+        questionSets.map((qs) => {
+          if (qs.id === data.id) {
+            return {
+              ...qs,
+              title: updatedQuestionSet.title || qs.title,
+              description: updatedQuestionSet.description,
+              author_name: updatedQuestionSet.author_name,
+              resource_url: updatedQuestionSet.resource_url,
+              donate_url: updatedQuestionSet.donate_url,
+              cover_image: updatedQuestionSet.cover_image,
+              questionCount: updatedQuestionSet.questionCount || qs.questionCount
+            };
+          }
+          return qs;
+        })
+      );
+      setCreateEditDialogOpen(false);
+    } catch (err) {
+      console.error('Error updating question set:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update question set');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteQuestionSet = async (id: string) => {
+    try {
+      setLoading(true);
+      await adminQuestionServices.deleteQuestionSet(id, adminEmail);
+      setQuestionSets(questionSets.filter((qs) => qs.id !== id));
+      setCreateEditDialogOpen(false);
+    } catch (err) {
+      console.error('Error deleting question set:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete question set');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleAddQuestion = async (questionData: any) => {
+    try {
+      setLoading(true);
+      
+      // Add the question to the selected question set
+      if (!selectedQuestionSet) {
+        setError('No question set selected');
+        return;
+      }
+      
+      // Get the admin user ID first
+      const adminUserId = await adminQuestionServices.getAdminUserId(adminEmail);
+      
+      // Convert from our component Question type to the service Question type
+      // The service only accepts 'image', 'audio', 'video' for media_type
+      // If mediaType is 'file' or 'document', we'll map it to a compatible type for the service
+      let mediaType: 'image' | 'audio' | 'video' | undefined = undefined;
+      
+      if (questionData.mediaType && questionData.mediaType !== 'text') {
+        if (questionData.mediaType === 'file' || questionData.mediaType === 'document') {
+          // Map 'file' or 'document' to a type the service accepts (e.g., 'image')
+          // This is a workaround for the type mismatch
+          mediaType = 'image';
+        } else {
+          // For other types (image, audio, video), use as is
+          mediaType = questionData.mediaType as 'image' | 'audio' | 'video';
+        }
+      }
+      
+      console.log('Question data received:', questionData); // Debug log
+      
+      // Ensure we have a valid question type
+      // The database requires a non-null type value
+      let questionType = questionData.type;
+      
+      // If type is missing or invalid, set a default
+      if (!questionType || typeof questionType !== 'string' || 
+          !Object.values(QuestionTypeEnum).includes(questionType as QuestionTypeEnum)) {
+        console.log('Using default question type because:', { receivedType: questionType });
+        questionType = QuestionTypeEnum.OPEN_ENDED;
+      } else {
+        // Ensure the type is properly cast as QuestionTypeEnum
+        questionType = questionType as QuestionTypeEnum;
+      }
+      
+      // Create the question object with the base fields
+      const questionToAdd: any = {
+        user_id: adminUserId, // Add the user_id to satisfy the not-null constraint
+        question: questionData.question,
+        media_type: mediaType,
+        question_set_id: questionData.questionSetId,
+        type: questionType, // Use the validated question type
+      };
+      
+      // Add type-specific data based on the question type
+      // This is crucial for storing data in the dedicated tables
+      switch (questionType) {
+        case QuestionTypeEnum.MULTIPLE_CHOICE:
+        case QuestionTypeEnum.DROPDOWN:
+        case QuestionTypeEnum.LIKERT_SCALE:
+        case QuestionTypeEnum.RANKING:
+          // For options-based questions
+          if (questionData.options && Array.isArray(questionData.options)) {
+            questionToAdd.options = questionData.options;
+          }
+          break;
+          
+        case QuestionTypeEnum.RATING_SCALE:
+        case QuestionTypeEnum.SLIDER:
+          // For scale-based questions
+          if (questionData.scale) {
+            questionToAdd.scale = questionData.scale;
+          }
+          break;
+          
+        case QuestionTypeEnum.MATRIX:
+          // For matrix questions
+          if (questionData.matrix) {
+            questionToAdd.matrix = questionData.matrix;
+          }
+          break;
+          
+        case QuestionTypeEnum.IMAGE_CHOICE:
+          // For image choice questions
+          if (questionData.imageOptions) {
+            questionToAdd.imageOptions = questionData.imageOptions;
+          }
+          break;
+          
+        case QuestionTypeEnum.OPEN_ENDED:
+          // For open-ended questions
+          if (questionData.openEndedSettings) {
+            questionToAdd.openEndedSettings = questionData.openEndedSettings;
+          }
+          break;
+          
+        case QuestionTypeEnum.DICHOTOMOUS:
+          // For dichotomous questions
+          if (questionData.options && Array.isArray(questionData.options)) {
+            questionToAdd.options = questionData.options;
+          }
+          break;
+      }
+      
+      console.log('Question to add:', questionToAdd); // Debug log
+      
+      const newQuestion = await adminQuestionServices.createQuestion(questionToAdd, adminEmail);
+      
+      // If we have a selected question set, refresh it to get the updated questions
+      if (selectedQuestionSet) {
+        const updatedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
+        
+        // Convert to our component's QuestionSet type with required fields
+        const updatedQuestionSet: QuestionSet = {
+          id: updatedQuestionSetData.id,
+          title: updatedQuestionSetData.title || '',
+          description: updatedQuestionSetData.description,
+          questionCount: updatedQuestionSetData.questionCount || 0,
+          questions: updatedQuestionSetData.questions?.map(q => ({
+            id: q.id,
+            question: q.question,
+            mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
+            type: q.media_type || "text",
+            createdAt: q.created_at || new Date().toISOString()
+          })) || []
+        };
+        
+        setSelectedQuestionSet(updatedQuestionSet);
+        
+        // Update the question sets list
+        setQuestionSets(
+          questionSets.map((qs) => {
+            if (qs.id === selectedQuestionSet.id) {
+              return {
+                ...qs,
+                questionCount: qs.questionCount + 1,
+              };
+            }
+            return qs;
+          })
+        );
+      }
+      
+      // Update the question sets list
+      setQuestionSets(
+        questionSets.map((qs) => {
+          if (qs.id === questionData.questionSetId) {
+            return {
+              ...qs,
+              questionCount: qs.questionCount + 1,
+            };
+          }
+          return qs;
+        })
+      );
+    } catch (err) {
+      console.error('Error adding question:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add question');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditQuestion = async (questionId: string, updatedQuestion: Partial<Question>) => {
+    try {
+      setLoading(true);
+      
+      // Convert from our component Question type to the service Question type
+      // The service only accepts 'image', 'audio', 'video' for media_type
+      // If mediaType is 'file', we'll map it to a compatible type for the service
+      let mediaType: 'image' | 'audio' | 'video' | undefined = undefined;
+      
+      if (updatedQuestion.mediaType && updatedQuestion.mediaType !== 'text') {
+        if (updatedQuestion.mediaType === 'file') {
+          // Map 'file' to a type the service accepts (e.g., 'image')
+          // This is a workaround for the type mismatch
+          mediaType = 'image';
+        } else {
+          // For other types (image, audio, video), use as is
+          mediaType = updatedQuestion.mediaType as 'image' | 'audio' | 'video';
+        }
+      }
+      
+      const questionToUpdate = {
+        question: updatedQuestion.question,
+        media_type: mediaType,
+        // We don't have file_url in our Question type, so we'll handle it separately if needed
+        file_url: undefined
+      };
+      
+      await adminQuestionServices.updateQuestion(questionId, questionToUpdate, adminEmail);
+      
+      // If we have a selected question set, refresh it to get the updated question
+      if (selectedQuestionSet) {
+        const refreshedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
+        
+        // Convert to our component's QuestionSet type with required fields
+        const refreshedQuestionSet: QuestionSet = {
+          id: refreshedQuestionSetData.id,
+          title: refreshedQuestionSetData.title || '',
+          description: refreshedQuestionSetData.description,
+          questionCount: refreshedQuestionSetData.questionCount || 0,
+          questions: refreshedQuestionSetData.questions?.map(q => ({
+            id: q.id,
+            question: q.question,
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video") || "text",
+            type: q.media_type || "text",
+            createdAt: q.created_at || new Date().toISOString()
+          })) || []
+        };
+        
+        setSelectedQuestionSet(refreshedQuestionSet);
+      }
+    } catch (err) {
+      console.error('Error updating question:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update question');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteQuestion = async (questionId: string) => {
+    try {
+      setLoading(true);
+      
+      await adminQuestionServices.deleteQuestion(questionId, adminEmail);
+      
+      // If we have a selected question set, refresh it to get the updated question count
+      if (selectedQuestionSet) {
+        const refreshedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
+        
+        // Convert to our component's QuestionSet type with required fields
+        const refreshedQuestionSet: QuestionSet = {
+          id: refreshedQuestionSetData.id,
+          title: refreshedQuestionSetData.title || '',
+          description: refreshedQuestionSetData.description,
+          questionCount: refreshedQuestionSetData.questionCount || 0,
+          questions: refreshedQuestionSetData.questions?.map(q => ({
+            id: q.id,
+            question: q.question,
+            mediaType: (q.media_type as "text" | "image" | "audio" | "video") || "text",
+            type: q.media_type || "text",
+            createdAt: q.created_at || new Date().toISOString()
+          })) || []
+        };
+        
+        setSelectedQuestionSet(refreshedQuestionSet);
+        
+        // Also update the question sets list
+        setQuestionSets(
+          questionSets.map((qs) => {
+            if (qs.id === selectedQuestionSet.id) {
+              return {
+                ...qs,
+                questionCount: Math.max(0, qs.questionCount - 1)
+              };
+            }
+            return qs;
+          })
+        );
       }
     } catch (err) {
       console.error('Error deleting question:', err);
@@ -114,341 +538,84 @@ export default function AdminQuestionsPage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
-  };
-
-  const getMediaIcon = (mediaType: string | null) => {
-    switch (mediaType) {
-      case 'image':
-        return <Image className="h-4 w-4" />;
-      case 'video':
-        return <Video className="h-4 w-4" />;
-      case 'audio':
-        return <FileAudio className="h-4 w-4" />;
-      default:
-        return <FileText className="h-4 w-4" />;
-    }
-  };
-
-  const truncateText = (text: string, maxLength: number = 50) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-  };
-
-  // Filter questions based on search term, media type, and tab
-  const filteredQuestions = questions.filter(question => {
-    const matchesSearch = question.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (question.user?.first_name + ' ' + question.user?.last_name).toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesMedia = mediaFilter === 'all' || question.media_type === mediaFilter;
-    
-    const matchesTab = currentTab === 'all' || 
-                      (currentTab === 'withMedia' && question.media_type !== null) ||
-                      (currentTab === 'withoutMedia' && question.media_type === null) ||
-                      (currentTab === 'mostLiked' && question.like_count > 0) ||
-                      (currentTab === 'mostCommented' && question.comment_count > 0);
-    
-    return matchesSearch && matchesMedia && matchesTab;
-  });
-
-  // Sort questions based on tab
-  const sortedQuestions = [...filteredQuestions].sort((a, b) => {
-    if (currentTab === 'mostLiked') {
-      return b.like_count - a.like_count;
-    } else if (currentTab === 'mostCommented') {
-      return b.comment_count - a.comment_count;
-    } else {
-      // Default sort by date (newest first)
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-  });
-
-  if (loading && questions.length === 0) {
-    return (
-      <AdminLayout>
-        <div className="flex h-full items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-2xl font-bold">Question Management</h1>
-          
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search questions..."
-                className="pl-9"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filter Media
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setMediaFilter('all')}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  All Types
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setMediaFilter('image')}>
-                  <Image className="h-4 w-4 mr-2" />
-                  Images
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setMediaFilter('video')}>
-                  <Video className="h-4 w-4 mr-2" />
-                  Videos
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setMediaFilter('audio')}>
-                  <FileAudio className="h-4 w-4 mr-2" />
-                  Audio
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setMediaFilter('text')}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Text Only
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+      <div className="p-6 bg-[#0a0c10] min-h-screen">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-2xl font-bold text-white">Question Management</h1>
+          <Button
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => {
+              setSelectedQuestionSet(null);
+              setCreateEditDialogOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create Question Set
+          </Button>
         </div>
-        
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+
+        <div className="mb-8">
+          <QuestionFilters view={view} onViewChange={setView} onFilterChange={setFilters} />
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : error ? (
+          <div className="bg-red-900/20 border border-red-800 text-red-300 p-4 rounded-md">
+            {error}
+          </div>
+        ) : (
+          view === "card" ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
+              {questionSets.map((questionSet) => (
+                <QuestionSetCard
+                  key={questionSet.id}
+                  questionSet={questionSet}
+                  onViewClick={handleViewQuestionSet}
+                  onEditClick={handleEditQuestionSet}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-[#111318] rounded-lg overflow-hidden border border-gray-800">
+              {questionSets.map((questionSet) => (
+                <QuestionSetListItem
+                  key={questionSet.id}
+                  questionSet={questionSet}
+                  onViewClick={handleViewQuestionSet}
+                  onEditClick={handleEditQuestionSet}
+                />
+              ))}
+            </div>
+          )
         )}
-        
-        <Tabs defaultValue="all" onValueChange={setCurrentTab}>
-          <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-4">
-            <TabsTrigger value="all">All Questions</TabsTrigger>
-            <TabsTrigger value="withMedia">With Media</TabsTrigger>
-            <TabsTrigger value="withoutMedia">Text Only</TabsTrigger>
-            <TabsTrigger value="mostLiked">Most Liked</TabsTrigger>
-            <TabsTrigger value="mostCommented">Most Commented</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value={currentTab}>
-            <Card className="p-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Question</TableHead>
-                    <TableHead>Posted By</TableHead>
-                    <TableHead>Media</TableHead>
-                    <TableHead>Engagement</TableHead>
-                    <TableHead>Posted</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedQuestions.length > 0 ? (
-                    sortedQuestions.map((question) => (
-                      <TableRow key={question.id}>
-                        <TableCell className="font-medium max-w-xs">
-                          {truncateText(question.question, 80)}
-                        </TableCell>
-                        <TableCell>
-                          {question.user ? (
-                            <div className="flex flex-col">
-                              <span>{question.user.first_name} {question.user.last_name}</span>
-                              <span className="text-xs text-gray-500">{question.user.role}</span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-500">Unknown User</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {question.media_type ? (
-                            <div className="flex items-center">
-                              {getMediaIcon(question.media_type)}
-                              <span className="ml-2 capitalize">{question.media_type}</span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-500">None</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Badge variant="secondary" className="flex items-center">
-                              <ThumbsUp className="h-3 w-3 mr-1" />
-                              {question.like_count}
-                            </Badge>
-                            <Badge variant="outline" className="flex items-center">
-                              <MessageCircle className="h-3 w-3 mr-1" />
-                              {question.comment_count}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatDate(question.created_at)}</TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <span className="sr-only">Open menu</span>
-                                <ChevronRight className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <Dialog open={isViewQuestionOpen && selectedQuestion?.id === question.id}
-                                      onOpenChange={(open) => {
-                                        setIsViewQuestionOpen(open);
-                                        if (!open) setSelectedQuestion(null);
-                                      }}>
-                                <DialogTrigger asChild>
-                                  <DropdownMenuItem onSelect={(e) => {
-                                    e.preventDefault();
-                                    setSelectedQuestion(question);
-                                  }}>
-                                    <Eye className="h-4 w-4 mr-2" />
-                                    View Details
-                                  </DropdownMenuItem>
-                                </DialogTrigger>
-                                <DialogContent className="sm:max-w-lg">
-                                  <DialogHeader>
-                                    <DialogTitle>Question Details</DialogTitle>
-                                    <DialogDescription>
-                                      Full details of the selected question.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  {selectedQuestion && (
-                                    <div className="space-y-4 py-4">
-                                      <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-500">Posted By</Label>
-                                        <div className="flex items-center space-x-2">
-                                          <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
-                                            {selectedQuestion.user?.first_name.charAt(0)}
-                                            {selectedQuestion.user?.last_name.charAt(0)}
-                                          </div>
-                                          <div>
-                                            <p className="font-medium">
-                                              {selectedQuestion.user?.first_name} {selectedQuestion.user?.last_name}
-                                            </p>
-                                            <p className="text-sm text-gray-500">
-                                              {selectedQuestion.user?.role} • {selectedQuestion.user?.persona}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      
-                                      <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-500">Question</Label>
-                                        <div className="p-4 bg-gray-50 rounded-md">
-                                          <p>{selectedQuestion.question}</p>
-                                        </div>
-                                      </div>
-                                      
-                                      {selectedQuestion.media_type && selectedQuestion.file_url && (
-                                        <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-500">Media</Label>
-                                          <div className="p-4 bg-gray-50 rounded-md">
-                                            {selectedQuestion.media_type === 'image' && (
-                                              <img 
-                                                src={selectedQuestion.file_url} 
-                                                alt="Question media" 
-                                                className="max-h-64 rounded-md mx-auto"
-                                              />
-                                            )}
-                                            {selectedQuestion.media_type === 'video' && (
-                                              <video 
-                                                src={selectedQuestion.file_url} 
-                                                controls 
-                                                className="max-h-64 w-full rounded-md"
-                                              />
-                                            )}
-                                            {selectedQuestion.media_type === 'audio' && (
-                                              <audio 
-                                                src={selectedQuestion.file_url} 
-                                                controls 
-                                                className="w-full"
-                                              />
-                                            )}
-                                            <p className="text-sm text-gray-500 mt-2">
-                                              File path: {selectedQuestion.folder_path}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      )}
-                                      
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-500">Likes</Label>
-                                          <div className="flex items-center space-x-2">
-                                            <ThumbsUp className="h-4 w-4 text-blue-500" />
-                                            <span className="text-lg font-medium">{selectedQuestion.like_count}</span>
-                                          </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-500">Comments</Label>
-                                          <div className="flex items-center space-x-2">
-                                            <MessageCircle className="h-4 w-4 text-blue-500" />
-                                            <span className="text-lg font-medium">{selectedQuestion.comment_count}</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      
-                                      <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-500">Posted</Label>
-                                        <p>{formatDate(selectedQuestion.created_at)}</p>
-                                      </div>
-                                    </div>
-                                  )}
-                                  <DialogFooter>
-                                    <Button variant="destructive" onClick={() => selectedQuestion && handleDeleteQuestion(selectedQuestion.id)}>
-                                      <Trash2 className="h-4 w-4 mr-2" />
-                                      Delete Question
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-                              
-                              <DropdownMenuItem onSelect={(e) => {
-                                e.preventDefault();
-                                handleDeleteQuestion(question.id);
-                              }}>
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-6">
-                        <MessageSquare className="h-8 w-8 mx-auto text-gray-400" />
-                        <p className="mt-2 text-gray-500">
-                          {searchTerm || mediaFilter !== 'all' ? 'No questions match your filters' : 'No questions found'}
-                        </p>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </Card>
-          </TabsContent>
-        </Tabs>
+
+        <CreateEditQuestionSetDialog
+          open={createEditDialogOpen}
+          onOpenChange={setCreateEditDialogOpen}
+          onSubmit={(data) => {
+            // Use type assertion to handle the type compatibility issue
+            if (selectedQuestionSet) {
+              handleUpdateQuestionSet(data as Partial<QuestionSet>);
+            } else {
+              handleCreateQuestionSet(data as Partial<QuestionSet>);
+            }
+          }}
+          onDelete={handleDeleteQuestionSet}
+          questionSet={selectedQuestionSet}
+        />
+
+        <QuestionSetDialog
+          open={questionSetDialogOpen}
+          onOpenChange={setQuestionSetDialogOpen}
+          questionSet={selectedQuestionSet}
+          onEditQuestion={handleEditQuestion}
+          onDeleteQuestion={handleDeleteQuestion}
+          onAddQuestion={handleAddQuestion}
+        />
       </div>
     </AdminLayout>
   );
