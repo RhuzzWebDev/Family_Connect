@@ -102,4 +102,5 @@ export default function QuestionViewDialog({
       // Mark as not loading anymore
       setLoadingTypeData(prev => ({ ...prev, [questionId]: false }));
     }
-  };
+  }
+}

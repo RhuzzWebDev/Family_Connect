@@ -114,10 +114,42 @@ export default function QuestionsPage() {
     }
   };
 
-  const handleEditQuestionSet = (id: string) => {
-    const questionSet = questionSets.find((qs) => qs.id === id) || null;
-    setSelectedQuestionSet(questionSet);
-    setCreateEditDialogOpen(true);
+  const handleEditQuestionSet = async (id: string) => {
+    try {
+      setLoading(true);
+      
+      // Fetch the complete question set data including author_name and resource_url
+      const questionSetData = await adminQuestionServices.getQuestionSetById(id, adminEmail);
+      
+      // Convert to our component's QuestionSet type with all required fields
+      const formattedQuestionSet: QuestionSet = {
+        id: questionSetData.id,
+        title: questionSetData.title || '',
+        description: questionSetData.description,
+        author_name: questionSetData.author_name,
+        resource_url: questionSetData.resource_url,
+        donate_url: questionSetData.donate_url,
+        cover_image: questionSetData.cover_image,
+        questionCount: questionSetData.questionCount || 0,
+        questions: questionSetData.questions?.map(q => ({
+          id: q.id,
+          question: q.question,
+          mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
+          type: q.media_type || "text",
+          createdAt: q.created_at || new Date().toISOString()
+        })) || []
+      };
+      
+      console.log('Editing question set with complete data:', formattedQuestionSet);
+      
+      setSelectedQuestionSet(formattedQuestionSet);
+      setCreateEditDialogOpen(true);
+    } catch (err) {
+      console.error(`Error fetching question set ${id} for editing:`, err);
+      toast.error('Failed to load question set for editing');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateQuestionSet = async (data: Partial<QuestionSet>) => {

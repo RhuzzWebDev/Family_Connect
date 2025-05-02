@@ -109,8 +109,8 @@ export class AdminQuestionServices {
   // Set the admin context for RLS policies
   private async setAdminContext(email: string): Promise<void> {
     try {
-      // Using the correct function name and parameter from schema.sql
-      const { error } = await this.supabase.rpc('set_app_user', { p_email: email });
+      // Set the admin context for RLS policies
+      const { error } = await this.supabase.rpc('set_admin_context', { admin_email: email });
       
       if (error) {
         console.error('Error setting admin context:', error);
@@ -491,21 +491,46 @@ export class AdminQuestionServices {
     try {
       await this.setAdminContext(adminEmail);
       
-      const { data, error } = await this.supabase
+      // Prepare update data - only include fields that are provided
+      const updateData: Record<string, any> = {};
+      if (questionSet.title !== undefined) updateData.title = questionSet.title;
+      if (questionSet.description !== undefined) updateData.description = questionSet.description;
+      if (questionSet.author_name !== undefined) updateData.author_name = questionSet.author_name;
+      if (questionSet.resource_url !== undefined) updateData.resource_url = questionSet.resource_url;
+      if (questionSet.donate_url !== undefined) updateData.donate_url = questionSet.donate_url;
+      if (questionSet.cover_image !== undefined) updateData.cover_image = questionSet.cover_image;
+      
+      // Add updated_at timestamp
+      updateData.updated_at = new Date().toISOString();
+      
+      console.log('Updating question set with data:', updateData);
+      
+      // Perform the update without returning data in the same operation
+      const { error } = await this.supabase
         .from('question_sets')
-        .update({
-          title: questionSet.title,
-          description: questionSet.description,
-          author_name: questionSet.author_name,
-          resource_url: questionSet.resource_url,
-          donate_url: questionSet.donate_url,
-          cover_image: questionSet.cover_image
-        })
+        .update(updateData)
+        .eq('id', id);
+      
+      if (error) {
+        console.error(`Error updating question set ${id}:`, error);
+        throw error;
+      }
+      
+      // Fetch the updated question set in a separate query
+      const { data: updatedData, error: fetchError } = await this.supabase
+        .from('question_sets')
+        .select('*')
         .eq('id', id)
-        .select()
         .single();
       
-      if (error) throw error;
+      if (fetchError) {
+        console.error(`Error fetching updated question set ${id}:`, fetchError);
+        throw fetchError;
+      }
+      
+      if (!updatedData) {
+        throw new Error(`Question set ${id} not found after update`);
+      }
       
       // Get question count
       const { count, error: countError } = await this.supabase
@@ -513,10 +538,13 @@ export class AdminQuestionServices {
         .select('id', { count: 'exact', head: true })
         .eq('question_set_id', id);
       
-      if (countError) throw countError;
+      if (countError) {
+        console.error(`Error getting question count for set ${id}:`, countError);
+        throw countError;
+      }
       
       return {
-        ...data,
+        ...updatedData,
         questionCount: count || 0
       };
     } catch (error) {

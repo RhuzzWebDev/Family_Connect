@@ -1,6 +1,8 @@
 "use client"
 
-import type React from "react"
+import React from "react"
+import { FileStorageService } from "@/services/fileStorageService";
+const fileStorageService = new FileStorageService();
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
@@ -53,17 +55,36 @@ export default function CreateEditQuestionSetDialog({
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [viewQuestionSet, setViewQuestionSet] = useState<QuestionSet | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageAreaClick = () => {
+    fileInputRef.current?.click();
+  }
 
   useEffect(() => {
     if (questionSet) {
+      // Log the question set data to ensure we have all fields
+      console.log('Editing question set:', questionSet);
+      
+      // Ensure all fields are properly extracted from the questionSet object
       setFormData({
+        title: questionSet.title,
+        description: questionSet.description || "",
+        author_name: questionSet.author_name || "", // Ensure author_name is fetched
+        resource_url: questionSet.resource_url || "", // Ensure resource_url is fetched
+        donate_url: questionSet.donate_url || "",
+        cover_image: questionSet.cover_image || ""
+      })
+      
+      // Log the form data to verify it's correctly populated
+      console.log('Form data populated:', {
         title: questionSet.title,
         description: questionSet.description || "",
         author_name: questionSet.author_name || "",
         resource_url: questionSet.resource_url || "",
         donate_url: questionSet.donate_url || "",
         cover_image: questionSet.cover_image || ""
-      })
+      });
       
       if (questionSet.cover_image) {
         setImagePreview(questionSet.cover_image)
@@ -112,19 +133,46 @@ export default function CreateEditQuestionSetDialog({
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // In a real implementation, you would upload the image file to your storage service
-    // and get back a URL to store in the database
-    // For now, we'll just use the preview URL for demonstration
-    const submissionData = {
-      ...(questionSet ? { id: questionSet.id } : {}),
-      ...formData,
-      // Cover image is optional, so only include if it exists
-      ...(imagePreview || formData.cover_image ? { cover_image: imagePreview || formData.cover_image } : {})
+  const [loading, setLoading] = useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const userEmail = sessionStorage.getItem("adminEmail") || "admin@example.com";
+      // If editing, keep old logic
+      if (questionSet && questionSet.id) {
+        let coverImageUrl = formData.cover_image;
+        if (imageFile) {
+          const folderPath = await fileStorageService.getUserFolderPath(userEmail, questionSet.id);
+          coverImageUrl = await fileStorageService.uploadFile(imageFile, folderPath);
+        }
+        const submissionData = {
+          id: questionSet.id,
+          ...formData,
+          ...(coverImageUrl ? { cover_image: coverImageUrl } : {})
+        };
+        await onSubmit(submissionData);
+        onOpenChange(false);
+      } else {
+        // 1. Create the question set without the image
+        const baseData = { ...formData, cover_image: undefined };
+        // onSubmit must return a QuestionSet or Partial<QuestionSet> with an id
+        const createdSet = (await onSubmit(baseData)) as { id: string } | undefined;
+        // 2. If image, upload and update
+        let coverImageUrl = "";
+        if (imageFile && createdSet && createdSet.id) {
+          const folderPath = await fileStorageService.getUserFolderPath(userEmail, createdSet.id);
+          coverImageUrl = await fileStorageService.uploadFile(imageFile, folderPath);
+          // 3. Call onSubmit again to update with image URL
+          await onSubmit({ id: createdSet.id, cover_image: coverImageUrl });
+        }
+        onOpenChange(false);
+      }
+    } catch (error) {
+      alert("Failed to submit. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    onSubmit(submissionData)
-    onOpenChange(false)
   }
 
   const handleDelete = () => {
@@ -184,33 +232,38 @@ export default function CreateEditQuestionSetDialog({
 
             {/* Content */}
             <div className="flex-grow overflow-y-auto p-6">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4" encType="multipart/form-data">
                 {/* Cover Image Upload */}
                 <div className="space-y-2">
                   <Label htmlFor="cover_image">Cover Image (Optional)</Label>
                   <div className="mt-1 flex items-center">
-                    <div className="relative w-full h-40 bg-[#111318] border border-gray-800 rounded-md overflow-hidden">
-                      {imagePreview ? (
-                        <img 
-                          src={imagePreview} 
-                          alt="Cover preview" 
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
-                          <Upload className="h-8 w-8 mb-2" />
-                          <span>Upload cover image</span>
-                        </div>
-                      )}
-                      <Input
-                        id="cover_image"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageChange}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
+                  <div
+                    className="relative w-full h-40 bg-[#111318] border border-gray-800 rounded-md overflow-hidden"
+                    onClick={handleImageAreaClick}
+                    style={{ cursor: "pointer" }}
+                  >
+                    {imagePreview ? (
+                      <img
+                        src={imagePreview}
+                        alt="Cover preview"
+                        className="w-full h-full object-cover"
                       />
-                    </div>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                        <Upload className="h-8 w-8 mb-2" />
+                        <span>Upload cover image</span>
+                      </div>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      id="cover_image"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      style={{ display: "none" }}
+                    />
                   </div>
+                </div>
                   <p className="text-xs text-gray-400">Recommended size: 1200 x 630 pixels. Maximum size: 15MB</p>
                 </div>
 
@@ -287,6 +340,27 @@ export default function CreateEditQuestionSetDialog({
                   <p className="text-xs text-gray-400">This will be displayed as a donate button on the question set</p>
                 </div>
                 
+                <div className="flex justify-end mt-6">
+                  <Button 
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <span>Submitting...</span>
+                    ) : isEditing ? (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Changes
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create
+                      </>
+                    )}
+                  </Button>
+                </div>
               </form>
             </div>
 
@@ -325,22 +399,7 @@ export default function CreateEditQuestionSetDialog({
                 >
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleSubmit} 
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  {isEditing ? (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Changes
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create
-                    </>
-                  )}
-                </Button>
+                {/* Move the submit button inside the form below */}
               </div>
             </div>
           </div>

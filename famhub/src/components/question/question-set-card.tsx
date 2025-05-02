@@ -66,12 +66,6 @@ export default function QuestionSetCard({ questionSet, onViewClick, onEditClick 
             <FileText className="h-4 w-4 mr-1.5" />
             <span>{questionSet.questionCount} Questions</span>
           </div>
-          {questionSet.resource_url && (
-            <div className="flex items-center">
-              <MessageSquare className="h-4 w-4 mr-1.5" />
-              <span>Resources</span>
-            </div>
-          )}
         </div>
 
         <div className="mt-4">
