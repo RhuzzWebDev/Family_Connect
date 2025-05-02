@@ -13,21 +13,30 @@ export class FileStorageService {
    * @param userEmail User email to get folder path for
    * @returns Folder path for the user
    */
-  async getUserFolderPath(userEmail: string): Promise<string> {
+  async getUserFolderPath(userEmail: string, questionSetId?: string): Promise<string> {
     try {
+      // Try to get user from users table
       const user = await SupabaseService.getUserByEmail(userEmail);
-      if (!user) {
-        throw new Error('User not found');
+      if (user) {
+        // Determine folder path based on role
+        if (user.persona === 'Parent') {
+          return `${user.last_name}/${user.first_name}`;
+        } else {
+          return `other/${user.first_name}`;
+        }
       }
-
-      // Determine folder path based on role
-      if (user.persona === 'Parent') {
-        return `${user.last_name}/${user.first_name}`;
-      } else {
-        return `other/${user.first_name}`;
+      // If not found as user, check admin
+      const { AdminLoginService } = await import('./AdminLoginService');
+      const admin = await AdminLoginService.getAdminByEmail(userEmail);
+      if (admin) {
+        if (questionSetId) {
+          return `admin/${questionSetId}/file`;
+        }
+        return `admin/${admin.first_name}`;
       }
+      throw new Error('User or admin not found');
     } catch (error: any) {
-      console.error('Failed to get user folder path:', error);
+      console.error('Failed to get user/admin folder path:', error);
       // Return a fallback path if we can't determine the user's role
       return `other/${userEmail}`;
     }
