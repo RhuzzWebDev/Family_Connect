@@ -46,7 +46,18 @@ export default function QuestionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Using a default admin email for now - in a real app, this would come from authentication
-  const adminEmail = 'admin@familyconnect.com';
+  const [adminEmail, setAdminEmail] = useState('admin@famhub.com');
+  
+  // Store admin email in session storage for persistence
+  useEffect(() => {
+    // Get admin email from session storage or use default
+    const storedEmail = sessionStorage.getItem('adminEmail');
+    if (storedEmail) {
+      setAdminEmail(storedEmail);
+    } else {
+      sessionStorage.setItem('adminEmail', adminEmail);
+    }
+  }, []);
   
   useEffect(() => {
     const fetchQuestionSets = async () => {
@@ -269,6 +280,50 @@ export default function QuestionsPage() {
     }
   };
   
+  // Helper function to refresh a question set's data
+  const refreshQuestionSet = async (questionSetId: string) => {
+    try {
+      const currentAdminEmail = sessionStorage.getItem('adminEmail') || adminEmail;
+      const updatedQuestionSetData = await adminQuestionServices.getQuestionSetById(questionSetId, currentAdminEmail);
+      
+      // Convert to our component's QuestionSet type with required fields
+      const updatedQuestionSet: QuestionSet = {
+        id: updatedQuestionSetData.id,
+        title: updatedQuestionSetData.title || '',
+        description: updatedQuestionSetData.description,
+        author_name: updatedQuestionSetData.author_name,
+        resource_url: updatedQuestionSetData.resource_url,
+        donate_url: updatedQuestionSetData.donate_url,
+        cover_image: updatedQuestionSetData.cover_image,
+        questionCount: updatedQuestionSetData.questionCount || 0,
+        questions: updatedQuestionSetData.questions?.map(q => ({
+          id: q.id,
+          question: q.question,
+          mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
+          type: q.type || "open-ended",
+          createdAt: q.created_at || new Date().toISOString()
+        })) || []
+      };
+      
+      setSelectedQuestionSet(updatedQuestionSet);
+      
+      // Update the question sets list with the new question count
+      setQuestionSets(prevSets => 
+        prevSets.map(qs => 
+          qs.id === questionSetId 
+            ? { ...qs, questionCount: updatedQuestionSet.questionCount } 
+            : qs
+        )
+      );
+      
+      return updatedQuestionSet;
+    } catch (err) {
+      console.error(`Error refreshing question set ${questionSetId}:`, err);
+      toast.error('Failed to refresh question set data');
+      throw err;
+    }
+  };
+  
   const handleAddQuestion = async (questionData: any) => {
     try {
       setLoading(true);
@@ -279,8 +334,20 @@ export default function QuestionsPage() {
         return;
       }
       
+      // Check if the question already has an ID (already created)
+      if (questionData.id) {
+        console.log('Question already created with ID:', questionData.id);
+        // Just update the UI with the existing question
+        await refreshQuestionSet(selectedQuestionSet.id);
+        return;
+      }
+      
+      // Use the admin email from the question data if available, otherwise use the current one
+      const currentAdminEmail = questionData.adminEmail || sessionStorage.getItem('adminEmail') || adminEmail;
+      console.log('Using admin email for question creation:', currentAdminEmail);
+      
       // Get the admin user ID first
-      const adminUserId = await adminQuestionServices.getAdminUserId(adminEmail);
+      const adminUserId = await adminQuestionServices.getAdminUserId(currentAdminEmail);
       
       // Convert from our component Question type to the service Question type
       // The service only accepts 'image', 'audio', 'video' for media_type
@@ -375,44 +442,19 @@ export default function QuestionsPage() {
       
       console.log('Question to add:', questionToAdd); // Debug log
       
-      const newQuestion = await adminQuestionServices.createQuestion(questionToAdd, adminEmail);
+      // Use the same admin email we retrieved earlier
       
-      // If we have a selected question set, refresh it to get the updated questions
-      if (selectedQuestionSet) {
-        const updatedQuestionSetData = await adminQuestionServices.getQuestionSetById(selectedQuestionSet.id, adminEmail);
-        
-        // Convert to our component's QuestionSet type with required fields
-        const updatedQuestionSet: QuestionSet = {
-          id: updatedQuestionSetData.id,
-          title: updatedQuestionSetData.title || '',
-          description: updatedQuestionSetData.description,
-          questionCount: updatedQuestionSetData.questionCount || 0,
-          questions: updatedQuestionSetData.questions?.map(q => ({
-            id: q.id,
-            question: q.question,
-            mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
-            type: q.media_type || "text",
-            createdAt: q.created_at || new Date().toISOString()
-          })) || []
-        };
-        
-        setSelectedQuestionSet(updatedQuestionSet);
-        
-        // Update the question sets list
-        setQuestionSets(
-          questionSets.map((qs) => {
-            if (qs.id === selectedQuestionSet.id) {
-              return {
-                ...qs,
-                questionCount: qs.questionCount + 1,
-              };
-            }
-            return qs;
-          })
-        );
-      }
+      // Log the admin email being used
+      console.log('Creating question with admin email:', currentAdminEmail);
       
-      // Update the question sets list
+      // Explicitly set admin context before creating the question
+      await adminQuestionServices['setAdminContext'](currentAdminEmail);
+      
+      // Create the question with the admin email
+      const newQuestion = await adminQuestionServices.createQuestion(questionToAdd, currentAdminEmail);
+      
+      // Refresh the question set to get the updated questions
+      await refreshQuestionSet(selectedQuestionSet.id);
       setQuestionSets(
         questionSets.map((qs) => {
           if (qs.id === questionData.questionSetId) {
