@@ -282,13 +282,13 @@ export default function QuestionDetailDialog({
               <div className="space-y-2">
                 <Label htmlFor="question-type">Question Type</Label>
                 
-                {/* Simple HTML select element instead of shadcn/ui Select */}
+                {/* Enhanced select element with custom arrow */}
                 <div className="relative">
                   <select
                     id="question-type"
                     value={formData.type}
                     onChange={(e) => handleTypeChange(e.target.value)}
-                    className="w-full p-2 bg-[#111318] border border-gray-800 rounded-md text-white"
+                    className="w-full p-3 pl-4 pr-10 bg-[#111318] border border-gray-800 rounded-md text-white appearance-none cursor-pointer hover:border-blue-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="multiple-choice">Multiple choice questions</option>
                     <option value="rating-scale">Rating scale questions</option>
@@ -304,6 +304,12 @@ export default function QuestionDetailDialog({
                     <option value="dichotomous">Dichotomous questions</option>
                     <option value="text">Text questions</option>
                   </select>
+                  {/* Custom arrow */}
+                  <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                  </div>
                 </div>
                 
                 {/* Debug info */}
