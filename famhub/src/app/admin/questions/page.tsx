@@ -102,15 +102,18 @@ export default function QuestionsPage() {
         donate_url: questionSetData.donate_url,
         cover_image: questionSetData.cover_image,
         questionCount: questionSetData.questionCount || 0,
-        questions: questionSetData.questions?.map(q => ({
-          id: q.id,
-          question: q.question,
-          // Convert media_type to the expected enum type with fallback to "text"
-          // Ensure we only use valid mediaType values (text, image, audio, video)
-          mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
-          type: q.media_type || "text", // Use media_type as type if available
-          createdAt: q.created_at || new Date().toISOString()
-        })) || [] // Provide empty array as fallback
+        questions: questionSetData.questions?.map(q => {
+          console.log('Raw question data from API:', q);
+          return {
+            id: q.id,
+            question: q.question,
+            // Convert media_type to the expected enum type with fallback to "text"
+            mediaType: q.media_type ? (q.media_type as "image" | "audio" | "video") : "text",
+            // Use the actual question type from the database
+            type: q.type || "multiple-choice", // Use the proper question type with fallback
+            createdAt: q.created_at || new Date().toISOString()
+          };
+        }) || [] // Provide empty array as fallback
       };
       
       console.log('Viewing question set with data:', formattedQuestionSet);
