@@ -13,6 +13,7 @@ import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, Aler
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
 import { cn } from '@/lib/utils';
+import { QuestionSetCard } from './QuestionSetCard';
 
 interface QuestionLike {
   user_id: string;
@@ -579,63 +580,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
               <h2 className="text-xl font-semibold text-gray-300 mb-4">Question Sets</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-4 gap-4 md:gap-6 2xl:gap-8">
                 {questionSets.map((set) => (
-                  <Card 
-                    key={set.id} 
-                    className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
-                    style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
-                  >
-                    {/* Cover image if available */}
-                    {set.cover_image && (
-                      <div className="w-full h-40 relative">
-                        <Image
-                          src={set.cover_image}
-                          alt={set.title}
-                          fill
-                          className="object-cover"
-                          unoptimized={true}
-                        />
-                      </div>
-                    )}
-                    
-                    {/* Content */}
-                    <CardContent className="p-4">
-                      <h3 className="text-lg font-medium text-blue-400 mb-2">{set.title}</h3>
-                      {set.description && (
-                        <p className="text-sm text-gray-300 mb-3 line-clamp-2">{set.description}</p>
-                      )}
-                      {set.author_name && (
-                        <p className="text-xs text-gray-400">By {set.author_name}</p>
-                      )}
-                    </CardContent>
-                    
-                    {/* Footer */}
-                    <CardFooter className="flex items-center justify-between p-4 pt-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400">
-                          {new Date(set.created_at).toLocaleDateString()}
-                        </span>
-                        
-                        {/* Question count badge */}
-                        <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-full">
-                          {set.question_count || 0} question{(set.question_count !== 1) ? 's' : ''}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {set.resource_url && (
-                          <a 
-                            href={set.resource_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full hover:bg-blue-800"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            Resource
-                          </a>
-                        )}
-                      </div>
-                    </CardFooter>
-                  </Card>
+                  <QuestionSetCard key={set.id} questionSet={set} />
                 ))}
               </div>
             </div>
@@ -724,8 +669,16 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
                 {questionSets.map((set) => (
                   <div 
                     key={set.id}
-                    className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border"
+                    className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border cursor-pointer"
                     style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
+                    onClick={() => {
+                      // We'll use the QuestionSetCard component's dialog functionality
+                      // by clicking on a hidden instance of it
+                      const hiddenCard = document.getElementById(`hidden-question-set-${set.id}`);
+                      if (hiddenCard) {
+                        hiddenCard.click();
+                      }
+                    }}
                   >
                     {/* Left side: Image and basic info */}
                     <div className="flex items-start gap-3 sm:w-1/4">
@@ -791,6 +744,14 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
                           </a>
                         )}
                       </div>
+                    </div>
+                    
+                    {/* Hidden QuestionSetCard for dialog functionality */}
+                    <div className="hidden">
+                      <QuestionSetCard 
+                        key={`hidden-${set.id}`} 
+                        questionSet={set} 
+                      />
                     </div>
                   </div>
                 ))}
