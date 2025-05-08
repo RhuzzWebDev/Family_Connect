@@ -385,7 +385,7 @@ export default function QuestionSetDialog({
                               const singleQuestionSet = {
                                 id: 'single-question-' + question.id,
                                 title: question.question,
-                                description: 'Individual question view',
+                                description: '',
                                 questionCount: 1,
                                 questions: [enhancedQuestion]
                               };
@@ -399,7 +399,7 @@ export default function QuestionSetDialog({
                               const singleQuestionSet = {
                                 id: 'single-question-' + question.id,
                                 title: question.question,
-                                description: 'Individual question view',
+                                description: '',
                                 questionCount: 1,
                                 questions: [question]
                               };

@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X, Save, FileText, ImageIcon, Mic, Video, File } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
@@ -42,27 +44,51 @@ export default function QuestionDetailDialog({
     type: "",
   })
 
+  // All possible question types including custom types that might be in the database
+  const allQuestionTypes = [
+    "multiple-choice",
+    "rating-scale",
+    "likert-scale",
+    "matrix",
+    "dropdown",
+    "open-ended",
+    "demographic",
+    "ranking",
+    "file-upload",
+    "image-choice",
+    "slider",
+    "dichotomous",
+    "text" // Include "text" as a valid type since it exists in the database
+  ];
+
   useEffect(() => {
     if (question) {
-      setFormData({
+      // Debug log to verify the question type from Supabase
+      console.log('Question type from database:', question.type);
+      
+      // Use the exact type from the database without correction
+      const updatedFormData = {
         question: question.question,
         mediaType: question.mediaType,
         type: question.type,
-      })
+      };
+      
+      console.log('Using exact question type in UI:', updatedFormData.type);
+      setFormData(updatedFormData)
     }
   }, [question, open])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
+    setFormData((prev: typeof formData) => ({ ...prev, [name]: value }))
   }
 
   const handleMediaTypeChange = (value: "text" | "image" | "audio" | "video" | "file") => {
-    setFormData((prev) => ({ ...prev, mediaType: value }))
+    setFormData((prev: typeof formData) => ({ ...prev, mediaType: value }))
   }
 
   const handleTypeChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, type: value }))
+    setFormData((prev: typeof formData) => ({ ...prev, type: value }))
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -254,96 +280,42 @@ export default function QuestionDetailDialog({
               </div>
 
               <div className="space-y-2">
-                <Label>Question Type</Label>
-                <RadioGroup
-                  value={formData.type}
-                  onValueChange={handleTypeChange}
-                  className="flex flex-col space-y-2 mt-2"
-                >
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="multiple-choice" id="edit-type-multiple-choice" />
-                    <Label htmlFor="edit-type-multiple-choice" className="cursor-pointer">
-                      Multiple choice questions
-                    </Label>
+                <Label htmlFor="question-type">Question Type</Label>
+                
+                {/* Enhanced select element with custom arrow */}
+                <div className="relative">
+                  <select
+                    id="question-type"
+                    value={formData.type}
+                    onChange={(e) => handleTypeChange(e.target.value)}
+                    className="w-full p-3 pl-4 pr-10 bg-[#111318] border border-gray-800 rounded-md text-white appearance-none cursor-pointer hover:border-blue-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="multiple-choice">Multiple choice questions</option>
+                    <option value="rating-scale">Rating scale questions</option>
+                    <option value="likert-scale">Likert scale questions</option>
+                    <option value="matrix">Matrix questions</option>
+                    <option value="dropdown">Dropdown questions</option>
+                    <option value="open-ended">Open-ended questions</option>
+                    <option value="demographic">Demographic questions</option>
+                    <option value="ranking">Ranking questions</option>
+                    <option value="file-upload">File upload questions</option>
+                    <option value="image-choice">Image choice questions</option>
+                    <option value="slider">Slider questions</option>
+                    <option value="dichotomous">Dichotomous questions</option>
+                    <option value="text">Text questions</option>
+                  </select>
+                  {/* Custom arrow */}
+                  <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
                   </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="rating-scale" id="edit-type-rating-scale" />
-                    <Label htmlFor="edit-type-rating-scale" className="cursor-pointer">
-                      Rating scale questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="likert-scale" id="edit-type-likert-scale" />
-                    <Label htmlFor="edit-type-likert-scale" className="cursor-pointer">
-                      Likert scale questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="matrix" id="edit-type-matrix" />
-                    <Label htmlFor="edit-type-matrix" className="cursor-pointer">
-                      Matrix questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="dropdown" id="edit-type-dropdown" />
-                    <Label htmlFor="edit-type-dropdown" className="cursor-pointer">
-                      Dropdown questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="open-ended" id="edit-type-open-ended" />
-                    <Label htmlFor="edit-type-open-ended" className="cursor-pointer">
-                      Open-ended questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="demographic" id="edit-type-demographic" />
-                    <Label htmlFor="edit-type-demographic" className="cursor-pointer">
-                      Demographic questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="ranking" id="edit-type-ranking" />
-                    <Label htmlFor="edit-type-ranking" className="cursor-pointer">
-                      Ranking questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="file-upload" id="edit-type-file-upload" />
-                    <Label htmlFor="edit-type-file-upload" className="cursor-pointer">
-                      File upload questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="image-choice" id="edit-type-image-choice" />
-                    <Label htmlFor="edit-type-image-choice" className="cursor-pointer">
-                      Image choice questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="slider" id="edit-type-slider" />
-                    <Label htmlFor="edit-type-slider" className="cursor-pointer">
-                      Slider questions
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#111318] p-2 rounded-md border border-gray-800">
-                    <RadioGroupItem value="dichotomous" id="edit-type-dichotomous" />
-                    <Label htmlFor="edit-type-dichotomous" className="cursor-pointer">
-                      Dichotomous questions
-                    </Label>
-                  </div>
-                </RadioGroup>
+                </div>
+                
+                {/* Debug info */}
+                <div className="text-xs text-gray-500 mt-1">
+                  Current type: {formData.type || 'none'}
+                </div>
               </div>
             </form>
           </div>

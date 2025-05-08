@@ -57,15 +57,25 @@ export default function CreateQuestionDialog({
   const [fileError, setFileError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
 
+  const [adminEmail, setAdminEmail] = useState<string>('');
+
   useEffect(() => {
     const fetchAdminUserId = async () => {
       try {
-        // Get the admin email from session storage
-        const adminEmail = sessionStorage.getItem('adminEmail') || 'admin@example.com';
+        // Get the admin email from session storage or use a default
+        const email = sessionStorage.getItem('adminEmail') || 'admin@famhub.com';
+        setAdminEmail(email);
+        
+        console.log('Using admin email:', email);
+        
+        // Store the admin email in session storage for future use
+        sessionStorage.setItem('adminEmail', email);
         
         // Get the default admin user ID from AdminQuestionServices
-        const adminUserId = await adminQuestionServices.getAdminUserId(adminEmail);
+        const adminUserId = await adminQuestionServices.getAdminUserId(email);
         setUserId(adminUserId);
+        
+        console.log('Admin user ID set:', adminUserId);
       } catch (error) {
         console.error('Error fetching admin user ID:', error);
         setFileError('Error: Unable to get the admin user ID. Please try again.');
@@ -160,8 +170,21 @@ export default function CreateQuestionDialog({
     
     // Check if we have a valid user ID
     if (!userId) {
-      setFileError('Authentication error: No user ID available. Please try again.');
-      return;
+      try {
+        // Try to get the admin user ID again
+        const email = sessionStorage.getItem('adminEmail') || 'admin@famhub.com';
+        const adminUserId = await adminQuestionServices.getAdminUserId(email);
+        setUserId(adminUserId);
+        
+        if (!adminUserId) {
+          setFileError('Authentication error: No user ID available. Please try again.');
+          return;
+        }
+      } catch (error) {
+        console.error('Error fetching admin user ID:', error);
+        setFileError('Authentication error: No user ID available. Please try again.');
+        return;
+      }
     }
     
     try {
@@ -292,8 +315,14 @@ export default function CreateQuestionDialog({
         questionData.folder_path = folderPath
       }
       
-      // Submit the question data
-      onSubmit(questionData)
+      // Add admin email to the question data for the parent component to use
+      questionData.adminEmail = adminEmail || sessionStorage.getItem('adminEmail') || 'admin@famhub.com';
+      
+      console.log('Preparing question data with admin email:', questionData.adminEmail);
+      
+      // Submit the question data to the parent component without creating it directly
+      // This prevents double insertion
+      onSubmit(questionData);
       
       // Reset form after successful submission
       setFormData({

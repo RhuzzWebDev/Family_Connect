@@ -109,16 +109,25 @@ export class AdminQuestionServices {
   // Set the admin context for RLS policies
   private async setAdminContext(email: string): Promise<void> {
     try {
-      // Set the admin context for RLS policies
-      const { error } = await this.supabase.rpc('set_admin_context', { admin_email: email });
+      // Set the admin context for RLS policies using the set_admin_session function
+      // This sets both the user email and admin flag
+      const { error } = await this.supabase.rpc('set_admin_session', { admin_email: email });
       
       if (error) {
         console.error('Error setting admin context:', error);
         throw error;
       }
       
+      // Also explicitly set the admin flag to ensure it's properly set
+      const { error: flagError } = await this.supabase.rpc('set_admin_flag', { admin: true });
+      
+      if (flagError) {
+        console.error('Error setting admin flag:', flagError);
+        throw flagError;
+      }
+      
       // For debugging
-      console.log(`Admin context set for user: ${email}`);
+      console.log(`Admin context set for user: ${email} with admin flag`);
     } catch (error) {
       console.error('Failed to set admin context:', error);
       throw error;
@@ -579,10 +588,19 @@ export class AdminQuestionServices {
     try {
       // Debug logging to see what data is being received
       console.log('Creating question with data:', JSON.stringify(questionData, null, 2));
+      console.log('Using admin email:', adminEmail);
       
+      // Make sure to set admin context before each database operation
       await this.setAdminContext(adminEmail);
       
+      // Validate media_type to ensure it matches the allowed values in the database
+      const validMediaTypes = ['image', 'video', 'audio', null, undefined];
+      if (questionData.media_type && !validMediaTypes.includes(questionData.media_type)) {
+        throw new Error(`Invalid media_type: ${questionData.media_type}. Must be one of: image, video, audio`); 
+      }
+      
       // First, insert the base question
+      console.log('Inserting base question with admin privileges');
       const { data: question, error: questionError } = await this.supabase
         .from('questions')
         .insert([{
@@ -599,11 +617,22 @@ export class AdminQuestionServices {
         .select()
         .single();
       
-      if (questionError) throw questionError;
+      if (questionError) {
+        console.error('Error inserting question:', questionError);
+        if (questionError.code === '42501') {
+          console.error('RLS policy violation. Trying to reset admin context...');
+          await this.setAdminContext(adminEmail); // Try setting admin context again
+          throw new Error(`RLS policy violation: Make sure ${adminEmail} has admin privileges. Details: ${JSON.stringify(questionError)}`);
+        }
+        throw questionError;
+      }
       
       // Then, insert type-specific data based on question type
       const questionId = question.id;
       const result: QuestionData = { ...question };
+      
+      // Make sure to set admin context again before each subsequent database operation
+      await this.setAdminContext(adminEmail);
       
       if (questionData.type) {
         switch (questionData.type) {
