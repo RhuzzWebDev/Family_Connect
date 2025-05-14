@@ -10,7 +10,8 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabaseClient"
+import { userAnswerQuestions } from "@/services/userAnswerQuestions"
 import { toast } from "sonner"
 
 interface QuestionTypeData {
@@ -80,12 +81,125 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   const [selectedMediaType, setSelectedMediaType] = useState<string | null>(null)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
   const [mediaFile, setMediaFile] = useState<File | null>(null)
+  const [answer, setAnswer] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [userExistingAnswer, setUserExistingAnswer] = useState<any>(null)
+  const [loadingExistingAnswer, setLoadingExistingAnswer] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Fetch the user's existing answer for this question
+  const fetchUserAnswer = async () => {
+    const userEmail = sessionStorage.getItem('userEmail');
+    if (!userEmail || !question.id) return;
+    
+    setLoadingExistingAnswer(true);
+    try {
+      // Get user ID from email
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError || !userData) {
+        console.error('User not found:', userError);
+        return;
+      }
+      
+      // Check if answers table exists
+      const { error: tableCheckError } = await supabase
+        .from('answers')
+        .select('id')
+        .limit(1);
+      
+      if (tableCheckError) {
+        console.log('Answers table may not exist:', tableCheckError.message);
+        return;
+      }
+      
+      // Set the app user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+      
+      // Get user's answer for this question with proper headers
+      const { data: answerData, error: answerError } = await supabase
+        .from('answers')
+        .select('*')
+        .eq('question_id', question.id)
+        .eq('user_id', userData.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(); // Use maybeSingle instead of single to avoid 406 errors
+      
+      if (answerError && answerError.code !== 'PGRST116') { // PGRST116 is 'no rows returned'
+        console.error('Error fetching answer:', answerError);
+        return;
+      }
+      
+      if (answerData) {
+        console.log('Found existing answer:', answerData);
+        setUserExistingAnswer(answerData);
+        
+        // Set the answer in the form
+        if (answerData.answer_data) {
+          // Format the answer based on its type and question type
+          let formattedAnswer = answerData.answer_data;
+          
+          if (question.type === 'multiple-choice') {
+            // For multiple choice, we need to extract the selected option
+            if (Array.isArray(formattedAnswer)) {
+              // If it's already an array, take the first item
+              formattedAnswer = formattedAnswer[0];
+            } else if (typeof formattedAnswer === 'object') {
+              // If it's an object, convert to string
+              formattedAnswer = JSON.stringify(formattedAnswer);
+              // Try to parse it as an array and get the first item
+              try {
+                const parsed = JSON.parse(formattedAnswer);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  formattedAnswer = parsed[0];
+                }
+              } catch (e) {
+                console.warn('Could not parse multiple choice answer:', e);
+              }
+            }
+          } else if (question.type === 'likert-scale') {
+            // For likert scale, ensure we have a string value
+            if (typeof formattedAnswer === 'number') {
+              formattedAnswer = String(formattedAnswer);
+            } else if (typeof formattedAnswer === 'object') {
+              // If it's an object or array, try to extract a usable value
+              formattedAnswer = JSON.stringify(formattedAnswer);
+              try {
+                const parsed = JSON.parse(formattedAnswer);
+                if (parsed && (typeof parsed === 'number' || typeof parsed === 'string')) {
+                  formattedAnswer = String(parsed);
+                }
+              } catch (e) {
+                console.warn('Could not parse likert scale answer:', e);
+              }
+            }
+          } else if (typeof formattedAnswer === 'object') {
+            formattedAnswer = JSON.stringify(formattedAnswer);
+          }
+          
+          console.log('Setting answer from existing data:', formattedAnswer, 'for question type:', question.type);
+          setAnswer(formattedAnswer);
+        }
+      }
+    } catch (err) {
+      console.error('Error in fetchUserAnswer:', err);
+    } finally {
+      setLoadingExistingAnswer(false);
+    }
+  };
+  
   useEffect(() => {
     if (isOpen) {
       fetchQuestionTypeData();
       fetchComments();
+      fetchUserAnswer();
+      setSubmitError('');
     }
   }, [isOpen, question.id]);
   
@@ -303,168 +417,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
     }
   };
 
-  const renderTypeSpecificContent = () => {
-    if (!question.type || questionTypeData.length === 0) return null;
-    
-    switch (question.type) {
-      case 'multiple-choice':
-      case 'dropdown':
-      case 'likert-scale':
-        return (
-          <div className="mt-4 space-y-2">
-            <h3 className="text-sm font-medium text-gray-300">Options:</h3>
-            <div className="space-y-2">
-              {questionTypeData.map((option, index) => (
-                <div 
-                  key={index} 
-                  className="bg-gray-800 p-2 rounded-md flex items-center"
-                >
-                  <span className="w-6 h-6 flex items-center justify-center bg-blue-900 rounded-full text-xs mr-2">
-                    {option.option_order !== undefined ? option.option_order + 1 : index + 1}
-                  </span>
-                  <span>{option.option_text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-        
-      case 'rating-scale':
-      case 'slider':
-        const scaleData = questionTypeData[0];
-        return (
-          <div className="mt-4 space-y-2">
-            <h3 className="text-sm font-medium text-gray-300">Scale Settings:</h3>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-gray-800 p-2 rounded-md">
-                <div className="text-xs text-gray-400">Min</div>
-                <div>{scaleData?.min_value || 0}</div>
-              </div>
-              <div className="bg-gray-800 p-2 rounded-md">
-                <div className="text-xs text-gray-400">Max</div>
-                <div>{scaleData?.max_value || 10}</div>
-              </div>
-              <div className="bg-gray-800 p-2 rounded-md">
-                <div className="text-xs text-gray-400">Step</div>
-                <div>{scaleData?.step_value || 1}</div>
-              </div>
-            </div>
-          </div>
-        );
-        
-      case 'matrix':
-        const rows = questionTypeData.filter(item => item.is_row);
-        const columns = questionTypeData.filter(item => !item.is_row);
-        
-        return (
-          <div className="mt-4 space-y-3">
-            <div>
-              <h3 className="text-sm font-medium text-gray-300 mb-2">Rows:</h3>
-              <div className="space-y-1">
-                {rows.map((row, index) => (
-                  <div key={index} className="bg-gray-800 p-2 rounded-md">
-                    {row.content}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-300 mb-2">Columns:</h3>
-              <div className="space-y-1">
-                {columns.map((col, index) => (
-                  <div key={index} className="bg-gray-800 p-2 rounded-md">
-                    {col.content}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-        
-      case 'image-choice':
-        return (
-          <div className="mt-4 space-y-2">
-            <h3 className="text-sm font-medium text-gray-300">Image Options:</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {questionTypeData.map((option, index) => (
-                <div 
-                  key={index} 
-                  className="bg-gray-800 p-2 rounded-md"
-                >
-                  {option.image_url && (
-                    <div className="relative h-24 mb-2">
-                      <img 
-                        src={option.image_url} 
-                        alt={option.option_text || `Option ${index + 1}`}
-                        className="w-full h-full object-cover rounded-md"
-                      />
-                    </div>
-                  )}
-                  <div className="text-sm">{option.option_text}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-        
-      case 'open-ended':
-        const openEndedData = questionTypeData[0];
-        return (
-          <div className="mt-4 space-y-2">
-            <h3 className="text-sm font-medium text-gray-300">Answer Settings:</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-gray-800 p-2 rounded-md">
-                <div className="text-xs text-gray-400">Format</div>
-                <div>{openEndedData?.answer_format || 'Text'}</div>
-              </div>
-              <div className="bg-gray-800 p-2 rounded-md">
-                <div className="text-xs text-gray-400">Character Limit</div>
-                <div>{openEndedData?.character_limit || 'None'}</div>
-              </div>
-            </div>
-          </div>
-        );
-        
-      case 'dichotomous':
-        const dichotomousData = questionTypeData[0];
-        return (
-          <div className="mt-4 space-y-2">
-            <h3 className="text-sm font-medium text-gray-300">Options:</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-gray-800 p-2 rounded-md">
-                {dichotomousData?.positive_option || 'Yes'}
-              </div>
-              <div className="bg-gray-800 p-2 rounded-md">
-                {dichotomousData?.negative_option || 'No'}
-              </div>
-            </div>
-          </div>
-        );
-        
-      case 'ranking':
-        return (
-          <div className="mt-4 space-y-2">
-            <h3 className="text-sm font-medium text-gray-300">Items to Rank:</h3>
-            <div className="space-y-2">
-              {questionTypeData.map((item, index) => (
-                <div 
-                  key={index} 
-                  className="bg-gray-800 p-2 rounded-md flex items-center"
-                >
-                  <span className="w-6 h-6 flex items-center justify-center bg-blue-900 rounded-full text-xs mr-2">
-                    {item.item_order !== undefined ? item.item_order + 1 : index + 1}
-                  </span>
-                  <span>{item.item_text}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-        
-      default:
-        return null;
-    }
-  };
+  // Removed renderTypeSpecificContent function to stop displaying question type data/options
 
   // Handle file selection
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -703,30 +656,489 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           {/* Question text */}
           <h2 className="text-2xl font-semibold mb-4">{question.question}</h2>
           
-          {/* Question type specific content */}
-          {loading ? (
+          {/* Loading indicator */}
+          {loading && (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
             </div>
-          ) : (
-            renderTypeSpecificContent()
           )}
           
-          {/* User info */}
-          <div className="flex items-center gap-3 mt-8 p-4 bg-gray-800/50 rounded-lg">
-            <div className="h-10 w-10 rounded-full flex items-center justify-center font-semibold bg-blue-900 text-white">
-              {question.user.first_name.charAt(0)}{question.user.last_name.charAt(0)}
+          {/* Answer Form - Moved up to appear right after question content */}
+          <div className={`space-y-4 mt-6 mb-6 border ${userExistingAnswer ? 'border-green-600' : 'border-gray-800'} rounded-lg p-4 bg-[#111318] relative`}>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-medium">Your Answer</h3>
+              {userExistingAnswer && (
+                <div className="flex items-center gap-2 bg-green-900/30 text-green-400 text-xs px-2 py-1 rounded-full">
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span>You've answered this question</span>
+                </div>
+              )}
+              {loadingExistingAnswer && (
+                <div className="flex items-center gap-2 text-blue-400 text-xs">
+                  <div className="w-3 h-3 border-2 border-t-transparent border-blue-400 rounded-full animate-spin"></div>
+                  <span>Loading your answer...</span>
+                </div>
+              )}
             </div>
-            <div>
-              <div className="font-medium">
-                {`${question.user.first_name} ${question.user.last_name}`}
+            
+            <div className="text-sm text-gray-400 mb-4">
+              {question.type === 'multiple-choice' && 'Choose one of the following options:'}
+              {question.type === 'rating-scale' && 'Rate on a scale:'}
+              {question.type === 'slider' && 'Select a value:'}
+              {question.type === 'open-ended' && 'Type your answer below:'}
+              {question.type === 'dichotomous' && 'Choose Yes or No:'}
+              {question.type === 'likert-scale' && 'Select your level of agreement:'}
+              {question.type === 'ranking' && 'Drag to rank the items:'}
+              {question.type === 'matrix' && 'Complete the matrix:'}
+              {question.type === 'dropdown' && 'Select an option:'}
+            </div>
+
+            {/* Multiple Choice Question */}
+            {question.type === 'multiple-choice' && questionTypeData.length > 0 && (
+              <div className="space-y-2">
+                {questionTypeData.map((option, index) => {
+                  // Check if this option is selected in the current form
+                  const isSelected = option.option_text === answer;
+                  
+                  // Check if this was the user's last saved answer
+                  const isLastAnswer = userExistingAnswer && option.option_text === answer;
+                  
+                  return (
+                    <div 
+                      key={index} 
+                      className={`p-3 rounded-lg border flex items-center justify-between
+                        ${isSelected ? 
+                          userExistingAnswer ? 'bg-green-900/30 border-green-500' : 'bg-blue-900/30 border-blue-500' 
+                          : 'bg-gray-800 border-gray-700 hover:border-gray-600'}
+                        ${isLastAnswer ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}
+                        cursor-pointer transition-colors`}
+                      onClick={() => setAnswer(option.option_text || '')}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isLastAnswer && (
+                          <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full">
+                            Last answer
+                          </div>
+                        )}
+                        <span>{option.option_text}</span>
+                      </div>
+                      {isSelected && (
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center ${userExistingAnswer ? 'bg-green-500' : 'bg-blue-500'}`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              <div className="text-sm text-gray-400">{question.user.role}</div>
-            </div>
-            <div className="ml-auto text-sm text-gray-400">
-              {formatDate(question.created_at)}
-            </div>
+            )}
+
+            {/* Rating Scale Question */}
+            {question.type === 'rating-scale' && questionTypeData.length > 0 && (
+              <div className="space-y-4">
+                {userExistingAnswer && answer && (
+                  <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-1 rounded-full inline-block">
+                    Last answer: {answer}
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>{questionTypeData[0]?.min_value || 0}</span>
+                  <span>{questionTypeData[0]?.max_value || 10}</span>
+                </div>
+                <input
+                  type="range"
+                  min={questionTypeData[0]?.min_value || 0}
+                  max={questionTypeData[0]?.max_value || 10}
+                  step={questionTypeData[0]?.step_value || 1}
+                  value={answer || questionTypeData[0]?.default_value || 5}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  className={`w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer ${userExistingAnswer ? 'ring-1 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}`}
+                />
+                <div className={`text-center text-lg font-medium ${userExistingAnswer ? 'text-green-400' : 'text-white'}`}>
+                  {answer || questionTypeData[0]?.default_value || 5}
+                </div>
+              </div>
+            )}
+
+            {/* Slider Question */}
+            {question.type === 'slider' && questionTypeData.length > 0 && (
+              <div className="space-y-4">
+                {userExistingAnswer && answer && (
+                  <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-1 rounded-full inline-block">
+                    Last answer: {answer}
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>{questionTypeData[0]?.min_value || 0}</span>
+                  <span>{questionTypeData[0]?.max_value || 100}</span>
+                </div>
+                <input
+                  type="range"
+                  min={questionTypeData[0]?.min_value || 0}
+                  max={questionTypeData[0]?.max_value || 100}
+                  step={questionTypeData[0]?.step_value || 1}
+                  value={answer || questionTypeData[0]?.default_value || 50}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  className={`w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer ${userExistingAnswer ? 'ring-1 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}`}
+                />
+                <div className={`text-center text-lg font-medium ${userExistingAnswer ? 'text-green-400' : 'text-white'}`}>
+                  {answer || questionTypeData[0]?.default_value || 50}
+                </div>
+              </div>
+            )}
+
+            {/* Open Ended Question */}
+            {question.type === 'open-ended' && (
+              <div className="space-y-2">
+                {userExistingAnswer && answer && (
+                  <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-1 rounded-full inline-block">
+                    Last answer provided
+                  </div>
+                )}
+                <textarea
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  className={`w-full p-3 rounded-md bg-gray-800 text-white border ${userExistingAnswer ? 'border-green-500 ring-1 ring-green-500' : 'border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'} outline-none min-h-[100px]`}
+                  placeholder="Type your answer here..."
+                />
+              </div>
+            )}
+
+            {/* Dichotomous Question */}
+            {question.type === 'dichotomous' && questionTypeData.length > 0 && (
+              <div className="flex gap-4">
+                <button
+                  className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 
+                    ${answer === (questionTypeData[0]?.positive_option || 'Yes') ? 
+                      userExistingAnswer ? 'bg-green-700 text-white border border-green-500' : 'bg-blue-700 text-white border border-blue-500' 
+                      : 'bg-gray-800 text-gray-300'}
+                    ${userExistingAnswer && answer === (questionTypeData[0]?.positive_option || 'Yes') ? 
+                      'ring-2 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}`}
+                  onClick={() => setAnswer(questionTypeData[0]?.positive_option || 'Yes')}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    {userExistingAnswer && answer === (questionTypeData[0]?.positive_option || 'Yes') && (
+                      <div className="text-xs font-medium text-green-300 bg-green-900/50 px-2 py-0.5 rounded-full">
+                        Last answer
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {answer === (questionTypeData[0]?.positive_option || 'Yes') && (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {questionTypeData[0]?.positive_option || 'Yes'}
+                    </div>
+                  </div>
+                </button>
+                <button
+                  className={`flex-1 p-3 rounded-lg flex items-center justify-center gap-2 
+                    ${answer === (questionTypeData[0]?.negative_option || 'No') ? 
+                      userExistingAnswer ? 'bg-green-700 text-white border border-green-500' : 'bg-blue-700 text-white border border-blue-500' 
+                      : 'bg-gray-800 text-gray-300'}
+                    ${userExistingAnswer && answer === (questionTypeData[0]?.negative_option || 'No') ? 
+                      'ring-2 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}`}
+                  onClick={() => setAnswer(questionTypeData[0]?.negative_option || 'No')}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    {userExistingAnswer && answer === (questionTypeData[0]?.negative_option || 'No') && (
+                      <div className="text-xs font-medium text-green-300 bg-green-900/50 px-2 py-0.5 rounded-full">
+                        Last answer
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {answer === (questionTypeData[0]?.negative_option || 'No') && (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {questionTypeData[0]?.negative_option || 'No'}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* Likert Scale Question */}
+            {question.type === 'likert-scale' && (
+              <div className="space-y-3">
+                {/* Debug info */}
+                {userExistingAnswer && (
+                  <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-1 rounded-full inline-block mb-2">
+                    Your last answer: {answer ? ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'][parseInt(answer) - 1] || answer : 'None'}
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-5 gap-2">
+                  {['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'].map((option, index) => {
+                    // Convert to string for comparison since answer might come from different sources
+                    const optionValue = String(index + 1);
+                    const isSelected = answer === optionValue;
+                    const isLastAnswer = userExistingAnswer && isSelected;
+                    
+                    return (
+                      <button
+                        key={index}
+                        className={`p-2 text-xs sm:text-sm rounded-lg text-center relative 
+                          ${isSelected ? 
+                            userExistingAnswer ? 'bg-green-700 text-white border border-green-500' : 'bg-blue-700 text-white border border-blue-500' 
+                            : 'bg-gray-800 text-gray-300'}
+                          ${isLastAnswer ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}`}
+                        onClick={() => setAnswer(optionValue)}
+                      >
+                        <div className="flex flex-col items-center gap-1">
+                          {isLastAnswer && (
+                            <div className="text-xs font-medium text-green-300 bg-green-900/50 px-2 py-0.5 rounded-full mb-1">
+                              Last answer
+                            </div>
+                          )}
+                          {option}
+                          {isSelected && (
+                            <div className={`w-3 h-3 rounded-full flex items-center justify-center mt-1 ${userExistingAnswer ? 'bg-green-500' : 'bg-blue-500'}`}>
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-2 w-2 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Ranking Question */}
+            {question.type === 'ranking' && questionTypeData.length > 0 && (
+              <div className="space-y-2">
+                
+                {/* Initialize answer if empty */}
+                {!answer && (() => {
+                  const initialRanking = questionTypeData
+                    .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
+                    .map(item => item.item_text || '');
+                  setTimeout(() => setAnswer(JSON.stringify(initialRanking)), 0);
+                  return null;
+                })()}
+                
+                {/* Ranking items */}
+                {(answer ? JSON.parse(answer) as string[] : questionTypeData
+                  .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
+                  .map(item => item.item_text || ''))
+                  .map((item, index, items) => (
+                    <div key={index} className="flex items-center space-x-2 p-3 bg-[#1e2330] rounded-lg border border-gray-700 transition-all duration-300">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-900 flex items-center justify-center text-white font-medium">
+                        {index + 1}
+                      </div>
+                      <div className="flex-grow">{item}</div>
+                      <div className="flex-shrink-0 space-x-1">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 rounded-full"
+                          disabled={index === 0}
+                          onClick={() => {
+                            const newRanking = [...JSON.parse(answer)];
+                            [newRanking[index], newRanking[index - 1]] = [newRanking[index - 1], newRanking[index]];
+                            setAnswer(JSON.stringify(newRanking));
+                          }}
+                        >
+                          ↑
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 rounded-full"
+                          disabled={index === items.length - 1}
+                          onClick={() => {
+                            const newRanking = [...JSON.parse(answer)];
+                            [newRanking[index], newRanking[index + 1]] = [newRanking[index + 1], newRanking[index]];
+                            setAnswer(JSON.stringify(newRanking));
+                          }}
+                        >
+                          ↓
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            )}
+
+            {/* Matrix Question */}
+            {question.type === 'matrix' && questionTypeData.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="p-2 text-left"></th>
+                      {questionTypeData.filter(col => !col.is_row).map((col, colIndex) => (
+                        <th key={colIndex} className="p-2 text-center">{col.content}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {questionTypeData.filter(row => row.is_row).map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-t border-gray-800">
+                        <td className="p-2 text-left font-medium">{row.content}</td>
+                        {questionTypeData.filter(col => !col.is_row).map((col, colIndex) => {
+                          const cellId = `${rowIndex}-${colIndex}`;
+                          const currentAnswer = answer ? JSON.parse(answer) : {};
+                          const isSelected = currentAnswer[cellId];
+                          
+                          return (
+                            <td key={colIndex} className="p-2 text-center">
+                              <Button
+                                variant={isSelected ? 'default' : 'outline'}
+                                size="sm"
+                                className="w-8 h-8 rounded-full p-0"
+                                onClick={() => {
+                                  const newAnswer = answer ? JSON.parse(answer) : {};
+                                  newAnswer[cellId] = !isSelected;
+                                  setAnswer(JSON.stringify(newAnswer));
+                                }}
+                              >
+                                {isSelected ? '✓' : ''}
+                              </Button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Dropdown Question */}
+            {question.type === 'dropdown' && questionTypeData.length > 0 && (
+              <div className="space-y-3">
+                <div className="relative">
+                  {userExistingAnswer && answer && (
+                    <div className="absolute -top-3 left-3 z-10 text-xs font-medium text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full">
+                      Last answer
+                    </div>
+                  )}
+                  <select
+                    value={answer || ''}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    className={`w-full p-3 rounded-md bg-gray-800 text-white border ${answer ? 
+                      userExistingAnswer ? 'border-green-500 ring-1 ring-green-500' : 'border-blue-500 ring-1 ring-blue-500' 
+                      : 'border-gray-700'} 
+                      ${userExistingAnswer && answer ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''} 
+                      focus:ring-2 outline-none appearance-none`}
+                  >
+                    <option value="" disabled>Select an option...</option>
+                    {questionTypeData.map((option, index) => {
+                      const isSelected = option.option_text === answer;
+                      return (
+                        <option key={index} value={option.option_text}>
+                          {option.option_text} {isSelected && userExistingAnswer ? '(Last answer)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400">
+                    ▼
+                  </div>
+                </div>
+                
+                {answer && (
+                  <div className="flex items-center gap-2 bg-gray-800/50 p-2 rounded-md">
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${userExistingAnswer ? 'bg-green-500' : 'bg-blue-500'}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className={`text-sm ${userExistingAnswer ? 'text-green-400' : 'text-blue-400'}`}>
+                      Selected: {answer}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {submitError && (
+              <div className="text-red-500 text-sm mt-2">{submitError}</div>
+            )}
+
+            <Button
+              className={`w-full mt-4 ${userExistingAnswer ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+              disabled={!answer || submitting}
+              onClick={async () => {
+                setSubmitting(true);
+                setSubmitError('');
+                try {
+                  const userEmail = sessionStorage.getItem('userEmail');
+                  if (!userEmail) throw new Error('Not logged in');
+
+                  const { data: userData, error: userError } = await supabase
+                    .from('users')
+                    .select('id')
+                    .eq('email', userEmail)
+                    .single();
+
+                  if (userError || !userData) throw new Error('User not found');
+
+                  // Determine the appropriate answer format based on question type
+                  let answer_format: 'text' | 'number' | 'array' | 'json';
+                  switch (question.type) {
+                    case 'multiple-choice':
+                    case 'image-choice':
+                    case 'ranking':
+                      answer_format = 'array';
+                      break;
+                    case 'rating-scale':
+                    case 'likert-scale':
+                    case 'slider':
+                      answer_format = 'number';
+                      break;
+                    case 'matrix':
+                      answer_format = 'json';
+                      break;
+                    case 'dropdown':
+                    case 'open-ended':
+                    case 'dichotomous':
+                    default:
+                      answer_format = 'text';
+                      break;
+                  }
+
+                  // Use the userAnswerQuestions service to submit the answer
+                  // The service handles all the formatting and authentication
+                  const { data, error: answerError } = await userAnswerQuestions.submitAnswer({
+                    question_id: question.id,
+                    answer_data: answer,
+                    answer_format,
+                    question_type: question.type || 'text'
+                  });
+
+                  if (answerError) {
+                    console.error('Answer submission error:', answerError);
+                    throw answerError;
+                  }
+
+                  toast.success(userExistingAnswer ? 'Answer updated successfully!' : 'Answer submitted successfully!');
+                  // Update the existing answer data
+                  setUserExistingAnswer(data);
+                  onClose();
+                } catch (err) {
+                  const errorMessage = err instanceof Error ? err.message : 'Failed to submit answer';
+                  setSubmitError(errorMessage);
+                  toast.error(errorMessage);
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+            >
+              {submitting ? 'Submitting...' : userExistingAnswer ? 'Update Answer' : 'Submit Answer'}
+            </Button>
           </div>
+          
+          {/* Author and date section removed as requested */}
           
           {/* Comments section with improved UI */}
           <div className="mt-8 bg-[#111318] rounded-lg p-4 border border-gray-700">
