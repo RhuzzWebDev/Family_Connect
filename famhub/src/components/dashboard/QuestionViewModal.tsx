@@ -2,17 +2,40 @@
 
 import { useState, useEffect, useRef } from "react"
 import { formatDistanceToNow } from "date-fns"
-import { 
+import {
   FileText, X, Maximize2, Minimize2, 
   ImageIcon, Video, Music, File, 
   Heart, MessageSquare, ExternalLink, 
-  Send, Paperclip, Loader2
+  Send, Paperclip, Loader2,
+  AlertCircle, AlertTriangle, Check, MessageSquareReply
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabaseClient"
 import { userAnswerQuestions } from "@/services/userAnswerQuestions"
 import { toast } from "sonner"
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+// Custom HeartFilled component for likes
+const HeartFilled = ({ className }: { className?: string }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width="24" 
+    height="24" 
+    viewBox="0 0 24 24" 
+    fill="currentColor" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+  </svg>
+);
 
 interface QuestionTypeData {
   question_id: string;
@@ -58,11 +81,23 @@ interface QuestionViewModalProps {
 interface Comment {
   id: string;
   question_id: string;
-  user_email: string;
+  user_id: string;
   content: string;
   media_type?: string | null;
-  media_url?: string | null;
+  file_url?: string | null;
   created_at: string;
+  parent_id?: string | null; // For replies
+  like_count?: number; // Like count
+  user_has_liked?: boolean; // Whether the current user has liked this comment
+  replies?: Comment[]; // For nested replies
+  user_email?: string; // Added for compatibility
+  users?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: string;
+  };
   user?: {
     first_name: string;
     last_name: string;
@@ -81,6 +116,8 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   const [selectedMediaType, setSelectedMediaType] = useState<string | null>(null)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
   const [mediaFile, setMediaFile] = useState<File | null>(null)
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null)
+  const [likingComment, setLikingComment] = useState(false)
   const [answer, setAnswer] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -208,25 +245,39 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
     
     setCommentsLoading(true);
     try {
-      // Check if comments table exists first
-      const { error: tableCheckError } = await supabase
-        .from('comments')
-        .select('id')
-        .limit(1);
-      
-      // If we get an error about the table not existing, just return empty comments
-      if (tableCheckError) {
-        console.log('Comments table may not exist:', tableCheckError.message);
-        setComments([]);
+      // Set the app user context for RLS policies
+      const userEmail = sessionStorage.getItem('userEmail');
+      if (!userEmail) {
         setCommentsLoading(false);
         return;
       }
       
-      // Try a simpler query first without the join
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+      
+      // Get current user ID
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError) {
+        console.error('Error getting user ID:', userError);
+        setCommentsLoading(false);
+        return;
+      }
+      
+      const userId = userData.id;
+      
+      // Fetch comments from the existing comments table with a join to get user data
       const { data, error } = await supabase
         .from('comments')
-        .select('*')
+        .select(`
+          *,
+          users:user_id (id, first_name, last_name, email, role)
+        `)
         .eq('question_id', question.id)
+        .is('parent_id', null) // Only get top-level comments
         .order('created_at', { ascending: false });
         
       if (error) {
@@ -235,53 +286,97 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         return;
       }
       
-      // If we have data, try to get user info for each comment
-      if (data && data.length > 0) {
-        // Get unique user emails
-        const userEmails = [...new Set(data.map(comment => comment.user_email))].filter(Boolean);
+      // Get likes for the current user
+      const { data: likeData, error: likeError } = await supabase
+        .from('comment_likes')
+        .select('comment_id')
+        .eq('user_id', userId);
         
-        // If we have user emails, try to fetch user data
-        if (userEmails.length > 0) {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('email, first_name, last_name, role')
-            .in('email', userEmails);
+      if (likeError) {
+        console.error('Error fetching likes:', likeError);
+      }
+      
+      // Create a set of comment IDs the user has liked
+      const userLikedComments = new Set(
+        likeData?.map(like => like.comment_id) || []
+      );
+      
+      // Fetch replies for these comments
+      let replies: Comment[] = [];
+      if (data && data.length > 0) {
+        const commentIds = data.map(comment => comment.id);
+        
+        const { data: replyData, error: replyError } = await supabase
+          .from('comments')
+          .select(`
+            *,
+            users:user_id (id, first_name, last_name, email, role)
+          `)
+          .in('parent_id', commentIds)
+          .order('created_at', { ascending: true });
           
-          if (!userError && userData) {
-            // Create a map of email to user data for quick lookup
-            const userMap = userData.reduce((acc, user) => {
-              acc[user.email] = user;
-              return acc;
-            }, {} as Record<string, any>);
-            
-            // Add user data to each comment
-            const formattedComments = data.map(comment => ({
-              ...comment,
-              user: userMap[comment.user_email] || {
-                first_name: 'Unknown',
-                last_name: 'User',
-                role: ''
-              }
-            }));
-            
-            setComments(formattedComments);
-            return;
-          }
+        if (replyError) {
+          console.error('Error fetching replies:', replyError);
+        } else {
+          replies = replyData || [];
         }
       }
       
-      // If we get here, we either have no comments or couldn't get user data
-      // Just use the comments as-is with placeholder user data
-      const formattedComments = data?.map(comment => ({
-        ...comment,
-        user: {
-          first_name: comment.user_email?.split('@')[0] || 'Unknown',
-          last_name: 'User',
-          role: ''
-        }
-      })) || [];
-      
-      setComments(formattedComments);
+      // Format the comments to include user data, likes, and replies
+      if (data && data.length > 0) {
+        // First, format all replies
+        const formattedReplies = replies.map(reply => {
+          const replyUserData = reply.users;
+          
+          return {
+            ...reply,
+            user_email: replyUserData?.email || '',
+            user_has_liked: userLikedComments.has(reply.id),
+            user: {
+              first_name: replyUserData?.first_name || 'Unknown',
+              last_name: replyUserData?.last_name || 'User',
+              role: replyUserData?.role || ''
+            }
+          };
+        });
+        
+        // Group replies by parent_id
+        const repliesByParent: Record<string, Comment[]> = {};
+        formattedReplies.forEach(reply => {
+          if (reply.parent_id) {
+            if (!repliesByParent[reply.parent_id]) {
+              repliesByParent[reply.parent_id] = [];
+            }
+            repliesByParent[reply.parent_id].push(reply);
+          }
+        });
+        
+        // Format the main comments and add their replies
+        const formattedComments = data.map(comment => {
+          // Extract user data from the joined users table
+          const userData = comment.users;
+          
+          return {
+            ...comment,
+            // Add user_email for compatibility with existing code
+            user_email: userData?.email || '',
+            // Check if user has liked this comment
+            user_has_liked: userLikedComments.has(comment.id),
+            // Add replies to this comment
+            replies: repliesByParent[comment.id] || [],
+            // Add user object for display
+            user: {
+              first_name: userData?.first_name || 'Unknown',
+              last_name: userData?.last_name || 'User',
+              role: userData?.role || ''
+            }
+          };
+        });
+        
+        setComments(formattedComments);
+      } else {
+        setComments([]);
+      }
     } catch (err) {
       console.error('Error in fetchComments:', err);
       setComments([]);
@@ -474,6 +569,111 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
     }
   };
   
+  // Handle liking a comment
+  const handleLikeComment = async (commentId: string, isLiked: boolean) => {
+    const userEmail = sessionStorage.getItem('userEmail');
+    if (!userEmail) {
+      toast.error('You must be logged in to like a comment');
+      return;
+    }
+    
+    setLikingComment(true);
+    
+    try {
+      // Set the app user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+      
+      // Get user ID
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError) {
+        console.error('Error getting user ID:', userError);
+        toast.error('Failed to identify user');
+        return;
+      }
+      
+      // Optimistically update the UI
+      setComments(prevComments => {
+        return prevComments.map(comment => {
+          if (comment.id === commentId) {
+            return {
+              ...comment,
+              like_count: isLiked ? (comment.like_count || 0) - 1 : (comment.like_count || 0) + 1,
+              user_has_liked: !isLiked
+            };
+          } else if (comment.replies) {
+            // Check in replies
+            return {
+              ...comment,
+              replies: comment.replies.map(reply => {
+                if (reply.id === commentId) {
+                  return {
+                    ...reply,
+                    like_count: isLiked ? (reply.like_count || 0) - 1 : (reply.like_count || 0) + 1,
+                    user_has_liked: !isLiked
+                  };
+                }
+                return reply;
+              })
+            };
+          }
+          return comment;
+        });
+      });
+      
+      if (isLiked) {
+        // Unlike the comment
+        const { error: unlikeError } = await supabase
+          .from('comment_likes')
+          .delete()
+          .eq('user_id', userData.id)
+          .eq('comment_id', commentId);
+          
+        if (unlikeError) {
+          console.error('Error unliking comment:', unlikeError);
+          toast.error('Failed to unlike comment');
+          // Revert the optimistic update
+          fetchComments();
+          return;
+        }
+        
+        // Update the like count in the comments table
+        await supabase.rpc('decrement_comment_like', { comment_id: commentId });
+      } else {
+        // Like the comment
+        const { error: likeError } = await supabase
+          .from('comment_likes')
+          .insert({
+            user_id: userData.id,
+            comment_id: commentId,
+            created_at: new Date().toISOString()
+          });
+          
+        if (likeError) {
+          console.error('Error liking comment:', likeError);
+          toast.error('Failed to like comment');
+          // Revert the optimistic update
+          fetchComments();
+          return;
+        }
+        
+        // Update the like count in the comments table
+        await supabase.rpc('increment_comment_like', { comment_id: commentId });
+      }
+    } catch (err) {
+      console.error('Error in handleLikeComment:', err);
+      toast.error('An unexpected error occurred');
+      // Revert the optimistic update
+      fetchComments();
+    } finally {
+      setLikingComment(false);
+    }
+  };
+  
   // Handle posting a comment
   const handlePostComment = async () => {
     const userEmail = sessionStorage.getItem('userEmail');
@@ -482,143 +682,118 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
       return;
     }
     
-    if (!newComment.trim() && !mediaFile) {
-      toast.error('Please enter a comment or attach a file');
+    if (!newComment.trim()) {
+      toast.error('Comment cannot be empty');
       return;
     }
     
     setPostingComment(true);
     
     try {
-      // First, check if comments table exists
-      const { error: tableCheckError } = await supabase
-        .from('comments')
-        .select('id')
-        .limit(1);
+      // Set the app user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
       
-      // If the table doesn't exist, create it
-      if (tableCheckError) {
-        console.log('Comments table may not exist, creating a local comment instead');
-        
-        // Create a local comment object
-        const newLocalComment = {
-          id: `local-${Date.now()}`,
-          question_id: question.id,
-          user_email: userEmail,
-          content: newComment.trim(),
-          created_at: new Date().toISOString(),
-          user: {
-            first_name: userEmail.split('@')[0] || 'User',
-            last_name: '',
-            role: ''
-          }
-        };
-        
-        // Add the local comment to the state
-        setComments([newLocalComment, ...comments]);
-        
-        // Clear form
-        setNewComment('');
-        setMediaFile(null);
-        setMediaUrl(null);
-        setSelectedMediaType(null);
-        toast.success('Comment added locally (database table not available)');
-        setPostingComment(false);
-        return;
-      }
-      
-      let mediaUploadPath = null;
       let mediaUploadUrl = null;
       
-      // Upload media file if present
+      // If there's a media file, upload it first
       if (mediaFile && selectedMediaType) {
-        try {
-          // Check if storage bucket exists
-          const { error: storageCheckError } = await supabase.storage
-            .from('media')
-            .list();
+        const timestamp = new Date().getTime();
+        const fileExt = mediaFile.name.split('.').pop();
+        const filePath = `comments/${timestamp}_${mediaFile.name}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('public')
+          .upload(filePath, mediaFile);
           
-          if (storageCheckError) {
-            console.log('Storage bucket may not exist:', storageCheckError.message);
-            toast.warning('Media upload skipped - storage not available');
-          } else {
-            const fileExt = mediaFile.name.split('.').pop();
-            const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-            const filePath = `comments/${selectedMediaType}/${fileName}`;
-            
-            const { error: uploadError } = await supabase.storage
-              .from('media')
-              .upload(filePath, mediaFile);
-              
-            if (uploadError) {
-              console.error('Error uploading file:', uploadError);
-              toast.warning('Media upload failed, but comment will be posted');
-            } else {
-              // Get public URL for the uploaded file
-              const { data: { publicUrl } } = supabase.storage
-                .from('media')
-                .getPublicUrl(filePath);
-                
-              mediaUploadPath = filePath;
-              mediaUploadUrl = publicUrl;
-            }
-          }
-        } catch (uploadErr) {
-          console.error('Error in media upload:', uploadErr);
-          toast.warning('Media upload failed, but comment will be posted');
+        if (uploadError) {
+          console.error('Error uploading media:', uploadError);
+          toast.error('Failed to upload media');
+          return;
         }
+        
+        // Get the public URL for the uploaded file
+        const { data: { publicUrl } } = await supabase.storage
+          .from('public')
+          .getPublicUrl(filePath);
+          
+        mediaUploadUrl = publicUrl;
+      }
+      
+      // Get user ID
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError) {
+        console.error('Error getting user ID:', userError);
+        toast.error('Failed to identify user');
+        return;
       }
       
       // Insert comment into database
-      const { error: commentError } = await supabase
+      const { data: newCommentData, error: commentError } = await supabase
         .from('comments')
         .insert({
           question_id: question.id,
-          user_email: userEmail,
-          content: newComment.trim(),
+          user_id: userData.id,
+          content: newComment,
           media_type: selectedMediaType,
-          media_url: mediaUploadUrl,
-          media_path: mediaUploadPath,
-          created_at: new Date().toISOString() // Explicitly set created_at
-        });
+          file_url: mediaUploadUrl,
+          created_at: new Date().toISOString(),
+          parent_id: replyingTo ? replyingTo.id : null // Add parent_id for replies
+        })
+        .select('*')
+        .single();
         
       if (commentError) {
         console.error('Error posting comment:', commentError);
-        toast.error('Failed to post comment. Please try again.');
+        toast.error('Failed to post comment');
         return;
       }
       
-      // Clear form and refresh comments
+      // Clear the form
       setNewComment('');
-      setMediaFile(null);
-      setMediaUrl(null);
       setSelectedMediaType(null);
-      toast.success('Comment posted successfully!');
+      setMediaUrl(null);
+      setMediaFile(null);
+      setReplyingTo(null); // Clear reply state
       
       // Refresh comments
       fetchComments();
       
+      // Update comment count in the question
+      await supabase.rpc('increment_comment_count', { question_id: question.id });
+      
+      toast.success(replyingTo ? 'Reply posted successfully' : 'Comment posted successfully');
     } catch (err) {
       console.error('Error in handlePostComment:', err);
-      toast.error('An unexpected error occurred. Please try again.');
+      toast.error('An unexpected error occurred');
     } finally {
       setPostingComment(false);
     }
   };
   
-  if (!isOpen) return null;
+  // Handle reply to comment
+  const handleReplyToComment = (comment: Comment) => {
+    setReplyingTo(comment);
+    // Focus on the comment input
+    const commentInput = document.getElementById('comment-input');
+    if (commentInput) {
+      commentInput.focus();
+    }
+  };
 
+  if (!isOpen) return null;
+  
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center" onClick={onClose}>
-      <div 
-        className="fixed inset-0 bg-black/80" 
-        aria-hidden="true"
-      />
-      
-      <div 
-        className={`relative bg-[#1a1d24] rounded-lg w-full max-w-4xl max-h-[90vh] overflow-auto shadow-xl`}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Dialog open={isOpen} onOpenChange={() => onClose()}>
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-auto bg-[#121212] border-gray-800 text-white [&>button]:hidden">
+        <DialogTitle className="sr-only">
+          Question Details: {question.question}
+        </DialogTitle>
+        
         {/* Header */}
         <div className="sticky top-0 flex items-center justify-between p-4 border-b border-gray-800 bg-[#1a1d24] z-10">
           <div className="flex items-center gap-2">
@@ -630,7 +805,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           <Button 
             variant="ghost" 
             size="icon" 
-            className="text-gray-400 hover:text-white" 
+            className="rounded-full h-9 w-9 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white flex items-center justify-center" 
             onClick={onClose}
           >
             <X className="h-5 w-5" />
@@ -645,7 +820,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               {question.type.replace('-', ' ')}
             </Badge>
           )}
-          
+            
           {/* Media if available */}
           {question.file_url && question.media_type && (
             <div className="w-full rounded-md overflow-hidden mb-6">
@@ -1146,12 +1321,12 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
             
             {/* Custom comment input */}
             <div className="mb-6">
-              <textarea
-                className="w-full bg-[#1a1d24] border border-gray-700 rounded-lg p-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Add your thoughts or questions..."
-                rows={3}
+              <Input
+                id="comment-input"
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
+                placeholder={replyingTo ? `Reply to ${replyingTo.user?.first_name}...` : "Add a comment..."}
+                className="flex-1"
                 disabled={postingComment}
               />
               
@@ -1227,7 +1402,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                     <Music className="h-4 w-4" />
                   </button>
                 </div>
-                <button 
+                <Button 
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handlePostComment}
                   disabled={postingComment || (!newComment.trim() && !mediaFile)}
@@ -1243,7 +1418,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                       Post Comment
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
             
@@ -1259,73 +1434,203 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                   No comments yet. Be the first to start the discussion!
                 </div>
               ) : (
-                comments.map((comment) => (
-                  <div key={comment.id} className="bg-[#1a1d24] rounded-lg p-4 border border-gray-800">
-                    <div className="flex items-start gap-3">
-                      <div className="h-8 w-8 rounded-full flex items-center justify-center font-semibold bg-blue-900 text-white flex-shrink-0">
-                        {comment.user?.first_name?.charAt(0) || '?'}{comment.user?.last_name?.charAt(0) || '?'}
+                <div className="flex flex-col space-y-4 mt-4">
+                  {replyingTo && (
+                    <div className="flex items-center justify-between p-2 bg-muted rounded-md">
+                      <div className="flex items-center space-x-2">
+                        <MessageSquareReply className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">Replying to {replyingTo.user?.first_name || 'Unknown'}</span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <div className="font-medium text-sm text-gray-200">
-                            {comment.user?.first_name} {comment.user?.last_name}
-                            {comment.user?.role && (
-                              <span className="text-xs text-gray-400 ml-2">{comment.user.role}</span>
-                            )}
+                      <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {commentsLoading ? (
+                    <div className="flex justify-center p-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : comments.length > 0 ? (
+                    comments.map((comment) => (
+                      <div key={comment.id} className="flex flex-col space-y-2 p-3 bg-secondary/30 rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="text-xs">
+                                {comment.user?.first_name?.[0] || 'U'}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <span className="font-medium">
+                                  {comment.user?.first_name || 'Unknown'} {comment.user?.last_name || 'User'}
+                                </span>
+                                <Badge variant="outline" className="text-xs px-1">
+                                  {comment.user?.role || 'User'}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatDate(comment.created_at)}
+                              </div>
+                            </div>
                           </div>
-                          <span className="text-xs text-gray-500">
-                            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                          </span>
                         </div>
-                        <p className="text-sm text-gray-300 mt-1 break-words">{comment.content}</p>
                         
-                        {/* Media content */}
-                        {comment.media_url && comment.media_type && (
-                          <div className="mt-3">
+                        <div className="text-sm">{comment.content}</div>
+                        
+                        {comment.media_type && comment.file_url && (
+                          <div className="mt-2">
                             {comment.media_type === 'image' && (
                               <img 
-                                src={comment.media_url} 
+                                src={comment.file_url} 
                                 alt="Comment attachment" 
-                                className="max-h-48 rounded-md object-contain bg-black/30"
+                                className="max-h-48 rounded-md object-contain"
                               />
                             )}
                             {comment.media_type === 'video' && (
                               <video 
-                                src={comment.media_url} 
+                                src={comment.file_url} 
                                 controls 
                                 className="max-h-48 w-full rounded-md"
                               />
                             )}
                             {comment.media_type === 'audio' && (
                               <audio 
-                                src={comment.media_url} 
+                                src={comment.file_url} 
                                 controls 
                                 className="w-full rounded-md"
                               />
                             )}
-                            {comment.media_type === 'file' && (
-                              <a 
-                                href={comment.media_url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 bg-gray-800 p-2 rounded-md text-blue-400 hover:text-blue-300 w-fit"
-                              >
-                                <FileText className="h-4 w-4" />
-                                <span>View attachment</span>
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
+                          </div>
+                        )}
+                        
+                        <div className="flex items-center space-x-4 mt-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="flex items-center space-x-1 h-8 px-2"
+                            onClick={() => handleLikeComment(comment.id, comment.user_has_liked || false)}
+                            disabled={likingComment}
+                          >
+                            {comment.user_has_liked ? (
+                              <HeartFilled className="h-4 w-4 text-red-500" />
+                            ) : (
+                              <Heart className="h-4 w-4" />
                             )}
+                            <span className="text-xs">{comment.like_count || 0}</span>
+                          </Button>
+                          
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="flex items-center space-x-1 h-8 px-2"
+                            onClick={() => handleReplyToComment(comment)}
+                          >
+                            <MessageSquareReply className="h-4 w-4" />
+                            <span className="text-xs">Reply</span>
+                          </Button>
+                        </div>
+                        
+                        {/* Replies section */}
+                        {comment.replies && comment.replies.length > 0 && (
+                          <div className="pl-4 border-l-2 border-muted mt-2 space-y-3">
+                            {comment.replies.map(reply => (
+                              <div key={reply.id} className="flex flex-col space-y-2 p-2 bg-background/50 rounded-lg">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <Avatar className="h-6 w-6">
+                                      <AvatarFallback className="text-xs">
+                                        {reply.user?.first_name?.[0] || 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="font-medium text-sm">
+                                          {reply.user?.first_name || 'Unknown'} {reply.user?.last_name || 'User'}
+                                        </span>
+                                        <Badge variant="outline" className="text-xs px-1">
+                                          {reply.user?.role || 'User'}
+                                        </Badge>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {formatDate(reply.created_at)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="text-sm">{reply.content}</div>
+                                
+                                {reply.media_type && reply.file_url && (
+                                  <div className="mt-2">
+                                    {reply.media_type === 'image' && (
+                                      <img 
+                                        src={reply.file_url} 
+                                        alt="Reply attachment" 
+                                        className="max-h-36 rounded-md object-contain"
+                                      />
+                                    )}
+                                    {reply.media_type === 'video' && (
+                                      <video 
+                                        src={reply.file_url} 
+                                        controls 
+                                        className="max-h-36 w-full rounded-md"
+                                      />
+                                    )}
+                                    {reply.media_type === 'audio' && (
+                                      <audio 
+                                        src={reply.file_url} 
+                                        controls 
+                                        className="w-full rounded-md"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                
+                                <div className="flex items-center space-x-4 mt-1">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="flex items-center space-x-1 h-6 px-2"
+                                    onClick={() => handleLikeComment(reply.id, reply.user_has_liked || false)}
+                                    disabled={likingComment}
+                                  >
+                                    {reply.user_has_liked ? (
+                                      <HeartFilled className="h-3 w-3 text-red-500" />
+                                    ) : (
+                                      <Heart className="h-3 w-3" />
+                                    )}
+                                    <span className="text-xs">{reply.like_count || 0}</span>
+                                  </Button>
+                                  
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="flex items-center space-x-1 h-6 px-2"
+                                    onClick={() => handleReplyToComment(comment)}
+                                  >
+                                    <MessageSquareReply className="h-3 w-3" />
+                                    <span className="text-xs">Reply</span>
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center text-muted-foreground p-4">
+                      No comments yet. Be the first to comment!
                     </div>
-                  </div>
-                ))
+                  )}
+                </div>
               )}
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
