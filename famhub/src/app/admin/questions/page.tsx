@@ -441,6 +441,19 @@ export default function QuestionsPage() {
             questionToAdd.options = questionData.options;
           }
           break;
+          
+        case QuestionTypeEnum.DEMOGRAPHIC:
+          // For demographic questions
+          console.log('Processing demographic question in page.tsx');
+          if (questionData.demographic) {
+            console.log('Adding demographic data to question:', questionData.demographic);
+            questionToAdd.demographic = questionData.demographic;
+          }
+          if (questionData.demographicOptions && Array.isArray(questionData.demographicOptions)) {
+            console.log('Adding demographic options to question:', questionData.demographicOptions);
+            questionToAdd.demographicOptions = questionData.demographicOptions;
+          }
+          break;
       }
       
       console.log('Question to add:', questionToAdd); // Debug log

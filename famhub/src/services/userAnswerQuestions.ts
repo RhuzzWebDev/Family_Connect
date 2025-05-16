@@ -186,6 +186,12 @@ export const userAnswerQuestions = {
           answer_format: 'json',
           answer_data: typeof answer === 'object' ? answer : { value: answer }
         };
+      case 'demographic':
+        // Demographic questions are treated as text selections, similar to dropdown
+        return {
+          answer_format: 'text',
+          answer_data: String(answer)
+        };
       case 'dropdown':
       case 'open-ended':
       case 'dichotomous':

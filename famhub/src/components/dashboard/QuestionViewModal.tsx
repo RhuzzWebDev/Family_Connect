@@ -7,7 +7,8 @@ import {
   ImageIcon, Video, Music, File, 
   Heart, MessageSquare, ExternalLink, 
   Send, Paperclip, Loader2,
-  AlertCircle, AlertTriangle, Check, MessageSquareReply
+  AlertCircle, AlertTriangle, Check, MessageSquareReply,
+  Database
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -1233,6 +1234,169 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Demographic Question */}
+            {question.type === 'demographic' && (
+              <div className="space-y-3">
+                <div className="relative bg-[#111318] border border-gray-700 rounded-lg p-4">
+                  <div className="text-sm text-blue-400 mb-2 font-medium">Demographic Field</div>
+                  {userExistingAnswer && answer && (
+                    <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-1 rounded-full inline-block mb-2">
+                      Last answer: {answer}
+                    </div>
+                  )}
+                  
+                  {/* Fetch demographic options from the API or use fallback options */}
+                  <div className="space-y-2 mt-3">
+                    {/* If we have options from the API, use those */}
+                    {questionTypeData.length > 0 ? (
+                      questionTypeData.map((option, index) => {
+                        const isSelected = option.option_text === answer;
+                        const isLastAnswer = userExistingAnswer && option.option_text === answer;
+                        
+                        return (
+                          <div 
+                            key={index} 
+                            className={`p-3 rounded-lg border flex items-center justify-between
+                              ${isSelected ? 
+                                userExistingAnswer ? 'bg-green-900/30 border-green-500' : 'bg-blue-900/30 border-blue-500' 
+                                : 'bg-gray-800 border-gray-700 hover:border-gray-600'}
+                              ${isLastAnswer ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-gray-900' : ''}
+                              cursor-pointer transition-colors`}
+                            onClick={() => setAnswer(option.option_text || '')}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isLastAnswer && (
+                                <div className="text-xs font-medium text-green-400 bg-green-900/50 px-2 py-0.5 rounded-full">
+                                  Last answer
+                                </div>
+                              )}
+                              <span>{option.option_text}</span>
+                            </div>
+                            {isSelected && (
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${userExistingAnswer ? 'bg-green-500' : 'bg-blue-500'}`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      /* Fallback options if no data from API */
+                      <div className="text-center text-gray-400 p-4 border border-dashed border-gray-700 rounded-lg">
+                        <Database className="h-6 w-6 mx-auto mb-2 text-gray-500" />
+                        <p>No demographic options available.</p>
+                        <p className="text-xs mt-1">Please select an option below:</p>
+                        
+                        {/* Fallback options based on question text */}
+                        <div className="mt-4 space-y-2">
+                          {question.question.toLowerCase().includes('age') && (
+                            ["Under 18", "18-24", "25-34", "35-44", "45-54", "55-64", "65 or older", "Prefer not to say"].map((option, index) => {
+                              const isSelected = option === answer;
+                              return (
+                                <div 
+                                  key={index} 
+                                  className={`p-3 rounded-lg border flex items-center justify-between
+                                    ${isSelected ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}
+                                    cursor-pointer transition-colors`}
+                                  onClick={() => setAnswer(option)}
+                                >
+                                  <span>{option}</span>
+                                  {isSelected && (
+                                    <div className="w-5 h-5 rounded-full flex items-center justify-center bg-blue-500">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                          
+                          {question.question.toLowerCase().includes('gender') && (
+                            ["Male", "Female", "Non-binary", "Prefer to self-describe", "Prefer not to say"].map((option, index) => {
+                              const isSelected = option === answer;
+                              return (
+                                <div 
+                                  key={index} 
+                                  className={`p-3 rounded-lg border flex items-center justify-between
+                                    ${isSelected ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}
+                                    cursor-pointer transition-colors`}
+                                  onClick={() => setAnswer(option)}
+                                >
+                                  <span>{option}</span>
+                                  {isSelected && (
+                                    <div className="w-5 h-5 rounded-full flex items-center justify-center bg-blue-500">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                          
+                          {question.question.toLowerCase().includes('live') && (
+                            ["Urban area", "Suburban area", "Rural area", "Small town", "Large city", "Prefer not to say"].map((option, index) => {
+                              const isSelected = option === answer;
+                              return (
+                                <div 
+                                  key={index} 
+                                  className={`p-3 rounded-lg border flex items-center justify-between
+                                    ${isSelected ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}
+                                    cursor-pointer transition-colors`}
+                                  onClick={() => setAnswer(option)}
+                                >
+                                  <span>{option}</span>
+                                  {isSelected && (
+                                    <div className="w-5 h-5 rounded-full flex items-center justify-center bg-blue-500">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                          
+                          {/* Default options if question doesn't match any known categories */}
+                          {!question.question.toLowerCase().includes('age') && 
+                           !question.question.toLowerCase().includes('gender') &&
+                           !question.question.toLowerCase().includes('live') && (
+                            ["Option 1", "Option 2", "Option 3", "Option 4", "Prefer not to say"].map((option, index) => {
+                              const isSelected = option === answer;
+                              return (
+                                <div 
+                                  key={index} 
+                                  className={`p-3 rounded-lg border flex items-center justify-between
+                                    ${isSelected ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-800 border-gray-700 hover:border-gray-600'}
+                                    cursor-pointer transition-colors`}
+                                  onClick={() => setAnswer(option)}
+                                >
+                                  <span>{option}</span>
+                                  {isSelected && (
+                                    <div className="w-5 h-5 rounded-full flex items-center justify-center bg-blue-500">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
