@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import FilterDropdown, { ViewType } from './FilterDropdown';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -76,9 +77,13 @@ interface Comment {
 interface QuestionGridProps {
   limitCards?: number;
   showHeader?: boolean;
+  initialQuestions?: Question[];
+  initialQuestionSets?: QuestionSet[];
 }
 
-export default function QuestionGrid({ limitCards, showHeader = true }: QuestionGridProps) {
+export default function QuestionGrid({ limitCards, showHeader = true, initialQuestions, initialQuestionSets }: QuestionGridProps) {
+  // Use NextAuth session instead of sessionStorage
+  const { data: session } = useSession();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
@@ -138,10 +143,24 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
     setLoading(true);
     setError(null);
     try {
-      // Get current user
-      const userEmail = sessionStorage.getItem('userEmail');
-      if (!userEmail) {
-        throw new Error('User not logged in');
+      // Get current user from NextAuth session
+      const userEmail = session?.user?.email;
+      
+      // If we have initial questions from server-side props, use those instead of fetching
+      if (initialQuestions && initialQuestions.length > 0) {
+        setQuestions(initialQuestions);
+        setLoading(false);
+        return;
+      }
+      
+      // Only check for user email if we need to fetch questions from the client
+      if (!userEmail && !initialQuestions) {
+        console.log('No user email found in session');
+        // Don't throw error if we're still loading the session
+        if (!initialQuestions) {
+          setLoading(false);
+          return;
+        }
       }
 
       // Get user from database
@@ -258,8 +277,8 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       // Set liking state to show loading indicator
       setIsLiking(true);
       
-      // Get current user
-      const userEmail = sessionStorage.getItem('userEmail');
+      // Get current user from NextAuth session
+      const userEmail = session?.user?.email;
       if (!userEmail) {
         setError('You must be logged in to like questions');
         return;
@@ -435,8 +454,26 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
   };
 
   useEffect(() => {
-    fetchQuestions();
-    fetchQuestionSets(); // Fetch question sets when component mounts
+    // Initialize with server-side data if available
+    if (initialQuestions && initialQuestions.length > 0) {
+      setQuestions(initialQuestions);
+      setLoading(false);
+    }
+    
+    if (initialQuestionSets && initialQuestionSets.length > 0) {
+      setQuestionSets(initialQuestionSets);
+    }
+    
+    // Only fetch from client-side if we have a session and no initial data
+    if (session?.user?.email) {
+      if (!initialQuestions || initialQuestions.length === 0) {
+        fetchQuestions();
+      }
+      
+      if (!initialQuestionSets || initialQuestionSets.length === 0) {
+        fetchQuestionSets();
+      }
+    }
 
     // Subscribe to new questions, question sets, and comment count updates
     const channel = supabase
@@ -478,7 +515,7 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [session, initialQuestions, initialQuestionSets]);
 
   if (loading) {
     return (

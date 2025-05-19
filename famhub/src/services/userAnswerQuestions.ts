@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { getSession } from 'next-auth/react';
 
 export interface Answer {
   id: string;
@@ -24,8 +25,10 @@ export const userAnswerQuestions = {
   // Submit a new answer
   async submitAnswer(answer: AnswerInput): Promise<{ data: Answer | null; error: Error | null }> {
     try {
-      // Get user email from session storage
-      const userEmail = sessionStorage.getItem('userEmail');
+      // Get user email from NextAuth session
+      const session = await getSession();
+      const userEmail = session?.user?.email;
+      
       if (!userEmail) {
         throw new Error('User not logged in');
       }
@@ -100,10 +103,33 @@ export const userAnswerQuestions = {
   // Get user's answer for a specific question
   async getUserAnswer(questionId: string): Promise<{ data: Answer | null; error: Error | null }> {
     try {
+      // Get user email from NextAuth session
+      const session = await getSession();
+      const userEmail = session?.user?.email;
+      
+      if (!userEmail) {
+        throw new Error('User not logged in');
+      }
+      
+      // Set user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+      
+      // Get user ID from email
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+      
       const { data, error } = await supabase
         .from('answers')
         .select('*')
         .eq('question_id', questionId)
+        .eq('user_id', userData.id)
         .maybeSingle();
 
       if (error) throw error;
@@ -117,10 +143,33 @@ export const userAnswerQuestions = {
   // Update an existing answer
   async updateAnswer(answerId: string, answer: Partial<AnswerInput>): Promise<{ data: Answer | null; error: Error | null }> {
     try {
+      // Get user email from NextAuth session
+      const session = await getSession();
+      const userEmail = session?.user?.email;
+      
+      if (!userEmail) {
+        throw new Error('User not logged in');
+      }
+      
+      // Set user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+      
+      // Get user ID from email
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+      
       const { data, error } = await supabase
         .from('answers')
         .update(answer)
         .eq('id', answerId)
+        .eq('user_id', userData.id) // Ensure user can only update their own answers
         .select('*')
         .single();
 
@@ -135,6 +184,44 @@ export const userAnswerQuestions = {
   // Delete an answer
   async deleteAnswer(answerId: string): Promise<{ error: Error | null }> {
     try {
+      // Get user email from NextAuth session
+      const session = await getSession();
+      const userEmail = session?.user?.email;
+      
+      if (!userEmail) {
+        throw new Error('User not logged in');
+      }
+      
+      // Set user context for RLS policies
+      await supabase.rpc('set_app_user', { p_email: userEmail });
+      
+      // Get user ID from email
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+        
+      if (userError || !userData) {
+        throw new Error('User not found');
+      }
+      
+      // Get the answer to verify ownership
+      const { data: answerData, error: answerError } = await supabase
+        .from('answers')
+        .select('user_id')
+        .eq('id', answerId)
+        .single();
+        
+      if (answerError || !answerData) {
+        throw new Error('Answer not found');
+      }
+      
+      // Verify the user owns this answer
+      if (answerData.user_id !== userData.id) {
+        throw new Error('Unauthorized: You can only delete your own answers');
+      }
+      
       const { error } = await supabase
         .from('answers')
         .delete()

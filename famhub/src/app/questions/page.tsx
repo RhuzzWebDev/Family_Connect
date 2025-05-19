@@ -1,18 +1,26 @@
-'use client';
-
-import { useEffect } from 'react';
-import QuestionGrid from '@/components/dashboard/QuestionGrid';
 import { Layout } from '@/components/layout/Layout';
 import { InnerNavbar } from '@/components/layout/InnerNavbar';
+import QuestionGrid from '@/components/dashboard/QuestionGrid';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/pages/api/auth/[...nextauth]';
+import { redirect } from 'next/navigation';
+import { getQuestions, getQuestionSets } from '@/lib/server/questions';
 
-export default function QuestionsPage() {
-  useEffect(() => {
-    const userEmail = sessionStorage.getItem('userEmail');
-    if (!userEmail) {
-      window.location.href = '/login';
-    }
-  }, []);
-
+// This is a server component that handles authentication and pre-fetches data
+export default async function QuestionsPage() {
+  // Check if user is authenticated with NextAuth
+  const session = await getServerSession(authOptions);
+  
+  // Redirect to login if not authenticated
+  if (!session) {
+    redirect('/login');
+  }
+  
+  // Pre-fetch data for better performance
+  const [questions, questionSets] = await Promise.all([
+    getQuestions(),
+    getQuestionSets()
+  ]);
   return (
     <Layout>
       <InnerNavbar />
@@ -24,7 +32,12 @@ export default function QuestionsPage() {
           </p>
           <div className="border-b border-gray-700 mb-4"></div>
         </div>
-        <QuestionGrid showHeader={true} />
+        {/* Pass pre-fetched data to the QuestionGrid component */}
+        <QuestionGrid 
+          initialQuestions={questions} 
+          initialQuestionSets={questionSets}
+          showHeader={true} 
+        />
       </div>
     </Layout>
   );

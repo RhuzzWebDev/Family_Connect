@@ -19,6 +19,7 @@ import { userAnswerQuestions } from "@/services/userAnswerQuestions"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useSession } from "next-auth/react";
 
 // Custom HeartFilled component for likes
 const HeartFilled = ({ className }: { className?: string }) => (
@@ -55,6 +56,16 @@ interface QuestionTypeData {
   content?: string;
   item_order?: number;
   item_text?: string;
+  // For demographic questions
+  field_type?: string;
+  is_required?: boolean;
+  has_other_option?: boolean;
+  options?: Array<{
+    option_text: string;
+    option_order: number;
+    question_demographic_id?: string;
+    id?: string;
+  }>;
 }
 
 interface Question {
@@ -107,6 +118,7 @@ interface Comment {
 }
 
 export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewModalProps) {
+  const { data: session } = useSession();
   const [isFullWidth, setIsFullWidth] = useState(false)
   const [questionTypeData, setQuestionTypeData] = useState<QuestionTypeData[]>([])
   const [loading, setLoading] = useState(false)
@@ -422,6 +434,9 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         case 'ranking':
           tableName = 'question_ranking';
           break;
+        case 'demographic':
+          tableName = 'question_demographic';
+          break;
         default:
           console.log(`No specific table for question type: ${question.type}`);
           setLoading(false);
@@ -429,16 +444,54 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
       }
       
       if (tableName) {
-        const { data, error } = await supabase
-          .from(tableName)
-          .select('*')
-          .eq('question_id', question.id);
-          
-        if (error) {
-          console.error(`Error fetching ${tableName} data:`, error);
+        // Special handling for demographic questions - need to fetch both demographic data and options
+        if (question.type === 'demographic') {
+          // First, fetch the demographic question data
+          const { data: demographicData, error: demographicError } = await supabase
+            .from('question_demographic')
+            .select('*')
+            .eq('question_id', question.id)
+            .single();
+            
+          if (demographicError) {
+            console.error('Error fetching demographic data:', demographicError);
+          } else if (demographicData) {
+            console.log('Fetched demographic data:', demographicData);
+            
+            // Then fetch the demographic options using the question_demographic_id
+            const { data: optionsData, error: optionsError } = await supabase
+              .from('question_demographic_option')
+              .select('*')
+              .eq('question_demographic_id', demographicData.id)
+              .order('option_order', { ascending: true });
+              
+            if (optionsError) {
+              console.error('Error fetching demographic options:', optionsError);
+            } else {
+              console.log(`Fetched ${optionsData?.length || 0} demographic options`);
+              
+              // Combine the demographic data with its options
+              const combinedData = {
+                ...demographicData,
+                options: optionsData || []
+              };
+              
+              setQuestionTypeData([combinedData]);
+            }
+          }
         } else {
-          console.log(`Fetched ${data?.length || 0} type data items for question`);
-          setQuestionTypeData(data || []);
+          // Standard handling for other question types
+          const { data, error } = await supabase
+            .from(tableName)
+            .select('*')
+            .eq('question_id', question.id);
+            
+          if (error) {
+            console.error(`Error fetching ${tableName} data:`, error);
+          } else {
+            console.log(`Fetched ${data?.length || 0} type data items for question`);
+            setQuestionTypeData(data || []);
+          }
         }
       }
     } catch (err) {
@@ -1251,8 +1304,9 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                   {/* Fetch demographic options from the API or use fallback options */}
                   <div className="space-y-2 mt-3">
                     {/* If we have options from the API, use those */}
-                    {questionTypeData.length > 0 ? (
-                      questionTypeData.map((option, index) => {
+                    {questionTypeData.length > 0 && questionTypeData[0].options ? (
+                      // Display the options from the combined data structure
+                      questionTypeData[0].options.map((option: any, index: number) => {
                         const isSelected = option.option_text === answer;
                         const isLastAnswer = userExistingAnswer && option.option_text === answer;
                         
@@ -1411,7 +1465,8 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                 setSubmitting(true);
                 setSubmitError('');
                 try {
-                  const userEmail = sessionStorage.getItem('userEmail');
+                  // Get user email from NextAuth session
+                  const userEmail = session?.user?.email;
                   if (!userEmail) throw new Error('Not logged in');
 
                   const { data: userData, error: userError } = await supabase
