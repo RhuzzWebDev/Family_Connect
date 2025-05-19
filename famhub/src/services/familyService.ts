@@ -361,7 +361,7 @@ export class FamilyService {
     memberData: Omit<FamilyMember, 'id' | 'created_at' | 'family_id'>
   ): Promise<string> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) throw new Error('Not authenticated');
       
       // Set the user context for RLS policies
@@ -429,7 +429,7 @@ export class FamilyService {
     memberData: Omit<FamilyMember, 'id' | 'created_at'> & { family_id?: string }
   ): Promise<string> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) throw new Error('Not authenticated');
       
       // Set the user context for RLS policies
