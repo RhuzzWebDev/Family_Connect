@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { FamilyService, FamilyMember, Family } from '@/services/familyService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,7 @@ import { AddFamilyMemberModal } from '@/components/add-family-member-modal';
 import FamilyInviteModal from './FamilyInvite';
 
 export default function FamilyHub() {
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<FamilyMember | null>(null);
@@ -80,8 +82,13 @@ export default function FamilyHub() {
   });
 
   useEffect(() => {
-    fetchFamilyData();
-  }, [refreshTrigger]);
+    if (status === 'authenticated' && session) {
+      fetchFamilyData();
+    } else if (status === 'unauthenticated') {
+      setLoading(false);
+      setError('You must be logged in to view family data');
+    }
+  }, [refreshTrigger, status, session]);
 
   async function fetchFamilyData() {
     try {
@@ -680,7 +687,7 @@ export default function FamilyHub() {
                   <Button
                     variant="outline"
                     onClick={handleCancelEdit}
-                    className="rounded-lg border-gray-700 hover:bg-gray-800 hover:text-white text-black"
+                    className="rounded-lg border-gray-700 hover:bg-gray-800 hover:text-white text-white"
                   >
                     Cancel
                   </Button>
@@ -737,7 +744,7 @@ export default function FamilyHub() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="text-black">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="text-white">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteMember} disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
