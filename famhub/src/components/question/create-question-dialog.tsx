@@ -69,14 +69,17 @@ export default function CreateQuestionDialog({
   useEffect(() => {
     const fetchAdminUserId = async () => {
       try {
-        // Get the admin email from session storage or use a default
-        const email = sessionStorage.getItem('adminEmail') || 'admin@famhub.com';
+        // Use a consistent admin email for all operations
+        // This should match the email that has admin privileges in your Supabase RLS policies
+        const email = 'sysadmin@familyconnect.com';
         setAdminEmail(email);
         
         console.log('Using admin email:', email);
         
         // Store the admin email in session storage for future use
         sessionStorage.setItem('adminEmail', email);
+        
+        // No need to call setAdminContext directly as it's handled internally by getAdminUserId
         
         // Get the default admin user ID from AdminQuestionServices
         const adminUserId = await adminQuestionServices.getAdminUserId(email);
@@ -227,27 +230,32 @@ export default function CreateQuestionDialog({
     setErrors([]);
     setFileError('');
     
-    // Make sure we have a user ID
-    if (!userId) {
+    // Make sure we have a user ID and admin email
+    if (!userId || !adminEmail) {
       try {
-        // Try to get the admin user ID again
-        const email = sessionStorage.getItem('userEmail') || sessionStorage.getItem('adminEmail') || 'admin@famhub.com';
-        const adminUserId = await adminQuestionServices.getAdminUserId(email);
-        setUserId(adminUserId);
+        // Use the consistent admin email that has admin privileges
+        const email = 'sysadmin@familyconnect.com';
+        setAdminEmail(email);
         
-        if (!adminUserId) {
-          // If we still don't have a user ID, create a temporary one
-          // This is a workaround for the RLS policy
-          const tempUserId = `temp-${Date.now()}`;
-          console.log('Using temporary user ID:', tempUserId);
-          setUserId(tempUserId);
+        // No need to call setAdminContext directly as it's handled internally by getAdminUserId
+        
+        // Get the admin user ID
+        const adminUserId = await adminQuestionServices.getAdminUserId(email);
+        
+        if (adminUserId) {
+          setUserId(adminUserId);
+          console.log('Admin user ID set:', adminUserId);
+        } else {
+          // If we still don't have a user ID, use a known admin ID
+          // This should be a UUID that exists in your users table with admin privileges
+          const knownAdminId = '00000000-0000-0000-0000-000000000000';
+          console.log('Using known admin ID:', knownAdminId);
+          setUserId(knownAdminId);
         }
       } catch (error) {
         console.error('Error fetching admin user ID:', error);
-        // Create a temporary user ID as a fallback
-        const tempUserId = `temp-${Date.now()}`;
-        console.log('Using temporary user ID after error:', tempUserId);
-        setUserId(tempUserId);
+        setFileError('Error: Unable to get the admin user ID. Please try again.');
+        return; // Exit early if we can't get a valid user ID
       }
     }
     
@@ -441,7 +449,11 @@ export default function CreateQuestionDialog({
       }
       
       // Add admin email to the question data for the parent component to use
-      questionData.adminEmail = adminEmail || sessionStorage.getItem('adminEmail') || 'admin@famhub.com';
+      // Always use the consistent admin email that has proper permissions
+      questionData.adminEmail = 'sysadmin@familyconnect.com';
+      
+      // Admin context will be set internally by the createQuestion method
+      // No need to call setAdminContext directly
       
       console.log('Preparing question data with admin email:', questionData.adminEmail);
       
@@ -693,6 +705,45 @@ export default function CreateQuestionDialog({
                 </Select>
               </div>
               
+              {formData.type === QuestionTypeEnum.MULTIPLE_CHOICE && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Multiple Choice Options</Label>
+                  <div className="text-sm text-gray-400 mb-2">
+                    Add options for your multiple choice question
+                  </div>
+                  {formData.options.map((option, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <Input
+                        value={option}
+                        onChange={(e) => handleArrayFieldChange('options', index, e.target.value)}
+                        placeholder={`Option ${index + 1}`}
+                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeArrayItem('options', index)}
+                        className="text-gray-400 hover:text-white"
+                        disabled={formData.options.length <= 2}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addArrayItem('options')}
+                    className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Option
+                  </Button>
+                </div>
+              )}
+              
               {formData.type === QuestionTypeEnum.OPEN_ENDED && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Open-Ended Question Settings</Label>
@@ -734,6 +785,93 @@ export default function CreateQuestionDialog({
                       />
                     </div>
                   </div>
+                </div>
+              )}
+              
+              {formData.type === QuestionTypeEnum.RATING_SCALE && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Rating Scale Settings</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="min-rating">Minimum Rating</Label>
+                      <Input
+                        id="min-rating"
+                        type="number"
+                        value={formData.minRating}
+                        onChange={(e) => handleNumericChange('minRating', e.target.value)}
+                        className="bg-[#0d0f14] border-gray-800 text-white mt-1"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="max-rating">Maximum Rating</Label>
+                      <Input
+                        id="max-rating"
+                        type="number"
+                        value={formData.maxRating}
+                        onChange={(e) => handleNumericChange('maxRating', e.target.value)}
+                        className="bg-[#0d0f14] border-gray-800 text-white mt-1"
+                        min={formData.minRating + 1}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Rating Scale Preview */}
+                  <div className="mt-4">
+                    <Label className="mb-2 block">Preview</Label>
+                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700">
+                      <div className="flex justify-between">
+                        {Array.from({ length: formData.maxRating - formData.minRating + 1 }, (_, i) => (
+                          <div key={i} className="flex flex-col items-center">
+                            <div className="w-8 h-8 rounded-full border border-gray-600 flex items-center justify-center mb-1 hover:bg-gray-700 cursor-pointer">
+                              {formData.minRating + i}
+                            </div>
+                            {i === 0 && <div className="text-xs text-gray-400">Low</div>}
+                            {i === formData.maxRating - formData.minRating && <div className="text-xs text-gray-400">High</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {formData.type === QuestionTypeEnum.DROPDOWN && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Dropdown Options</Label>
+                  <div className="text-sm text-gray-400 mb-2">
+                    Add options for your dropdown question
+                  </div>
+                  {formData.dropdownOptions.map((option, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <Input
+                        value={option}
+                        onChange={(e) => handleArrayFieldChange('dropdownOptions', index, e.target.value)}
+                        placeholder={`Option ${index + 1}`}
+                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeArrayItem('dropdownOptions', index)}
+                        className="text-gray-400 hover:text-white"
+                        disabled={formData.dropdownOptions.length <= 2}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addArrayItem('dropdownOptions')}
+                    className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Option
+                  </Button>
                 </div>
               )}
               
@@ -823,6 +961,167 @@ export default function CreateQuestionDialog({
                 </div>
               )}
               
+              {formData.type === QuestionTypeEnum.LIKERT_SCALE && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Likert Scale Options</Label>
+                  <div className="text-sm text-gray-400 mb-2">
+                    Customize the options for your Likert scale question
+                  </div>
+                  {formData.likertOptions.map((option, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <Input
+                        value={option}
+                        onChange={(e) => handleArrayFieldChange('likertOptions', index, e.target.value)}
+                        placeholder={`Option ${index + 1}`}
+                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeArrayItem('likertOptions', index)}
+                        className="text-gray-400 hover:text-white"
+                        disabled={formData.likertOptions.length <= 2}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addArrayItem('likertOptions')}
+                    className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Option
+                  </Button>
+                  
+                  {/* Preview */}
+                  <div className="mt-4">
+                    <Label className="mb-2 block">Preview</Label>
+                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700">
+                      <div className="space-y-2">
+                        {formData.likertOptions.map((option, index) => (
+                          <div key={index} className="flex items-center space-x-2">
+                            <div className="w-4 h-4 rounded-full border border-gray-600"></div>
+                            <span>{option}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {formData.type === QuestionTypeEnum.MATRIX && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Matrix Question Settings</Label>
+                  
+                  <div className="space-y-2">
+                    <Label>Rows (Questions)</Label>
+                    {formData.matrixRows.map((row, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <Input
+                          value={row}
+                          onChange={(e) => handleArrayFieldChange('matrixRows', index, e.target.value)}
+                          placeholder={`Row ${index + 1}`}
+                          className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeArrayItem('matrixRows', index)}
+                          className="text-gray-400 hover:text-white"
+                          disabled={formData.matrixRows.length <= 2}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addArrayItem('matrixRows')}
+                      className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Row
+                    </Button>
+                  </div>
+                  
+                  <div className="space-y-2 mt-4">
+                    <Label>Columns (Options)</Label>
+                    {formData.matrixColumns.map((column, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <Input
+                          value={column}
+                          onChange={(e) => handleArrayFieldChange('matrixColumns', index, e.target.value)}
+                          placeholder={`Column ${index + 1}`}
+                          className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeArrayItem('matrixColumns', index)}
+                          className="text-gray-400 hover:text-white"
+                          disabled={formData.matrixColumns.length <= 2}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addArrayItem('matrixColumns')}
+                      className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Column
+                    </Button>
+                  </div>
+                  
+                  {/* Preview */}
+                  <div className="mt-4">
+                    <Label className="mb-2 block">Preview</Label>
+                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700 overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr>
+                            <th className="p-2 border-b border-gray-700"></th>
+                            {formData.matrixColumns.map((column, index) => (
+                              <th key={index} className="p-2 border-b border-gray-700 text-center">
+                                {column || `Column ${index + 1}`}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {formData.matrixRows.map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                              <td className="p-2 border-b border-gray-700">
+                                {row || `Row ${rowIndex + 1}`}
+                              </td>
+                              {formData.matrixColumns.map((_, colIndex) => (
+                                <td key={colIndex} className="p-2 border-b border-gray-700 text-center">
+                                  <div className="w-4 h-4 rounded-full border border-gray-600 mx-auto"></div>
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {formData.type === QuestionTypeEnum.SLIDER && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
                   <Label>Slider Settings</Label>
@@ -893,6 +1192,99 @@ export default function CreateQuestionDialog({
                       />
                       <div className="text-center mt-2 text-sm text-blue-400">
                         Current value: {formData.sliderDefaultValue}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {formData.type === QuestionTypeEnum.DICHOTOMOUS && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Dichotomous Question Options</Label>
+                  <div className="text-sm text-gray-400 mb-2">
+                    Customize the binary options for your yes/no question
+                  </div>
+                  {formData.dichotomousOptions.map((option, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <Input
+                        value={option}
+                        onChange={(e) => handleArrayFieldChange('dichotomousOptions', index, e.target.value)}
+                        placeholder={index === 0 ? "Positive option (e.g., Yes)" : "Negative option (e.g., No)"}
+                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                      />
+                    </div>
+                  ))}
+                  
+                  {/* Preview */}
+                  <div className="mt-4">
+                    <Label className="mb-2 block">Preview</Label>
+                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700 flex justify-center gap-4">
+                      {formData.dichotomousOptions.map((option, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <div className="w-4 h-4 rounded-full border border-gray-600"></div>
+                          <span>{option || (index === 0 ? "Yes" : "No")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {formData.type === QuestionTypeEnum.RANKING && (
+                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+                  <Label>Ranking Items</Label>
+                  <div className="text-sm text-gray-400 mb-2">
+                    Add items that respondents will rank in order of preference
+                  </div>
+                  {formData.rankingItems.map((item, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#0d0f14] border border-gray-700 flex items-center justify-center">
+                        {index + 1}
+                      </div>
+                      <Input
+                        value={item}
+                        onChange={(e) => handleArrayFieldChange('rankingItems', index, e.target.value)}
+                        placeholder={`Item ${index + 1}`}
+                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeArrayItem('rankingItems', index)}
+                        className="text-gray-400 hover:text-white"
+                        disabled={formData.rankingItems.length <= 2}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addArrayItem('rankingItems')}
+                    className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Item
+                  </Button>
+                  {/* Preview */}
+                  <div className="mt-4">
+                    <Label className="mb-2 block">Preview</Label>
+                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700">
+                      <div className="space-y-2">
+                        {formData.rankingItems.map((item, index) => (
+                          <div key={index} className="flex items-center p-2 bg-[#1a1d24] rounded border border-gray-700">
+                            <div className="mr-2 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">{item || `Item ${index + 1}`}</div>
+                            <div className="flex-shrink-0">
+                              <ChevronDown className="h-4 w-4 text-gray-500" />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>

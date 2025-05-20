@@ -45,18 +45,13 @@ export default function QuestionsPage() {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Using a default admin email for now - in a real app, this would come from authentication
-  const [adminEmail, setAdminEmail] = useState('admin@famhub.com');
+  // Using a consistent admin email that has admin privileges in Supabase
+  const [adminEmail, setAdminEmail] = useState('sysadmin@familyconnect.com');
   
   // Store admin email in session storage for persistence
   useEffect(() => {
-    // Get admin email from session storage or use default
-    const storedEmail = sessionStorage.getItem('adminEmail');
-    if (storedEmail) {
-      setAdminEmail(storedEmail);
-    } else {
-      sessionStorage.setItem('adminEmail', adminEmail);
-    }
+    // Always use the consistent admin email that has admin privileges
+    sessionStorage.setItem('adminEmail', 'sysadmin@familyconnect.com');
   }, []);
   
   useEffect(() => {
@@ -345,8 +340,8 @@ export default function QuestionsPage() {
         return;
       }
       
-      // Use the admin email from the question data if available, otherwise use the current one
-      const currentAdminEmail = questionData.adminEmail || sessionStorage.getItem('adminEmail') || adminEmail;
+      // Always use the consistent admin email that has admin privileges in Supabase
+      const currentAdminEmail = 'sysadmin@familyconnect.com';
       console.log('Using admin email for question creation:', currentAdminEmail);
       
       // Get the admin user ID first
@@ -458,16 +453,16 @@ export default function QuestionsPage() {
       
       console.log('Question to add:', questionToAdd); // Debug log
       
-      // Use the same admin email we retrieved earlier
+      // Always use the consistent admin email that has admin privileges in Supabase
+      const adminEmail = 'sysadmin@familyconnect.com';
       
       // Log the admin email being used
-      console.log('Creating question with admin email:', currentAdminEmail);
+      console.log('Creating question with admin email:', adminEmail);
       
-      // Explicitly set admin context before creating the question
-      await adminQuestionServices['setAdminContext'](currentAdminEmail);
+      // No need to explicitly call setAdminContext as it's handled internally by createQuestion
       
       // Create the question with the admin email
-      const newQuestion = await adminQuestionServices.createQuestion(questionToAdd, currentAdminEmail);
+      const newQuestion = await adminQuestionServices.createQuestion(questionToAdd, adminEmail);
       
       // Refresh the question set to get the updated questions
       await refreshQuestionSet(selectedQuestionSet.id);
