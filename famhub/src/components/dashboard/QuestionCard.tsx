@@ -10,6 +10,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AnswerForm } from "@/components/answer-form"
 import { CommentSection } from "@/components/comment-section"
+import { QuestionDetailCard } from "./QuestionDetailCard"
 import { supabase } from "@/lib/supabase"
 import { cn } from "@/lib/utils"
 import { RealtimeChannel } from '@supabase/supabase-js'
@@ -24,15 +25,20 @@ interface User {
 
 interface DatabaseQuestion {
   id: string;
-  user_id: string;
   question: string;
-  file_url?: string;
+  media_type?: "image" | "video" | "audio" | null;
+  file_url?: string | null;
+  created_at: string;
   like_count: number;
   comment_count: number;
-  media_type?: 'image' | 'video' | 'audio';
-  folder_path?: string;
-  created_at: string;
-  user: User;
+  type?: string;
+  user: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    role: string;
+  };
 }
 
 interface QuestionCardProps {
@@ -45,6 +51,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
   const [likeCount, setLikeCount] = useState(question.like_count)
   const [commentCount, setCommentCount] = useState(question.comment_count)
   const [isLikeLoading, setIsLikeLoading] = useState(false)
+  const [showDetailCard, setShowDetailCard] = useState(false)
   const userEmail = sessionStorage.getItem('userEmail')
 
   useEffect(() => {
@@ -265,66 +272,103 @@ export function QuestionCard({ question }: QuestionCardProps) {
   );
 
   return (
-    <Card className="overflow-hidden">
-      {/* Media at the top if available */}
-      {question.file_url && question.media_type && (
-        <div className="w-full">
-          {renderMedia()}
-        </div>
-      )}
-      
-      {/* Question content in the middle */}
-      <CardContent className="p-4">
-        <p className="text-base font-medium">{question.question}</p>
-      </CardContent>
-      
-      {/* User info and actions in the footer */}
-      <CardFooter className="flex items-center justify-between p-4 pt-0">
-        <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
-            {`${question.user.first_name[0]}${question.user.last_name[0]}`}
+    <>
+      <Card 
+        className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer" 
+        onClick={() => setShowDetailCard(true)}
+      >
+        {/* Media at the top if available */}
+        {question.file_url && question.media_type && (
+          <div className="w-full">
+            {renderMedia()}
           </div>
-          <div>
-            <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] text-muted-foreground">{question.user.role}</p>
-              <span className="text-[10px] text-muted-foreground">
-                {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+        )}
+        
+        {/* Question content in the middle */}
+        <CardContent className="p-4">
+          <div className="relative">
+            <div className="pulse-hint absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+            <p className="text-base font-medium">{question.question}</p>
+          </div>
+          
+          {/* Question type badge if available */}
+          {question.type && (
+            <div className="mt-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                {question.type.replace('-', ' ')}
               </span>
             </div>
-          </div>
-        </div>
+          )}
+        </CardContent>
         
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn("h-8 w-8 p-0", { "text-red-500": liked })}
-            onClick={handleLike}
-            disabled={isLikeLoading}
-          >
-            <Heart className={cn("h-4 w-4", { "fill-current text-red-500": liked })} />
-            <span className="sr-only">Like</span>
-          </Button>
-          <span className="text-xs">{likeCount.toString()}</span>
+        {/* User info and actions in the footer */}
+        <CardFooter className="flex items-center justify-between p-4 pt-0">
+          <div className="flex items-center gap-2">
+            <div className="h-6 w-6 rounded-full flex items-center justify-center font-semibold" style={{ background: '#0F1017', color: '#60a5fa' }}>
+              {`${question.user.first_name[0]}${question.user.last_name[0]}`}
+            </div>
+            <div>
+              <p className="text-xs font-medium">{`${question.user.first_name} ${question.user.last_name}`}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] text-muted-foreground">{question.user.role}</p>
+                <span className="text-[10px] text-muted-foreground">
+                  {formatDistanceToNow(new Date(question.created_at), { addSuffix: true })}
+                </span>
+              </div>
+            </div>
+          </div>
           
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MessageSquare className="h-4 w-4" />
-                <span className="sr-only">Comment</span>
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
-              <DialogHeader>
-                <DialogTitle>Answers & Comments</DialogTitle>
-              </DialogHeader>
-              {renderCommentSection()}
-            </DialogContent>
-          </Dialog>
-          <span className="text-xs">{commentCount.toString()}</span>
-        </div>
-      </CardFooter>
-    </Card>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn("h-8 w-8 p-0 relative z-10", { "text-red-500": liked })}
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent card click event
+                handleLike();
+              }}
+              disabled={isLikeLoading}
+            >
+              <Heart className={cn("h-4 w-4", { "fill-current text-red-500": liked })} />
+              <span className="sr-only">Like</span>
+            </Button>
+            <span className="text-xs">{likeCount.toString()}</span>
+            
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-8 w-8 p-0 relative z-10"
+                  onClick={(e) => e.stopPropagation()} // Prevent card click event
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <span className="sr-only">Comment</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
+                <DialogHeader>
+                  <DialogTitle>Answers & Comments</DialogTitle>
+                </DialogHeader>
+                {renderCommentSection()}
+              </DialogContent>
+            </Dialog>
+            <span className="text-xs">{commentCount.toString()}</span>
+          </div>
+        </CardFooter>
+      </Card>
+      
+      {/* Question Detail Card */}
+      {showDetailCard && (
+        <QuestionDetailCard 
+          question={{
+            ...question,
+            media_type: question.media_type || null,
+            file_url: question.file_url || null
+          }} 
+          onClose={() => setShowDetailCard(false)} 
+        />
+      )}
+    </>
   );
 }

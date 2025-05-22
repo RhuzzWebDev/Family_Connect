@@ -9,6 +9,7 @@ import { useTheme } from 'next-themes';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { signOut, useSession } from 'next-auth/react';
 import { supabase } from '@/lib/supabase';
 import { 
   NotificationsDialog, 
@@ -28,6 +29,7 @@ export default function Navbar() {
   const [isLoading, setIsLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { data: session, status } = useSession();
 
   // Handle click outside to close menus
   useEffect(() => {
@@ -94,13 +96,12 @@ export default function Navbar() {
     const fetchUserData = async () => {
       try {
         setIsLoading(true);
-        const userEmail = sessionStorage.getItem('userEmail');
         
-        if (userEmail) {
+        if (session?.user?.email) {
           const { data: user, error: userError } = await supabase
             .from('users')
             .select('first_name, last_name, email, status')
-            .eq('email', userEmail)
+            .eq('email', session.user.email)
             .single();
 
           if (userError) throw userError;
@@ -130,18 +131,7 @@ export default function Navbar() {
     };
 
     fetchUserData();
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'userEmail') {
-        fetchUserData();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
+  }, [session]);
 
   const fetchNotifications = async (lastName: string) => {
     try {
@@ -222,10 +212,21 @@ export default function Navbar() {
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('userEmail');
-    setUserData({ name: 'Guest User', email: 'Not logged in', lastName: '' });
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      // Reset local state
+      setUserData({ name: 'Guest User', email: 'Not logged in', lastName: '' });
+      
+      // Use NextAuth.js signOut function
+      await signOut({ 
+        redirect: true,
+        callbackUrl: '/login'
+      });
+    } catch (error) {
+      console.error('Error during logout:', error);
+      // Fallback if signOut fails
+      router.push('/login');
+    }
   };
 
   const getInitial = () => {

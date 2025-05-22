@@ -20,6 +20,7 @@ const typeLabels: Record<string, string> = {
   "slider": "Slider",
   "dichotomous": "Dichotomous",
   "ranking": "Ranking",
+  "demographic": "Demographic",
 };
 
 interface QuestionViewDialogProps {
@@ -128,32 +129,8 @@ export default function QuestionViewDialog({
       // Get admin email from session storage (or use a default for demo)
       const adminEmail = sessionStorage.getItem('adminEmail') || 'admin@example.com';
       
-      console.log(`Fetching type data for question ${questionId} of type ${questionType}`);
-      
       // Fetch the question data with type-specific details
       const questionData = await adminQuestionServices.getQuestionWithTypeData(questionId, adminEmail);
-      
-      // Debug: Log the received data structure to understand available columns
-      console.log(`Received data for question ${questionId}:`, questionData);
-      console.log(`Question type: ${questionType}`);
-      
-      // Log specific type data
-      if (questionData.options) {
-        console.log('Options data columns:', Object.keys(questionData.options[0] || {}));
-      }
-      if (questionData.imageOptions) {
-        console.log('Image options data columns:', Object.keys(questionData.imageOptions[0] || {}));
-      }
-      if (questionData.matrix) {
-        console.log('Matrix rows columns:', Object.keys(questionData.matrix.rows[0] || {}));
-        console.log('Matrix columns columns:', Object.keys(questionData.matrix.columns[0] || {}));
-      }
-      if (questionData.scale) {
-        console.log('Scale data columns:', Object.keys(questionData.scale));
-      }
-      if (questionData.openEndedSettings) {
-        console.log('Open-ended settings columns:', Object.keys(questionData.openEndedSettings));
-      }
       
       // Store the fetched data
       setTypeSpecificData(prev => ({ ...prev, [questionId]: questionData }));
@@ -437,8 +414,75 @@ export default function QuestionViewDialog({
                     <span className="text-red-300 font-medium">{negative || "No"}</span>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      
+      case "demographic": {
+        // Get demographic data and options
+        const demographic = questionData?.demographic || {};
+        const demographicOptions = questionData?.demographicOptions || [];
+        
+        console.log('Rendering demographic data:', demographic);
+        console.log('Rendering demographic options:', demographicOptions);
+        
+        return (
+          <div className="mt-3 space-y-4">
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-blue-300">Demographic Field:</h4>
+              
+              <div className="bg-gray-900/30 p-4 rounded-md border border-gray-800 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-400">Field Type:</span>
+                    <span className="text-lg font-medium text-white block capitalize">{demographic.field_type || "Not specified"}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-400">Required:</span>
+                    <span className="text-lg font-medium text-white block">{demographic.is_required ? "Yes" : "No"}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-400">Has "Other" Option:</span>
+                    <span className="text-lg font-medium text-white block">{demographic.has_other_option ? "Yes" : "No"}</span>
+                  </div>
+                </div>
                 
-
+                {/* Always show options section, with fallback message if empty */}
+                <div className="pt-3 border-t border-gray-700">
+                  <h5 className="text-sm font-medium text-blue-300 mb-2">Options:</h5>
+                  <ul className="space-y-2 bg-gray-900/30 p-3 rounded-md border border-gray-800">
+                    {demographicOptions.length > 0 ? (
+                      demographicOptions
+                        .sort((a: any, b: any) => (a.option_order || 0) - (b.option_order || 0))
+                        .map((option: any, index: number) => (
+                          <li key={option.id ?? index} className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                            <span className="text-white">{option.option_text}</span>
+                          </li>
+                        ))
+                    ) : (
+                      // Add hardcoded demo options when no options are available
+                      <>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 1</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 2</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 3</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 4</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Prefer not to say</span>
+                        </li>
+                      </>
+                    )}
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

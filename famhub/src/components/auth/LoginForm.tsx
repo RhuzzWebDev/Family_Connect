@@ -1,15 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { UserService } from '../../services/userService';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
-import { useSession } from '@/hooks/useSession';
+import { signIn, useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 
 interface LoginFormData {
@@ -19,7 +18,8 @@ interface LoginFormData {
 
 export default function LoginForm() {
   const router = useRouter();
-  const { setUserEmail } = useSession();
+  const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
@@ -27,6 +27,17 @@ export default function LoginForm() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  
+  // Get the callback URL from the query parameters
+  const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard';
+  
+  // If user is already authenticated, redirect to callback URL
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      console.log('User already authenticated, redirecting to:', callbackUrl);
+      window.location.href = callbackUrl;
+    }
+  }, [status, session, callbackUrl]);
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
@@ -68,28 +79,34 @@ export default function LoginForm() {
         return;
       }
 
-      // Login with native authentication
-      const user = await UserService.loginUser(formData.email, formData.password);
-      
-      // Check user status
-      switch (user.status) {
-        case 'Active':
-          // Store user email in sessionStorage for session management
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('userEmail', user.email);
-            setUserEmail(user.email);
-          }
-          
-          // Show success message and redirect to dashboard
-          toast.success('Login successful!');
-          router.push('/dashboard');
-          break;
-        case 'Validating':
-          throw new Error('Your account is still pending validation');
-        case 'Not Active':
-          throw new Error('Your account has been deactivated');
-        default:
-          throw new Error('Invalid account status');
+      try {
+        // Login with NextAuth.js
+        const result = await signIn('credentials', {
+          redirect: false,
+          email: formData.email,
+          password: formData.password,
+          callbackUrl: callbackUrl
+        });
+        
+        if (result?.error) {
+          // Handle authentication error
+          toast.error('Invalid email or password');
+          setLoading(false);
+          return;
+        }
+        
+        // Show success message
+        toast.success('Login successful!');
+        
+        // Get the callback URL from the result or use dashboard as default
+        const redirectUrl = result?.url || callbackUrl;
+        console.log('Redirecting to:', redirectUrl);
+        
+        // Force a hard navigation to ensure the session is properly loaded
+        window.location.href = redirectUrl;
+      } catch (error: any) {
+        console.error('Error during sign in:', error);
+        throw error;
       }
     } catch (err: any) {
       console.error('Login error:', err);
