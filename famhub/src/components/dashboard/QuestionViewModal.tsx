@@ -1783,8 +1783,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                   // Refresh community answers without closing the modal
                   calculateCommunityAnswers();
                   
-                  // Switch to the community answers tab to show the impact of the user's answer
-                  setActiveTab('community-answers');
+                  // Stay on the current tab instead of switching to community answers
                 } catch (err) {
                   console.error('Error in answer submission:', err);
                   setSubmitError('An unexpected error occurred. Please try again.');
