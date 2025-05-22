@@ -335,18 +335,12 @@ export default function CreateQuestionDialog({
           break;
           
         case QuestionTypeEnum.IMAGE_CHOICE:
-          // For image choice questions
-          // In a real implementation, you would upload the images to storage
-          // and get the URLs to store in the database
-          questionData.imageOptions = formData.imageOptions
-            .filter(opt => opt.trim() !== '')
-            .map((text, index) => ({
-              option_text: text,
-              image_url: formData.imageFiles[index] ? 
-                `https://example.com/images/${Date.now()}_${index}` : 
-                'https://example.com/images/placeholder.png',
-              option_order: index
-            }));
+          // IMAGE CHOICE QUESTIONS ARE DISABLED
+          // This case is kept for backward compatibility but should not be reached
+          // as the option has been removed from the dropdown
+          console.warn('Image choice questions are disabled but the form tried to submit one');
+          setErrors(['Image choice questions are currently disabled.']);
+          return; // Exit the function to prevent submission
           break;
           
         case QuestionTypeEnum.OPEN_ENDED:
@@ -686,9 +680,11 @@ export default function CreateQuestionDialog({
                     <SelectItem value={QuestionTypeEnum.OPEN_ENDED} className="focus:bg-gray-700">
                       Open-ended questions
                     </SelectItem>
+                    {/* Image choice questions disabled
                     <SelectItem value={QuestionTypeEnum.IMAGE_CHOICE} className="focus:bg-gray-700">
                       Image choice questions
                     </SelectItem>
+                    */}
                     <SelectItem value={QuestionTypeEnum.SLIDER} className="focus:bg-gray-700">
                       Slider questions
                     </SelectItem>
