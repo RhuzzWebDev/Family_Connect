@@ -152,7 +152,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
     });
   }, [userExistingAnswer, answer, question.type, questionTypeData]);
 
-  // Handle resetting the user's answer
+  // Handle resetting the user's answer without refreshing the page
   const handleResetAnswer = async () => {
     if (!userExistingAnswer || !userExistingAnswer.id) {
       toast.error("No answer to reset");
@@ -188,17 +188,8 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         // Reset all local state
         setUserExistingAnswer(null);
         setAnswer('');
-        // Refresh community answers
+        // Refresh community answers without closing the modal
         calculateCommunityAnswers();
-        // Notify parent component that answer was reset
-        if (onClose) {
-          // This will ensure the parent component refreshes its state
-          onClose();
-          // Re-open the modal after a brief delay to show it's been reset
-          setTimeout(() => {
-            // The parent component will handle reopening the modal
-          }, 100);
-        }
       }
     } catch (err) {
       console.error('Error resetting answer:', err);
@@ -344,9 +335,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   
   useEffect(() => {
     if (isOpen) {
-      // Reset states when reopening
-      setAnswer('');
-      setUserExistingAnswer(null);
+      // Don't reset states when reopening, just clear errors
       setSubmitError('');
       
       // Fetch fresh data
@@ -1778,27 +1767,27 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                     answer_format,
                     question_type: question.type || 'text'
                   });
-
-                  // Find the answer submission handler in your code (around line 1492)
+                  
                   if (answerError) {
-                    console.error('Answer submission error:', answerError);
-                    throw answerError;
+                    console.error('Answer submission failed:', answerError);
+                    setSubmitError(answerError.message);
+                    return;
                   }
-
-                  // Update the existing answer data
+                  
+                  console.log('Answer submitted successfully:', data);
+                  toast.success('Your answer has been submitted!');
+                  
+                  // Update the existing answer in state
                   setUserExistingAnswer(data);
-                  // Show success message with duration
-                  toast.success(userExistingAnswer ? 'Answer updated successfully!' : 'Answer submitted successfully!', {
-                    duration: 2000
-                  });
-                  // Close the modal after a short delay to ensure state updates
-                  setTimeout(() => {
-                    onClose();
-                  }, 500);
+                  
+                  // Refresh community answers without closing the modal
+                  calculateCommunityAnswers();
+                  
+                  // Switch to the community answers tab to show the impact of the user's answer
+                  setActiveTab('community-answers');
                 } catch (err) {
-                  const errorMessage = err instanceof Error ? err.message : 'Failed to submit answer';
-                  setSubmitError(errorMessage);
-                  toast.error(errorMessage);
+                  console.error('Error in answer submission:', err);
+                  setSubmitError('An unexpected error occurred. Please try again.');
                 } finally {
                   setSubmitting(false);
                 }
