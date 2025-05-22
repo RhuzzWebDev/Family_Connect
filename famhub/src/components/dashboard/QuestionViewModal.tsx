@@ -138,9 +138,20 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   const [loadingExistingAnswer, setLoadingExistingAnswer] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Add this useEffect to log when relevant state changes
+  useEffect(() => {
+    console.log('State updated:', { 
+      userExistingAnswer: !!userExistingAnswer, 
+      answer, 
+      questionType: question.type,
+      options: questionTypeData.map(opt => opt.option_text)
+    });
+  }, [userExistingAnswer, answer, question.type, questionTypeData]);
+
   // Fetch the user's existing answer for this question
   const fetchUserAnswer = async () => {
-    const userEmail = sessionStorage.getItem('userEmail');
+    // Use NextAuth session instead of sessionStorage
+    const userEmail = session?.user?.email;
     if (!userEmail || !question.id) return;
     
     setLoadingExistingAnswer(true);
@@ -201,16 +212,24 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               // If it's already an array, take the first item
               formattedAnswer = formattedAnswer[0];
             } else if (typeof formattedAnswer === 'object') {
-              // If it's an object, convert to string
-              formattedAnswer = JSON.stringify(formattedAnswer);
-              // Try to parse it as an array and get the first item
+              // If it's an object, try to get the first value
               try {
-                const parsed = JSON.parse(formattedAnswer);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  formattedAnswer = parsed[0];
+                // Try to parse it if it's a stringified JSON
+                if (typeof formattedAnswer === 'string') {
+                  const parsed = JSON.parse(formattedAnswer);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    formattedAnswer = parsed[0];
+                  } else if (parsed && typeof parsed === 'object') {
+                    formattedAnswer = Object.values(parsed)[0];
+                  }
+                } else {
+                  // It's already an object
+                  formattedAnswer = Object.values(formattedAnswer)[0];
                 }
               } catch (e) {
                 console.warn('Could not parse multiple choice answer:', e);
+                // If parsing fails, convert to string as fallback
+                formattedAnswer = JSON.stringify(formattedAnswer);
               }
             }
           } else if (question.type === 'likert-scale') {
@@ -219,21 +238,40 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               formattedAnswer = String(formattedAnswer);
             } else if (typeof formattedAnswer === 'object') {
               // If it's an object or array, try to extract a usable value
-              formattedAnswer = JSON.stringify(formattedAnswer);
               try {
-                const parsed = JSON.parse(formattedAnswer);
-                if (parsed && (typeof parsed === 'number' || typeof parsed === 'string')) {
-                  formattedAnswer = String(parsed);
+                if (typeof formattedAnswer === 'string') {
+                  const parsed = JSON.parse(formattedAnswer);
+                  if (parsed && (typeof parsed === 'number' || typeof parsed === 'string')) {
+                    formattedAnswer = String(parsed);
+                  }
+                } else {
+                  // It's already an object
+                  const values = Object.values(formattedAnswer);
+                  if (values.length > 0) {
+                    formattedAnswer = String(values[0]);
+                  }
                 }
               } catch (e) {
                 console.warn('Could not parse likert scale answer:', e);
+                formattedAnswer = JSON.stringify(formattedAnswer);
               }
             }
           } else if (typeof formattedAnswer === 'object') {
-            formattedAnswer = JSON.stringify(formattedAnswer);
+            try {
+              // Try to extract a usable value from the object
+              const values = Object.values(formattedAnswer);
+              if (values.length > 0) {
+                formattedAnswer = values[0];
+              } else {
+                formattedAnswer = JSON.stringify(formattedAnswer);
+              }
+            } catch (e) {
+              console.warn('Could not extract value from object:', e);
+              formattedAnswer = JSON.stringify(formattedAnswer);
+            }
           }
           
-          console.log('Setting answer from existing data:', formattedAnswer, 'for question type:', question.type);
+          console.log('Setting answer from existing data:', formattedAnswer, 'Type:', typeof formattedAnswer, 'for question type:', question.type);
           setAnswer(formattedAnswer);
         }
       }
@@ -259,7 +297,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
     setCommentsLoading(true);
     try {
       // Set the app user context for RLS policies
-      const userEmail = sessionStorage.getItem('userEmail');
+      const userEmail = session?.user?.email;
       if (!userEmail) {
         setCommentsLoading(false);
         return;
@@ -625,7 +663,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   
   // Handle liking a comment
   const handleLikeComment = async (commentId: string, isLiked: boolean) => {
-    const userEmail = sessionStorage.getItem('userEmail');
+    const userEmail = session?.user?.email;
     if (!userEmail) {
       toast.error('You must be logged in to like a comment');
       return;
@@ -730,7 +768,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   
   // Handle posting a comment
   const handlePostComment = async () => {
-    const userEmail = sessionStorage.getItem('userEmail');
+    const userEmail = session?.user?.email;
     if (!userEmail) {
       toast.error('You must be logged in to post a comment');
       return;
@@ -926,11 +964,14 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
             {question.type === 'multiple-choice' && questionTypeData.length > 0 && (
               <div className="space-y-2">
                 {questionTypeData.map((option, index) => {
+                  // Log for debugging
+                  console.log('Comparing option:', option.option_text, 'with answer:', answer);
+                  
                   // Check if this option is selected in the current form
                   const isSelected = option.option_text === answer;
                   
                   // Check if this was the user's last saved answer
-                  const isLastAnswer = userExistingAnswer && option.option_text === answer;
+                  const isLastAnswer = userExistingAnswer && isSelected;
                   
                   return (
                     <div 
@@ -1510,15 +1551,22 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                     question_type: question.type || 'text'
                   });
 
+                  // Find the answer submission handler in your code (around line 1492)
                   if (answerError) {
                     console.error('Answer submission error:', answerError);
                     throw answerError;
                   }
 
-                  toast.success(userExistingAnswer ? 'Answer updated successfully!' : 'Answer submitted successfully!');
                   // Update the existing answer data
                   setUserExistingAnswer(data);
-                  onClose();
+                  // Show success message with duration
+                  toast.success(userExistingAnswer ? 'Answer updated successfully!' : 'Answer submitted successfully!', {
+                    duration: 2000
+                  });
+                  // Close the modal after a short delay to ensure state updates
+                  setTimeout(() => {
+                    onClose();
+                  }, 500);
                 } catch (err) {
                   const errorMessage = err instanceof Error ? err.message : 'Failed to submit answer';
                   setSubmitError(errorMessage);

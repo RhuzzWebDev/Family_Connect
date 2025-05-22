@@ -128,22 +128,48 @@ export default function QuestionDetailDialog({
   };
   
   // Handle changes to editable fields
-  const handleEditableChange = (field: string, value: any, parentField?: string) => {
+  const handleEditableChange = (field: string, value: any, parentField?: string, index?: number) => {
     if (parentField) {
-      // For nested fields like scale.min_value
-      setEditedData({
-        ...editedData,
-        [parentField]: {
-          ...(editedData[parentField] as Record<string, any> || {}),
-          [field]: value
-        }
-      });
+      const parentData = completeQuestionData?.[parentField as keyof typeof completeQuestionData];
+      
+      if (index !== undefined && Array.isArray(parentData)) {
+        // Handle array fields like options, demographicOptions, etc.
+        const currentArray = Array.isArray(parentData) ? [...parentData] : [];
+        const currentItem = currentArray[index] || {};
+        const updatedItem = {
+          ...currentItem,
+          ...(typeof value === 'object' && value !== null ? value : { [field]: value })
+        };
+        
+        currentArray[index] = updatedItem;
+        
+        setEditedData(prev => ({
+          ...prev,
+          [parentField]: currentArray
+        }));
+      } else {
+        // Handle nested objects
+        setEditedData(prev => {
+          const currentParent = prev[parentField as keyof typeof prev];
+          const currentValue = typeof currentParent === 'object' && currentParent !== null 
+            ? { ...currentParent } 
+            : {};
+            
+          return {
+            ...prev,
+            [parentField]: {
+              ...currentValue,
+              ...(typeof value === 'object' && value !== null ? value : { [field]: value })
+            }
+          };
+        });
+      }
     } else {
-      // For top-level fields
-      setEditedData({
-        ...editedData,
+      // Handle top-level fields
+      setEditedData(prev => ({
+        ...prev,
         [field]: value
-      });
+      }));
     }
   };
   
@@ -155,65 +181,47 @@ export default function QuestionDetailDialog({
       setIsSaving(true);
       const adminEmail = sessionStorage.getItem('adminEmail') || 'sysadmin@familyconnect.com';
       
-      // Create a new object for the updated data to avoid TypeScript issues
-      const updatedData: import("../../services/AdminQuestionServices").QuestionData = {
-        ...completeQuestionData
+      // Create a deep copy of the complete question data with proper typing
+      const updatedData: import("../../services/AdminQuestionServices").QuestionData = 
+        JSON.parse(JSON.stringify(completeQuestionData));
+      
+      // Helper function to safely merge objects
+      const safeMerge = (target: any, source: any): any => {
+        if (!source || typeof source !== 'object') return target;
+        
+        const result = { ...target };
+        
+        for (const [key, value] of Object.entries(source)) {
+          if (Array.isArray(value)) {
+            // Handle arrays by creating a new array with merged items
+            result[key] = [...(Array.isArray(target[key]) ? target[key] : [])];
+            value.forEach((item, index) => {
+              if (item && typeof item === 'object' && !Array.isArray(item)) {
+                result[key][index] = {
+                  ...(result[key][index] || {}),
+                  ...item
+                };
+              } else if (item !== undefined) {
+                result[key][index] = item;
+              }
+            });
+          } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+            // Handle nested objects recursively
+            result[key] = safeMerge(target[key] || {}, value);
+          } else if (value !== undefined) {
+            // Handle primitive values
+            result[key] = value;
+          }
+        }
+        
+        return result;
       };
       
-      // Apply edits to the question data using a type-safe approach
-      if (editedData.question) {
-        updatedData.question = editedData.question;
-      }
-      
-      // Handle scale edits
-      if (editedData.scale && updatedData.scale) {
-        updatedData.scale = {
-          ...updatedData.scale,
-          ...editedData.scale
-        };
-      }
-      
-      // Handle options edits
-      if (editedData.options && updatedData.options) {
-        updatedData.options = editedData.options;
-      }
-      
-      // Handle imageOptions edits
-      if (editedData.imageOptions && updatedData.imageOptions) {
-        updatedData.imageOptions = editedData.imageOptions;
-      }
-      
-      // Handle demographic edits
-      if (editedData.demographic && updatedData.demographic) {
-        updatedData.demographic = {
-          ...updatedData.demographic,
-          ...editedData.demographic
-        };
-      }
-      
-      // Handle demographicOptions edits
-      if (editedData.demographicOptions && updatedData.demographicOptions) {
-        updatedData.demographicOptions = editedData.demographicOptions;
-      }
-      
-      // Handle openEndedSettings edits
-      if (editedData.openEndedSettings && updatedData.openEndedSettings) {
-        updatedData.openEndedSettings = {
-          ...updatedData.openEndedSettings,
-          ...editedData.openEndedSettings
-        };
-      }
-      
-      // Handle matrix edits
-      if (editedData.matrix && updatedData.matrix) {
-        updatedData.matrix = {
-          rows: editedData.matrix.rows || updatedData.matrix.rows,
-          columns: editedData.matrix.columns || updatedData.matrix.columns
-        };
-      }
+      // Apply all edits from editedData
+      const finalData = safeMerge(updatedData, editedData);
       
       // Update the question
-      await adminQuestionServices.updateQuestion(updatedData.id, updatedData, adminEmail);
+      await adminQuestionServices.updateQuestion(finalData.id, finalData, adminEmail);
       
       // Refresh the data
       const refreshedData = await adminQuestionServices.getQuestionWithTypeData(question.id, adminEmail);
@@ -221,10 +229,10 @@ export default function QuestionDetailDialog({
       
       // Update form data if question text was changed
       if (editedData.question) {
-        setFormData({
-          ...formData,
-          question: editedData.question
-        });
+        setFormData(prev => ({
+          ...prev,
+          question: editedData.question as string
+        }));
       }
       
       // Reset editing state
@@ -386,12 +394,12 @@ export default function QuestionDetailDialog({
                         <Input
                           value={editedData.options?.[idx]?.option_text ?? option.option_text}
                           onChange={(e) => {
-                            const updatedOptions = [...(editedData.options || [])];
-                            updatedOptions[idx] = {
-                              ...option,
-                              option_text: e.target.value
-                            };
-                            handleEditableChange('options', updatedOptions);
+                            handleEditableChange(
+                              'option_text',
+                              e.target.value,
+                              'options',
+                              idx
+                            );
                           }}
                           className="h-7 text-sm"
                         />
@@ -568,19 +576,80 @@ export default function QuestionDetailDialog({
             <div className="my-4">
               <div className="text-xs text-blue-300 mb-1">Demographic Settings:</div>
               <div className="bg-gray-900/30 p-3 rounded-md border border-gray-800">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-sm">
-                    <span className="text-gray-400">Field Type:</span>
-                    <span className="ml-2 text-white">{completeQuestionData.demographic.field_type}</span>
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Field Type:</div>
+                    {isEditing ? (
+                      <Select 
+                        value={editedData.demographic?.field_type ?? completeQuestionData.demographic.field_type}
+                        onValueChange={(value) => {
+                          handleEditableChange('field_type', value, 'demographic');
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Select field type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="location">Location</SelectItem>
+                          <SelectItem value="ethnicity">Ethnicity</SelectItem>
+                          <SelectItem value="age">Age</SelectItem>
+                          <SelectItem value="gender">Gender</SelectItem>
+                          <SelectItem value="education">Education</SelectItem>
+                          <SelectItem value="income">Income</SelectItem>
+                          <SelectItem value="marital_status">Marital Status</SelectItem>
+                          <SelectItem value="occupation">Occupation</SelectItem>
+                          <SelectItem value="custom">Custom</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="text-sm text-white">
+                        {completeQuestionData.demographic.field_type}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-sm">
-                    <span className="text-gray-400">Required:</span>
-                    <span className="ml-2 text-white">{completeQuestionData.demographic.is_required ? 'Yes' : 'No'}</span>
+                  <div>
+                    <div className="text-xs text-gray-400 mb-1">Required:</div>
+                    {isEditing ? (
+                      <div className="flex items-center space-x-2">
+                        <input 
+                          type="checkbox" 
+                          id="is_required"
+                          checked={editedData.demographic?.is_required ?? completeQuestionData.demographic.is_required}
+                          onChange={(e) => {
+                            handleEditableChange('is_required', e.target.checked, 'demographic');
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="is_required" className="text-sm text-white">Required</label>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-white">
+                        {completeQuestionData.demographic.is_required ? 'Yes' : 'No'}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-sm">
-                    <span className="text-gray-400">Has Other Option:</span>
-                    <span className="ml-2 text-white">{completeQuestionData.demographic.has_other_option ? 'Yes' : 'No'}</span>
-                  </div>
+                </div>
+                
+                <div className="mb-3">
+                  <div className="text-xs text-gray-400 mb-1">Other Option:</div>
+                  {isEditing ? (
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="checkbox" 
+                        id="has_other_option"
+                        checked={editedData.demographic?.has_other_option ?? completeQuestionData.demographic.has_other_option}
+                        onChange={(e) => {
+                          handleEditableChange('has_other_option', e.target.checked, 'demographic');
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <label htmlFor="has_other_option" className="text-sm text-white">Include "Other" option</label>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-white">
+                      {completeQuestionData.demographic.has_other_option ? 'Yes' : 'No'}
+                    </div>
+                  )}
                 </div>
                 
                 {/* Demographic options */}
@@ -591,12 +660,76 @@ export default function QuestionDetailDialog({
                       {completeQuestionData.demographicOptions.map((option: any, idx: number) => (
                         <li key={option.id || idx} className="flex items-center gap-2 p-2 bg-gray-800/30 rounded border border-gray-700">
                           <span className="text-gray-400 font-mono text-sm">{option.option_order}</span>
-                          <span className="text-white">{option.option_text}</span>
+                          {isEditing ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <Input
+                                value={editedData.demographicOptions?.[idx]?.option_text ?? option.option_text}
+                                onChange={(e) => {
+                                  handleEditableChange(
+                                    'option_text',
+                                    e.target.value,
+                                    'demographicOptions',
+                                    idx
+                                  );
+                                }}
+                                className="h-7 text-sm flex-1"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                                onClick={() => {
+                                  const currentOptions = [
+                                    ...(editedData.demographicOptions || completeQuestionData.demographicOptions || [])
+                                  ];
+                                  currentOptions.splice(idx, 1);
+                                  
+                                  setEditedData(prev => ({
+                                    ...prev,
+                                    demographicOptions: currentOptions
+                                  }));
+                                }}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-white">{option.option_text}</span>
+                          )}
                         </li>
                       ))}
                       {completeQuestionData.demographic.has_other_option && (
                         <li className="flex items-center gap-2 p-2 bg-gray-800/30 rounded border border-gray-700">
                           <span className="text-white">Other (please specify)</span>
+                        </li>
+                      )}
+                      {isEditing && (
+                        <li className="mt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              // Add a new option
+                              const newOption = {
+                                option_text: 'New Option',
+                                option_order: (completeQuestionData.demographicOptions?.length || 0) + 1,
+                                id: `new-${Date.now()}`
+                              };
+                              
+                              setEditedData(prev => ({
+                                ...prev,
+                                demographicOptions: [
+                                  ...(prev.demographicOptions || completeQuestionData.demographicOptions || []),
+                                  newOption
+                                ]
+                              }));
+                            }}
+                            className="text-xs h-7"
+                          >
+                            + Add Option
+                          </Button>
                         </li>
                       )}
                     </ul>
