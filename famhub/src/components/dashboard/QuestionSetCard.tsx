@@ -97,6 +97,9 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
       if (questionsError) throw questionsError;
 
       if (questionsData) {
+        // Get the current user's ID from session storage
+        const currentUserId = sessionStorage.getItem('userId');
+        
         // Fetch answers for all questions
         const { data: answersData, error: answersError } = await userAnswerQuestions.getQuestionSetAnswers(
           questionsData.map(q => q.id)
@@ -104,11 +107,18 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
 
         if (answersError) throw answersError;
 
-        // Merge questions with their answers
-        const questionsWithAnswers = questionsData.map(question => ({
-          ...question,
-          answer: answersData?.find(a => a.question_id === question.id)
-        }));
+        // Merge questions with their answers, but only mark as answered if the current user has answered
+        const questionsWithAnswers = questionsData.map(question => {
+          const allAnswers = answersData?.filter(a => a.question_id === question.id) || [];
+          // Only consider an answer as belonging to the question if it's from the current user
+          const currentUserAnswer = allAnswers.find(a => a.user_id === currentUserId);
+          
+          return {
+            ...question,
+            answer: currentUserAnswer,
+            allAnswers: allAnswers
+          };
+        });
 
         setQuestions(questionsWithAnswers);
       }
@@ -120,6 +130,22 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
   };
 
   useEffect(() => {
+    // Check if userId exists in sessionStorage, if not, try to get it
+    if (!sessionStorage.getItem('userId')) {
+      // Try to get the user ID from the session
+      const getUserId = async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user?.id) {
+            sessionStorage.setItem('userId', session.user.id);
+          }
+        } catch (error) {
+          console.error('Error getting user session:', error);
+        }
+      };
+      getUserId();
+    }
+    
     fetchQuestions();
     
     // Refresh questions when dialog opens
@@ -133,6 +159,7 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
       <Card 
         className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
         onClick={() => setIsDialogOpen(true)}
+        style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
       >
         {/* Cover image if available */}
         {questionSet.cover_image && (
@@ -149,12 +176,12 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
         
         {/* Content */}
         <CardContent className="p-4">
-          <h3 className="text-lg font-medium mb-2">{questionSet.title}</h3>
+          <h3 className="text-lg font-medium mb-2 text-white">{questionSet.title}</h3>
           {questionSet.description && (
             <p className="text-sm text-gray-500 mb-3 line-clamp-2">{questionSet.description}</p>
           )}
           {questionSet.author_name && (
-            <p className="text-xs text-gray-400">By {questionSet.author_name}</p>
+            <p className="text-xs text-gray-500">By {questionSet.author_name}</p>
           )}
         </CardContent>
         
@@ -162,6 +189,10 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
         <CardFooter className="flex items-center justify-between p-4 pt-0">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">{formatDate(questionSet.created_at)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-gray-500 mr-1" />
+            <span className="text-xs text-gray-500">{questionSet.question_count || 0} Questions</span>
           </div>
         </CardFooter>
       </Card>

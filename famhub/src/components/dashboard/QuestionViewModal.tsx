@@ -136,6 +136,10 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   const [submitError, setSubmitError] = useState('')
   const [userExistingAnswer, setUserExistingAnswer] = useState<any>(null)
   const [loadingExistingAnswer, setLoadingExistingAnswer] = useState(false)
+  const [resettingAnswer, setResettingAnswer] = useState(false)
+  const [activeTab, setActiveTab] = useState('your-answer')
+  const [communityAnswers, setCommunityAnswers] = useState<Record<string, number>>({})
+  const [userAnswers, setUserAnswers] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Add this useEffect to log when relevant state changes
@@ -147,6 +151,62 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
       options: questionTypeData.map(opt => opt.option_text)
     });
   }, [userExistingAnswer, answer, question.type, questionTypeData]);
+
+  // Handle resetting the user's answer
+  const handleResetAnswer = async () => {
+    if (!userExistingAnswer || !userExistingAnswer.id) {
+      toast.error("No answer to reset");
+      return;
+    }
+
+    setResettingAnswer(true);
+    try {
+      // Get user email from NextAuth session
+      const userEmail = session?.user?.email;
+      if (!userEmail) throw new Error('Not logged in');
+
+      // Get user ID from email
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError || !userData) throw new Error('User not found');
+
+      // Delete all answers for this question from this user to ensure complete removal
+      const { error } = await supabase
+        .from('answers')
+        .delete()
+        .eq('question_id', question.id)
+        .eq('user_id', userData.id);
+      
+      if (error) {
+        toast.error(`Failed to reset answer: ${error.message}`);
+      } else {
+        toast.success("Your answer has been reset");
+        // Reset all local state
+        setUserExistingAnswer(null);
+        setAnswer('');
+        // Refresh community answers
+        calculateCommunityAnswers();
+        // Notify parent component that answer was reset
+        if (onClose) {
+          // This will ensure the parent component refreshes its state
+          onClose();
+          // Re-open the modal after a brief delay to show it's been reset
+          setTimeout(() => {
+            // The parent component will handle reopening the modal
+          }, 100);
+        }
+      }
+    } catch (err) {
+      console.error('Error resetting answer:', err);
+      toast.error("An unexpected error occurred");
+    } finally {
+      setResettingAnswer(false);
+    }
+  };
 
   // Fetch the user's existing answer for this question
   const fetchUserAnswer = async () => {
@@ -284,12 +344,133 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   
   useEffect(() => {
     if (isOpen) {
+      // Reset states when reopening
+      setAnswer('');
+      setUserExistingAnswer(null);
+      setSubmitError('');
+      
+      // Fetch fresh data
       fetchQuestionTypeData();
       fetchComments();
       fetchUserAnswer();
-      setSubmitError('');
+      calculateCommunityAnswers();
     }
   }, [isOpen, question.id]);
+  
+  // Define user data interface
+  interface UserData {
+    id: string | number;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    role?: string;
+  }
+  
+  // Interface for user answer data
+  interface UserAnswer {
+    user: UserData;
+    answer_data: any;
+    created_at: string;
+  }
+
+  // Calculate community answer statistics and get user answers
+  const calculateCommunityAnswers = async () => {
+    if (!question.id) return;
+    
+    try {
+      // Get answers with user data
+      const { data, error } = await supabase
+        .from('answers')
+        .select(`
+          answer_data,
+          created_at,
+          user_id,
+          users:user_id (id, first_name, last_name, email, role)
+        `)
+        .eq('question_id', question.id)
+        .order('created_at', { ascending: false });
+        
+      if (error) {
+        console.error('Error fetching community answers:', error);
+        return;
+      }
+      
+      const answerStats: Record<string, number> = {};
+      const userAnswers: UserAnswer[] = [];
+      
+      if (data && data.length > 0) {
+        data.forEach((answer) => {
+          // Format user answer for display
+          if (answer.users) {
+            // Handle users data which might be an array or object
+            let userData: UserData;
+            
+            // Use type assertion to handle potential array or object
+            if (Array.isArray(answer.users)) {
+              // If it's an array, take the first item
+              if (answer.users.length > 0) {
+                const user = answer.users[0] as any;
+                userData = {
+                  id: user?.id || answer.user_id || 0,
+                  first_name: user?.first_name || '',
+                  last_name: user?.last_name || '',
+                  email: user?.email || '',
+                  role: user?.role || ''
+                };
+              } else {
+                userData = {
+                  id: answer.user_id || 0,
+                  first_name: '',
+                  last_name: '',
+                  email: '',
+                  role: ''
+                };
+              }
+            } else {
+              // If it's an object, use it directly
+              const user = answer.users as any;
+              userData = {
+                id: user?.id || answer.user_id || 0,
+                first_name: user?.first_name || '',
+                last_name: user?.last_name || '',
+                email: user?.email || '',
+                role: user?.role || ''
+              };
+            }
+            
+            userAnswers.push({
+              user: userData,
+              answer_data: answer.answer_data,
+              created_at: answer.created_at
+            });
+          }
+          
+          // Calculate statistics
+          if (typeof answer.answer_data === 'string') {
+            answerStats[answer.answer_data] = (answerStats[answer.answer_data] || 0) + 1;
+          } else if (Array.isArray(answer.answer_data)) {
+            answer.answer_data.forEach((val) => {
+              answerStats[val] = (answerStats[val] || 0) + 1;
+            });
+          } else if (answer.answer_data && typeof answer.answer_data === 'object') {
+            // Handle object format
+            const values = Object.values(answer.answer_data);
+            values.forEach((val) => {
+              if (typeof val === 'string' || typeof val === 'number') {
+                const strVal = String(val);
+                answerStats[strVal] = (answerStats[strVal] || 0) + 1;
+              }
+            });
+          }
+        });
+      }
+      
+      setCommunityAnswers(answerStats);
+      setUserAnswers(userAnswers);
+    } catch (err) {
+      console.error('Error in calculateCommunityAnswers:', err);
+    }
+  };
   
   const fetchComments = async () => {
     if (!question.id) return;
@@ -879,6 +1060,30 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
 
   if (!isOpen) return null;
   
+  // Helper functions for community answers
+  const getTotalResponses = () => {
+    return Object.values(communityAnswers).reduce((sum, count) => sum + count, 0);
+  };
+
+  const getPercentage = (count: number) => {
+    const total = getTotalResponses();
+    if (total === 0) return 0;
+    return Math.round((count / total) * 100);
+  };
+  
+  // Get unique family member count (latest response per user)
+  const getUniqueFamilyResponses = () => {
+    // Create a map to only keep the latest answer per user
+    const latestAnswerByUser = new Map();
+    userAnswers.forEach(answer => {
+      if (!latestAnswerByUser.has(answer.user.id) || 
+          new Date(answer.created_at) > new Date(latestAnswerByUser.get(answer.user.id).created_at)) {
+        latestAnswerByUser.set(answer.user.id, answer);
+      }
+    });
+    return latestAnswerByUser.size;
+  };
+  
   return (
     <Dialog open={isOpen} onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-auto bg-[#121212] border-gray-800 text-white [&>button]:hidden">
@@ -930,23 +1135,46 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
             </div>
           )}
           
-          {/* Answer Form - Moved up to appear right after question content */}
-          <div className={`space-y-4 mt-6 mb-6 border ${userExistingAnswer ? 'border-green-600' : 'border-gray-800'} rounded-lg p-4 bg-[#111318] relative`}>
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-medium">Your Answer</h3>
-              {userExistingAnswer && (
-                <div className="flex items-center gap-2 bg-green-900/30 text-green-400 text-xs px-2 py-1 rounded-full">
-                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  <span>You've answered this question</span>
+          {/* Tabs for Your Answer and Community Answers */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mt-6">
+            <TabsList className="grid w-full grid-cols-2 bg-[#2a2d35]">
+              <TabsTrigger value="your-answer">Your Answer</TabsTrigger>
+              <TabsTrigger value="community-answers">Family Answers</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="your-answer" className="mt-4">
+              <div className={`space-y-4 border ${userExistingAnswer ? 'border-green-600' : 'border-gray-800'} rounded-lg p-4 bg-[#111318] relative`}>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-medium">Your Answer</h3>
+                  <div className="flex items-center gap-2">
+                    {userExistingAnswer && (
+                      <div className="flex items-center gap-2 bg-green-900/30 text-green-400 text-xs px-2 py-1 rounded-full">
+                        <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                        <span>You've answered this question</span>
+                      </div>
+                    )}
+                    {loadingExistingAnswer && (
+                      <div className="flex items-center gap-2 text-blue-400 text-xs">
+                        <div className="w-3 h-3 border-2 border-t-transparent border-blue-400 rounded-full animate-spin"></div>
+                        <span>Loading your answer...</span>
+                      </div>
+                    )}
+                    {userExistingAnswer && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-2 h-8 text-red-400 border-red-800 hover:bg-red-900/20 hover:text-red-300"
+                        onClick={handleResetAnswer}
+                        disabled={resettingAnswer}
+                      >
+                        {resettingAnswer ? (
+                          <div className="w-4 h-4 border-2 border-t-transparent border-red-400 rounded-full animate-spin mr-1"></div>
+                        ) : null}
+                        Reset
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              )}
-              {loadingExistingAnswer && (
-                <div className="flex items-center gap-2 text-blue-400 text-xs">
-                  <div className="w-3 h-3 border-2 border-t-transparent border-blue-400 rounded-full animate-spin"></div>
-                  <span>Loading your answer...</span>
-                </div>
-              )}
-            </div>
             
             <div className="text-sm text-gray-400 mb-4">
               {question.type === 'multiple-choice' && 'Choose one of the following options:'}
@@ -1579,8 +1807,155 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               {submitting ? 'Submitting...' : userExistingAnswer ? 'Update Answer' : 'Submit Answer'}
             </Button>
           </div>
-          
-          {/* Author and date section removed as requested */}
+            </TabsContent>
+            
+            <TabsContent value="community-answers" className="mt-4">
+              <div className="rounded-md border border-gray-700 p-4 bg-[#111318]">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-medium">Family Responses</h4>
+                  <Badge variant="outline" className="bg-blue-900/20 text-blue-400 border-blue-800">
+                    {getUniqueFamilyResponses()} Family Members
+                  </Badge>
+                </div>
+                
+                {/* Response Distribution with Family Member Answers */}
+                {question.type === 'multiple-choice' && questionTypeData.length > 0 && (
+                  <div className="space-y-6">
+                    {questionTypeData.map((option, index) => {
+                      const count = communityAnswers[option.option_text || ''] || 0;
+                      const percentage = getPercentage(count);
+                      
+                      // Find family members who selected this option
+                      const familyMembersWithThisAnswer = userAnswers.filter(answer => {
+                        if (typeof answer.answer_data === 'string') {
+                          return answer.answer_data === option.option_text;
+                        } else if (Array.isArray(answer.answer_data)) {
+                          return answer.answer_data.includes(option.option_text);
+                        } else if (answer.answer_data && typeof answer.answer_data === 'object') {
+                          return Object.values(answer.answer_data).includes(option.option_text);
+                        }
+                        return false;
+                      });
+                      
+                      // Create a map to only keep the latest answer per user
+                      const latestAnswerByUser = new Map();
+                      familyMembersWithThisAnswer.forEach(answer => {
+                        if (!latestAnswerByUser.has(answer.user.id) || 
+                            new Date(answer.created_at) > new Date(latestAnswerByUser.get(answer.user.id).created_at)) {
+                          latestAnswerByUser.set(answer.user.id, answer);
+                        }
+                      });
+                      
+                      return (
+                        <div key={index} className="space-y-2 pb-4 border-b border-gray-800">
+                          <div className="flex justify-between text-sm">
+                            <span className="font-medium">{option.option_text}</span>
+                            <span>
+                              {count} ({percentage}%)
+                            </span>
+                          </div>
+                          <div className="h-2 bg-gray-700 rounded-full overflow-hidden mb-3">
+                            <div
+                              className="h-full bg-blue-600 rounded-full"
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
+                          
+                          {/* Family members who selected this option */}
+                          {latestAnswerByUser.size > 0 && (
+                            <div className="pl-2 border-l-2 border-gray-700">
+                              <p className="text-xs text-gray-400 mb-2">Family members who selected this option:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {Array.from(latestAnswerByUser.values()).map((answer, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center gap-1.5 bg-[#2a2d35] px-2 py-1 rounded-md"
+                                  >
+                                    <Avatar className="h-5 w-5">
+                                      <AvatarFallback className="bg-blue-900 text-blue-100 text-[10px]">
+                                        {answer.user.first_name?.[0] || answer.user.email?.[0] || '?'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-xs">
+                                      {answer.user.first_name} {answer.user.last_name}
+                                      <span className="text-xs text-gray-400 ml-1">
+                                        ({answer.user.role || 'Member'})
+                                      </span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                
+                {/* For non-multiple choice questions */}
+                {question.type !== 'multiple-choice' && (
+                  <div>
+                  
+                    
+                    {userAnswers.length > 0 ? (
+                      <div className="space-y-3">
+                        {/* Group answers by user and only show the latest */}
+                        {(() => {
+                          const latestAnswerByUser = new Map();
+                          userAnswers.forEach(answer => {
+                            if (!latestAnswerByUser.has(answer.user.id) || 
+                                new Date(answer.created_at) > new Date(latestAnswerByUser.get(answer.user.id).created_at)) {
+                              latestAnswerByUser.set(answer.user.id, answer);
+                            }
+                          });
+                          
+                          return Array.from(latestAnswerByUser.values()).map((answer, index) => {
+                            // Format the answer for display
+                            let displayAnswer = '';
+                            if (typeof answer.answer_data === 'string') {
+                              displayAnswer = answer.answer_data;
+                            } else if (Array.isArray(answer.answer_data)) {
+                              displayAnswer = answer.answer_data.join(', ');
+                            } else if (answer.answer_data && typeof answer.answer_data === 'object') {
+                              displayAnswer = JSON.stringify(answer.answer_data);
+                            }
+                            
+                            return (
+                              <div key={index} className="p-3 bg-[#1e2330] rounded-md border border-gray-700">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Avatar className="h-6 w-6">
+                                    <AvatarFallback className="bg-blue-900 text-blue-100">
+                                      {answer.user.first_name?.[0] || answer.user.email?.[0] || '?'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">
+                                      {answer.user.first_name} {answer.user.last_name}
+                                      <span className="text-xs text-gray-400 ml-1">
+                                        ({answer.user.role || 'Member'})
+                                      </span>
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="pl-8">
+                                  <p className="text-sm text-gray-300">{displayAnswer}</p>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()} 
+                      </div>
+                    ) : (
+                      <div className="text-center text-gray-400 py-4 border border-dashed border-gray-700 rounded-md">
+                        No family responses yet. Be the first to answer!
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
           
           {/* Comments section with improved UI */}
           <div className="mt-8 bg-[#111318] rounded-lg p-4 border border-gray-700">
@@ -1593,7 +1968,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder={replyingTo ? `Reply to ${replyingTo.user?.first_name}...` : "Add a comment..."}
-                className="flex-1"
+                className="flex-1 bg-[#1e2330] border-gray-700 text-white placeholder:text-gray-500"
                 disabled={postingComment}
               />
               
