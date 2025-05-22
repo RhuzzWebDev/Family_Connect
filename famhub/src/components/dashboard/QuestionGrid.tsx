@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import FilterDropdown, { ViewType } from './FilterDropdown';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -13,9 +14,23 @@ import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, Aler
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
 import { cn } from '@/lib/utils';
+import { QuestionSetCard } from './QuestionSetCard';
 
 interface QuestionLike {
   user_id: string;
+}
+
+interface QuestionSet {
+  id: string;
+  title: string;
+  description: string | null;
+  author_name: string | null;
+  resource_url: string | null;
+  donate_url: string | null;
+  cover_image: string | null;
+  created_at: string;
+  updated_at: string;
+  question_count?: number; // Count of questions in this set
 }
 
 interface Question {
@@ -26,6 +41,8 @@ interface Question {
   media_type: string | null;
   like_count: number;
   comment_count: number;
+  question_set_id: string | null;
+  question_set: QuestionSet | null;
   user: {
     first_name: string;
     last_name: string;
@@ -60,10 +77,15 @@ interface Comment {
 interface QuestionGridProps {
   limitCards?: number;
   showHeader?: boolean;
+  initialQuestions?: Question[];
+  initialQuestionSets?: QuestionSet[];
 }
 
-export default function QuestionGrid({ limitCards, showHeader = true }: QuestionGridProps) {
+export default function QuestionGrid({ limitCards, showHeader = true, initialQuestions, initialQuestionSets }: QuestionGridProps) {
+  // Use NextAuth session instead of sessionStorage
+  const { data: session } = useSession();
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [isLiking, setIsLiking] = useState(false);
@@ -72,14 +94,73 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [viewType, setViewType] = useState<ViewType>('card');
 
+  // Fetch question sets with question counts in a single query
+  const fetchQuestionSets = async () => {
+    try {
+      console.log('Fetching question sets with counts...');
+      
+      // Get all question sets with their questions
+      const { data, error } = await supabase
+        .from('question_sets')
+        .select(`
+          *,
+          questions!question_set_id(id)
+        `);
+      
+      if (error) {
+        console.error('Error fetching question sets with counts:', error);
+        return;
+      }
+      
+      if (!data || data.length === 0) {
+        console.log('No question sets found');
+        setQuestionSets([]);
+        return;
+      }
+      
+      // Process the data to include question counts
+      const questionSetsWithCounts = data.map(set => {
+        // The questions field will be an array of question objects
+        const questionCount = Array.isArray(set.questions) ? set.questions.length : 0;
+        
+        // Create a new object without the questions array (we just need the count)
+        const { questions, ...setWithoutQuestions } = set;
+        
+        return {
+          ...setWithoutQuestions,
+          question_count: questionCount
+        };
+      });
+      
+      console.log('Question sets with counts:', questionSetsWithCounts);
+      setQuestionSets(questionSetsWithCounts);
+    } catch (err) {
+      console.error('Error in fetchQuestionSets:', err);
+    }
+  };
+
   const fetchQuestions = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Get current user
-      const userEmail = sessionStorage.getItem('userEmail');
-      if (!userEmail) {
-        throw new Error('User not logged in');
+      // Get current user from NextAuth session
+      const userEmail = session?.user?.email;
+      
+      // If we have initial questions from server-side props, use those instead of fetching
+      if (initialQuestions && initialQuestions.length > 0) {
+        setQuestions(initialQuestions);
+        setLoading(false);
+        return;
+      }
+      
+      // Only check for user email if we need to fetch questions from the client
+      if (!userEmail && !initialQuestions) {
+        console.log('No user email found in session');
+        // Don't throw error if we're still loading the session
+        if (!initialQuestions) {
+          setLoading(false);
+          return;
+        }
       }
 
       // Get user from database
@@ -125,7 +206,8 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
 
       const familyUserIds = familyUsers.map(user => user.id);
 
-      // Fetch questions and user info only (old code)
+      // Fetch questions with user info and question set data
+      console.log('Fetching questions with question_sets data...');
       const { data, error } = await supabase
         .from('questions')
         .select(`
@@ -136,10 +218,13 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
             role,
             persona,
             family_id
-          )
+          ),
+          question_set:question_sets(*)
         `)
         .in('user_id', familyUserIds)
         .order('created_at', { ascending: false });
+      
+      console.log('Query result:', { data, error });
 
       if (error) {
         throw error;
@@ -160,16 +245,21 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       const likedQuestionIds = new Set(userLikes?.map(like => like.question_id) || []);
       
       // Add has_liked property to each question and preserve order
-      const questionsWithLikes = (data || []).map(question => ({
-        ...question,
-        has_liked: likedQuestionIds.has(question.id),
-        // Add a stable sort key based on creation date
-        sortKey: new Date(question.created_at).getTime()
-      }));
+      console.log('Raw data from API:', data);
+      const questionsWithLikes = (data || []).map(question => {
+        console.log('Processing question:', question.id, 'question_set:', question.question_set);
+        return {
+          ...question,
+          has_liked: likedQuestionIds.has(question.id),
+          // Add a stable sort key based on creation date
+          sortKey: new Date(question.created_at).getTime()
+        };
+      });
       
       // Sort by the stable sort key (creation date timestamp)
       const sortedQuestions = [...questionsWithLikes].sort((a, b) => b.sortKey - a.sortKey);
-
+      
+      console.log('Sorted questions with question_sets:', sortedQuestions);
       setQuestions(sortedQuestions);
     } catch (err) {
       console.error('Error fetching questions:', err);
@@ -187,8 +277,8 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
       // Set liking state to show loading indicator
       setIsLiking(true);
       
-      // Get current user
-      const userEmail = sessionStorage.getItem('userEmail');
+      // Get current user from NextAuth session
+      const userEmail = session?.user?.email;
       if (!userEmail) {
         setError('You must be logged in to like questions');
         return;
@@ -364,9 +454,28 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
   };
 
   useEffect(() => {
-    fetchQuestions();
+    // Initialize with server-side data if available
+    if (initialQuestions && initialQuestions.length > 0) {
+      setQuestions(initialQuestions);
+      setLoading(false);
+    }
+    
+    if (initialQuestionSets && initialQuestionSets.length > 0) {
+      setQuestionSets(initialQuestionSets);
+    }
+    
+    // Only fetch from client-side if we have a session and no initial data
+    if (session?.user?.email) {
+      if (!initialQuestions || initialQuestions.length === 0) {
+        fetchQuestions();
+      }
+      
+      if (!initialQuestionSets || initialQuestionSets.length === 0) {
+        fetchQuestionSets();
+      }
+    }
 
-    // Subscribe to new questions and comment count updates
+    // Subscribe to new questions, question sets, and comment count updates
     const channel = supabase
       .channel('questions-channel')
       .on('postgres_changes', 
@@ -390,12 +499,23 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
           fetchQuestions();
         }
       )
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'question_sets'
+        },
+        () => {
+          // Refresh question sets when they change
+          fetchQuestionSets();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [session, initialQuestions, initialQuestionSets]);
 
   if (loading) {
     return (
@@ -460,10 +580,10 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         </div>
       )}
 
-      {questions.length === 0 ? (
+      {questions.length === 0 && questionSets.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 space-y-4 rounded-lg border border-dashed" style={{ background: '#181926', color: '#fff', borderColor: '#232336' }}>
           <MessageSquare className="w-16 h-16 mx-auto text-gray-400 mb-3" />
-          <p className="text-gray-500 text-center">No questions yet!</p>
+          <p className="text-gray-500 text-center">No questions or question sets yet!</p>
           {false && (
             <Dialog>
               <DialogTrigger asChild>
@@ -491,6 +611,22 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         // card of question display
       ) : viewType === "card" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-4 gap-4 md:gap-6 2xl:gap-8">
+          {/* Display Question Sets */}
+          {questionSets.length > 0 && (
+            <div className="col-span-full mb-8">
+              <h2 className="text-xl font-semibold text-gray-300 mb-4">Question Sets</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-4 gap-4 md:gap-6 2xl:gap-8">
+                {questionSets.map((set) => (
+                  <QuestionSetCard key={set.id} questionSet={set} />
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Display Questions */}
+          <div className="col-span-full">
+            <h2 className="text-xl font-semibold text-gray-300 mb-4">Questions</h2>
+          </div>
           {questions.slice(0, limitCards || questions.length).map((question) => (
             <Card 
               key={question.id} 
@@ -508,6 +644,15 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
               {/* Question content in the middle */}
               <CardContent className="p-4">
                 <p className="text-base font-medium">{question.question}</p>
+                
+                {/* Question set badge in card view */}
+                {question.question_set && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-300">
+                      {question.question_set.title}
+                    </span>
+                  </div>
+                )}
               </CardContent>
               
               {/* User info and actions in the footer */}
@@ -553,6 +698,106 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
         </div>
       ) : (
         <div className="space-y-4" style={{ background: '#0F1017', color: '#fff' }}>
+          {/* Display Question Sets in list view */}
+          {questionSets.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-300 mb-4">Question Sets</h2>
+              <div className="space-y-4">
+                {questionSets.map((set) => (
+                  <div 
+                    key={set.id}
+                    className="flex flex-col sm:flex-row gap-4 p-4 rounded-lg border cursor-pointer"
+                    style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
+                    onClick={() => {
+                      // We'll use the QuestionSetCard component's dialog functionality
+                      // by clicking on a hidden instance of it
+                      const hiddenCard = document.getElementById(`hidden-question-set-${set.id}`);
+                      if (hiddenCard) {
+                        hiddenCard.click();
+                      }
+                    }}
+                  >
+                    {/* Left side: Image and basic info */}
+                    <div className="flex items-start gap-3 sm:w-1/4">
+                      {set.cover_image ? (
+                        <div className="h-16 w-16 rounded overflow-hidden relative flex-shrink-0">
+                          <Image
+                            src={set.cover_image}
+                            alt={set.title}
+                            fill
+                            className="object-cover"
+                            unoptimized={true}
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-16 w-16 rounded bg-blue-900 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xl font-bold text-blue-300">{set.title.charAt(0)}</span>
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="font-medium text-blue-400">{set.title}</h3>
+                        {set.author_name && (
+                          <p className="text-xs text-gray-400">By {set.author_name}</p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                          {formatDistanceToNow(new Date(set.created_at), { addSuffix: true })}
+                        </p>
+                        <div className="flex items-center mt-1">
+                          <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-full">
+                            {set.question_count || 0} question{(set.question_count !== 1) ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Right side: Description and actions */}
+                    <div className="flex-1">
+                      {set.description && (
+                        <p className="text-sm text-gray-300 mb-3">{set.description}</p>
+                      )}
+                      
+                      <div className="flex items-center gap-3 mt-2">
+                        {set.resource_url && (
+                          <a 
+                            href={set.resource_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full hover:bg-blue-800"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            View Resource
+                          </a>
+                        )}
+                        
+                        {set.donate_url && (
+                          <a 
+                            href={set.donate_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-xs bg-green-900 text-green-300 px-2 py-1 rounded-full hover:bg-green-800"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Support
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Hidden QuestionSetCard for dialog functionality */}
+                    <div className="hidden">
+                      <QuestionSetCard 
+                        key={`hidden-${set.id}`} 
+                        questionSet={set} 
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Display Questions in list view */}
+          <h2 className="text-xl font-semibold text-gray-300 mb-4">Questions</h2>
           {questions.map((question) => (
             <div 
               key={question.id}
@@ -577,7 +822,21 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
               </div>
               
               <div className="flex-1">
-                <p className="text-base mb-3">{question.question}</p>
+                <p className="text-base mb-2">{question.question}</p>
+                
+                {/* Question set badge in list view */}
+                {question.question_set && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-300">
+                      {question.question_set.title}
+                    </span>
+                    {question.question_set.author_name && (
+                      <span className="text-xs text-gray-400">
+                        by {question.question_set.author_name}
+                      </span>
+                    )}
+                  </div>
+                )}
                 
                 {/* Media preview removed from list view */}
                 {question.media_type && (
@@ -696,7 +955,68 @@ export default function QuestionGrid({ limitCards, showHeader = true }: Question
                   </div>
                 )}
                 
-                <h2 className="text-2xl font-semibold mb-6" style={{ color: '#fff' }}>{selectedQuestion.question}</h2>
+                <h2 className="text-2xl font-semibold mb-4" style={{ color: '#fff' }}>{selectedQuestion.question}</h2>
+                
+                {/* Question set details in detail view */}
+                {selectedQuestion.question_set && (
+                  <div className="mb-6 p-4 rounded-lg" style={{ background: '#20212b' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      {selectedQuestion.question_set.cover_image && (
+                        <div className="w-10 h-10 rounded overflow-hidden">
+                          <Image
+                            src={selectedQuestion.question_set.cover_image}
+                            alt="Set cover"
+                            width={40}
+                            height={40}
+                            className="object-cover"
+                            unoptimized={true}
+                          />
+                        </div>
+                      )}
+                      <h3 className="text-lg font-medium text-blue-400">
+                        {selectedQuestion.question_set.title}
+                      </h3>
+                    </div>
+                    
+                    {selectedQuestion.question_set.description && (
+                      <p className="text-sm text-gray-300 mb-3">
+                        {selectedQuestion.question_set.description}
+                      </p>
+                    )}
+                    
+                    <div className="flex flex-wrap gap-2">
+                      {selectedQuestion.question_set.author_name && (
+                        <span className="text-xs bg-gray-700 px-2 py-1 rounded-full">
+                          By {selectedQuestion.question_set.author_name}
+                        </span>
+                      )}
+                      
+                      {selectedQuestion.question_set.resource_url && (
+                        <a 
+                          href={selectedQuestion.question_set.resource_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full hover:bg-blue-800"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          View Resource
+                        </a>
+                      )}
+                      
+                      {selectedQuestion.question_set.donate_url && (
+                        <a 
+                          href={selectedQuestion.question_set.donate_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs bg-green-900 text-green-300 px-2 py-1 rounded-full hover:bg-green-800"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Support
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 {/* Comments section */}
                 <div className="mt-8">

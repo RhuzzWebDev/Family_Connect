@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { X, Maximize2, Minimize2, FileText, ImageIcon, Mic, Video, File, Eye, ExternalLink, Database } from "lucide-react"
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge"
+import { Question, QuestionSet, QuestionTypeData } from "@/types/question"
+import { adminQuestionServices } from '@/services/AdminQuestionServices'
 
 // Human-friendly labels for question types
 const typeLabels: Record<string, string> = {
@@ -18,11 +20,8 @@ const typeLabels: Record<string, string> = {
   "slider": "Slider",
   "dichotomous": "Dichotomous",
   "ranking": "Ranking",
+  "demographic": "Demographic",
 };
-
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Question, QuestionSet, QuestionTypeData } from "@/types/question"
-import { adminQuestionServices, QuestionTypeEnum } from '@/services/AdminQuestionServices'
 
 interface QuestionViewDialogProps {
   open: boolean;
@@ -37,7 +36,6 @@ export default function QuestionViewDialog({
 }: QuestionViewDialogProps) {
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>("all");
   const [loadingTypeData, setLoadingTypeData] = useState<Record<string, boolean>>({});
   const [typeSpecificData, setTypeSpecificData] = useState<Record<string, any>>({});
 
@@ -63,7 +61,6 @@ export default function QuestionViewDialog({
   };
 
   const getMediaTypeIcon = (mediaType: string | undefined) => {
-    // Use mediaType or media_type property
     switch (mediaType) {
       case "text":
         return <FileText className="h-4 w-4" />;
@@ -81,17 +78,44 @@ export default function QuestionViewDialog({
     }
   };
 
-  // Group questions by type
-  const questionsByType: Record<string, Question[]> = {};
-  (questionSet.questions || []).forEach(question => {
-    if (!questionsByType[question.type]) {
-      questionsByType[question.type] = [];
+  // Render media content based on media type
+  const renderMediaContent = (question: Question) => {
+    if (!question.file_url) return null;
+    
+    switch (question.media_type) {
+      case 'image':
+        return (
+          <img 
+            src={question.file_url} 
+            alt={question.question} 
+            className="max-h-40 rounded-md object-contain mb-2"
+          />
+        );
+      case 'audio':
+        return (
+          <audio controls className="w-full mb-2">
+            <source src={question.file_url} />
+            Your browser does not support the audio element.
+          </audio>
+        );
+      case 'video':
+        return (
+          <video controls className="max-h-40 w-full mb-2">
+            <source src={question.file_url} />
+            Your browser does not support the video element.
+          </video>
+        );
+      default:
+        return (
+          <div className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-2">
+            <File className="h-4 w-4" />
+            <a href={question.file_url} target="_blank" rel="noopener noreferrer">
+              View attached file
+            </a>
+          </div>
+        );
     }
-    questionsByType[question.type].push(question);
-  });
-
-  // Get unique question types
-  const questionTypes = Object.keys(questionsByType);
+  };
 
   // Fetch type-specific data for a question if not already loaded
   const fetchTypeSpecificData = async (questionId: string, questionType: string) => {
@@ -122,11 +146,6 @@ export default function QuestionViewDialog({
   const renderTypeSpecificData = (question: Question) => {
     // Try to get type-specific data from our state
     const questionData = typeSpecificData[question.id];
-    // Debug log for question data
-    if (questionData) {
-      // eslint-disable-next-line no-console
-      console.log('Rendering Question Data:', question.type, questionData);
-    }
     
     // If we don't have the data yet and we're not loading it, start loading
     if (!questionData && !loadingTypeData[question.id]) {
@@ -143,63 +162,27 @@ export default function QuestionViewDialog({
       );
     }
     
-    // If we have the data, use it; otherwise fall back to the question.typeData
-    const typeData = questionData || question;
-    
-    // Display a header with the question type information
-    const renderTypeHeader = () => {
-      return (
-        <div className="mb-4">
-          <Badge variant="outline" className="border-blue-700 text-blue-300 bg-blue-900/50 px-3 py-1">
-            Question Type: {question.type.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-          </Badge>
-        </div>
-      );
-    };
-    
-    // For rating-scale and slider, we need to handle the case where typeData might be empty
-    // but we still want to show a default scale
-    if (question.type === "rating-scale" || question.type === "slider") {
-      // Continue even if typeData is missing or empty
-    } else if (!typeData.typeData && !questionData?.options && !questionData?.scale && 
-               !questionData?.matrix && !questionData?.imageOptions && 
-               !questionData?.openEndedSettings) {
-      return (
-        <div className="mt-3 space-y-3">
-          {renderTypeHeader()}
-          <div className="flex items-center gap-2 text-gray-500 italic">
-            <Database className="h-4 w-4" />
-            <span>No type-specific data available for this {question.type} question</span>
-          </div>
-        </div>
-      );
-    }
-
     switch (question.type) {
       case "multiple-choice":
       case "likert-scale":
       case "dropdown":
-      case "dichotomous":
       case "ranking": {
         // Use options from questionData if available
         const options = questionData?.options || [];
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-blue-300">Options:</h4>
+
               <ul className="space-y-2 bg-gray-900/30 p-3 rounded-md border border-gray-800">
                 {options.length === 0 ? (
                   <li className="text-gray-500 italic">No options available.</li>
                 ) : (
                   options
-                    .sort((a: QuestionTypeData, b: QuestionTypeData) => (a.option_order || 0) - (b.option_order || 0))
-                    .map((option: QuestionTypeData, index: number) => (
-                      <li key={option.id ?? option.option_order ?? index} className="flex items-center gap-3 text-gray-300 mb-2 p-2 bg-gray-800/30 rounded border border-gray-700">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 font-mono text-sm">{option.option_order}</span>
-                          <span className="text-white">{option.option_text || option.item_text}</span>
-                        </div>
+                    .sort((a: any, b: any) => (a.option_order || 0) - (b.option_order || 0))
+                    .map((option: any, index: number) => (
+                      <li key={option.id ?? option.option_order ?? index} className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                        <span className="text-white">{option.option_text || option.item_text}</span>
                       </li>
                     ))
                 )}
@@ -213,26 +196,23 @@ export default function QuestionViewDialog({
         const imageOptions = questionData?.imageOptions || [];
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-blue-300">Image Options:</h4>
+
               <ul className="space-y-2 bg-gray-900/30 p-3 rounded-md border border-gray-800">
                 {imageOptions.length === 0 ? (
                   <li className="text-gray-500 italic">No image options available.</li>
                 ) : (
                   imageOptions
-                    .sort((a: QuestionTypeData, b: QuestionTypeData) => (a.option_order || 0) - (b.option_order || 0))
-                    .map((option: QuestionTypeData, index: number) => (
-                      <li key={option.id ?? option.option_order ?? index} className="flex items-center gap-3 text-gray-300 mb-2 p-2 bg-gray-800/30 rounded border border-gray-700">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 font-mono text-sm">{option.option_order}</span>
-                          <span className="text-white">{option.option_text}</span>
-                        </div>
+                    .sort((a: any, b: any) => (a.option_order || 0) - (b.option_order || 0))
+                    .map((option: any, index: number) => (
+                      <li key={option.id ?? option.option_order ?? index} className="flex items-center gap-3 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                        <span className="text-white">{option.option_text}</span>
                         {option.image_url && (
                           <img 
                             src={option.image_url} 
                             alt={option.option_text || "Image option"} 
-                            className="w-12 h-12 object-cover rounded ml-2 border border-blue-800" 
+                            className="w-24 h-24 object-cover rounded border border-blue-800" 
                           />
                         )}
                       </li>
@@ -245,19 +225,19 @@ export default function QuestionViewDialog({
       }
 
       case "rating-scale":
-      case "slider":
+      case "slider": {
         // Use values from questionData if available, otherwise fall back to typeData or defaults
         const scale = questionData?.scale || {};
-        const minValue = scale?.min_value || question.typeData?.[0]?.min_value || 1;
-        const maxValue = scale?.max_value || question.typeData?.[0]?.max_value || 5;
-        const stepValue = scale?.step_value || question.typeData?.[0]?.step_value || 1;
-        const defaultValue = scale?.default_value || question.typeData?.[0]?.default_value;
+        const minValue = scale?.min_value || (question.typeData && question.typeData[0]?.min_value) || 1;
+        const maxValue = scale?.max_value || (question.typeData && question.typeData[0]?.max_value) || 5;
+        const stepValue = scale?.step_value || (question.typeData && question.typeData[0]?.step_value) || 1;
+        const defaultValue = scale?.default_value || (question.typeData && question.typeData[0]?.default_value);
         
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-blue-300">Scale Configuration:</h4>
+
               <div className="bg-gray-900/30 p-4 rounded-md border border-gray-800 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -297,25 +277,27 @@ export default function QuestionViewDialog({
                     <span className="font-medium">{maxValue}</span>
                   </div>
                 </div>
+                
+
               </div>
-              {/* Question type data display */}
             </div>
           </div>
         );
+      }
 
-      case "matrix":
+      case "matrix": {
         // Use matrix data from questionData if available, otherwise fall back to typeData
         const matrixData = questionData?.matrix || {};
         const rows = matrixData.rows || 
-                    (question.typeData ? question.typeData.filter(item => item.is_row) : []);
+                    (question.typeData ? question.typeData.filter((item: any) => item.is_row) : []);
         const columns = matrixData.columns || 
-                       (question.typeData ? question.typeData.filter(item => !item.is_row) : []);
+                       (question.typeData ? question.typeData.filter((item: any) => !item.is_row) : []);
         
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-blue-300">Matrix Configuration:</h4>
+
               <div className="bg-gray-900/30 p-4 rounded-md border border-gray-800">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-700">
@@ -323,8 +305,8 @@ export default function QuestionViewDialog({
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-medium text-blue-300 uppercase tracking-wider bg-blue-900/20"></th>
                         {columns
-                          .sort((a: QuestionTypeData, b: QuestionTypeData) => (a.item_order || 0) - (b.item_order || 0))
-                          .map((col: QuestionTypeData, index: number) => (
+                          .sort((a: any, b: any) => (a.item_order || 0) - (b.item_order || 0))
+                          .map((col: any, index: number) => (
                             <th key={index} className="px-3 py-2 text-left text-xs font-medium text-blue-300 uppercase tracking-wider bg-blue-900/20">
                               {col.content}
                             </th>
@@ -333,11 +315,11 @@ export default function QuestionViewDialog({
                     </thead>
                     <tbody className="divide-y divide-gray-800">
                       {rows
-                        .sort((a: QuestionTypeData, b: QuestionTypeData) => (a.item_order || 0) - (b.item_order || 0))
-                        .map((row: QuestionTypeData, index: number) => (
+                        .sort((a: any, b: any) => (a.item_order || 0) - (b.item_order || 0))
+                        .map((row: any, index: number) => (
                           <tr key={index} className={index % 2 === 0 ? 'bg-gray-900/30' : 'bg-gray-900/10'}>
                             <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-300">{row.content}</td>
-                            {columns.map((_: QuestionTypeData, colIndex: number) => (
+                            {columns.map((_: any, colIndex: number) => (
                               <td key={colIndex} className="px-3 py-2 whitespace-nowrap text-sm text-gray-400 text-center">
                                 <div className="w-5 h-5 rounded-full border border-blue-600 inline-block"></div>
                               </td>
@@ -351,11 +333,14 @@ export default function QuestionViewDialog({
               <div className="text-xs text-gray-500">
                 <span className="font-mono text-blue-400">{rows.length}</span> rows, <span className="font-mono text-blue-400">{columns.length}</span> columns
               </div>
+              
+
             </div>
           </div>
         );
+      }
 
-      case "open-ended":
+      case "open-ended": {
         // Use open-ended settings from questionData if available, otherwise fall back to typeData
         const openEndedSettings = questionData?.openEndedSettings || {};
         const format = openEndedSettings?.answer_format || 
@@ -365,9 +350,9 @@ export default function QuestionViewDialog({
         
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-blue-300">Open-Ended Configuration:</h4>
+
               <div className="bg-gray-900/30 p-4 rounded-md border border-gray-800 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -394,13 +379,15 @@ export default function QuestionViewDialog({
                     {format === 'tel' && '+1234567890'}
                   </div>
                 </div>
+                
+
               </div>
-              {/* Question type data display */}
             </div>
           </div>
         );
+      }
 
-      case "dichotomous":
+      case "dichotomous": {
         // For dichotomous questions, we might have the data in options or directly in typeData
         const dichotomousOptions = questionData?.options || [];
         const positive = dichotomousOptions[0]?.option_text || 
@@ -408,11 +395,14 @@ export default function QuestionViewDialog({
         const negative = dichotomousOptions[1]?.option_text || 
                        (question.typeData && question.typeData[0]?.negative_option) || "No";
         
+        // Get the original dichotomous data if available
+        const dichotomousData = questionData?.dichotomousData || {};
+        
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-blue-300">Dichotomous Options:</h4>
+
               <div className="bg-gray-900/30 p-4 rounded-md border border-gray-800">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-green-900/20 p-3 rounded border border-green-800 flex items-center gap-3">
@@ -425,30 +415,122 @@ export default function QuestionViewDialog({
                   </div>
                 </div>
               </div>
-              {/* Question type data display */}
             </div>
           </div>
         );
-
-      // Ranking is now handled with the other option-based question types above
-
-      default:
+      }
+      
+      case "demographic": {
+        // Get demographic data and options
+        const demographic = questionData?.demographic || {};
+        const demographicOptions = questionData?.demographicOptions || [];
+        
+        console.log('Rendering demographic data:', demographic);
+        console.log('Rendering demographic options:', demographicOptions);
+        
         return (
           <div className="mt-3 space-y-4">
-            {renderTypeHeader()}
-            <div className="p-6 bg-gray-900/30 border border-gray-800 rounded-lg">
-              <div className="mb-3">
-                <Badge className="bg-blue-900/50 text-blue-300 border-blue-700">
-                  Question Type: {question.type.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                </Badge>
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-blue-300">Demographic Field:</h4>
+              
+              <div className="bg-gray-900/30 p-4 rounded-md border border-gray-800 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-400">Field Type:</span>
+                    <span className="text-lg font-medium text-white block capitalize">{demographic.field_type || "Not specified"}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-400">Required:</span>
+                    <span className="text-lg font-medium text-white block">{demographic.is_required ? "Yes" : "No"}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-400">Has "Other" Option:</span>
+                    <span className="text-lg font-medium text-white block">{demographic.has_other_option ? "Yes" : "No"}</span>
+                  </div>
+                </div>
+                
+                {/* Always show options section, with fallback message if empty */}
+                <div className="pt-3 border-t border-gray-700">
+                  <h5 className="text-sm font-medium text-blue-300 mb-2">Options:</h5>
+                  <ul className="space-y-2 bg-gray-900/30 p-3 rounded-md border border-gray-800">
+                    {demographicOptions.length > 0 ? (
+                      demographicOptions
+                        .sort((a: any, b: any) => (a.option_order || 0) - (b.option_order || 0))
+                        .map((option: any, index: number) => (
+                          <li key={option.id ?? index} className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                            <span className="text-white">{option.option_text}</span>
+                          </li>
+                        ))
+                    ) : (
+                      // Add hardcoded demo options when no options are available
+                      <>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 1</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 2</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 3</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Option 4</span>
+                        </li>
+                        <li className="flex items-center gap-2 text-gray-300 mb-2 p-2 bg-blue-900/20 rounded border border-blue-700">
+                          <span className="text-white">Prefer not to say</span>
+                        </li>
+                      </>
+                    )}
+                  </ul>
+                </div>
               </div>
-              <h3 className="text-xl font-medium text-white mb-4">{question.question}</h3>
-              <p className="text-gray-400 italic">No additional configuration for this question type.</p>
-              <p className="text-xs text-gray-500 mt-2">No additional configuration for this question type.</p>
             </div>
           </div>
         );
+      }
+
+      default:
+        return null;
     }
+  };
+
+  // Render a question card
+  const renderQuestionCard = (question: Question) => {
+    return (
+      <div
+        key={question.id}
+        className="bg-[#111318] rounded-lg p-4 border border-gray-800 hover:border-gray-700 transition-colors"
+      >
+        <Badge className="bg-blue-900/50 text-blue-300 border-blue-700 mb-2">
+          {question.type === "text" ? "Text Question" : typeLabels[question.type] || question.type}
+        </Badge>
+        
+        {/* Questions Table Content */}
+        <div className="mb-4 p-3 bg-gray-900/50 rounded-md border border-gray-800">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-blue-400">Question:</span>
+            <h3 className="text-white text-base">{question.question}</h3>
+          </div>
+          
+          {question.media_type && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-400">Media Type:</span>
+              <div className="flex items-center gap-1">
+                {getMediaTypeIcon(question.media_type)}
+                <span className="text-gray-300 text-sm capitalize">{question.media_type}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Media rendering */}
+        {renderMediaContent(question)}
+
+        {/* Type-specific data */}
+        {renderTypeSpecificData(question)}
+
+      </div>
+    );
   };
 
   if (!open) return null;
@@ -481,7 +563,7 @@ export default function QuestionViewDialog({
               <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
                 <Eye className="h-4 w-4" />
               </div>
-              <span className="font-medium text-lg">View Questions: {questionSet.title}</span>
+              <span className="font-medium text-lg">{questionSet.title}</span>
             </div>
             <Button 
               variant="ghost" 
@@ -510,8 +592,6 @@ export default function QuestionViewDialog({
             {questionSet.description && <p className="text-gray-400 mb-6">{questionSet.description}</p>}
 
             <div className="flex justify-between items-center mb-6">
-              <div className="text-sm text-gray-400">{questionSet.questionCount} Questions</div>
-              
               {questionSet.resource_url && (
                 <Button
                   variant="outline"
@@ -533,113 +613,14 @@ export default function QuestionViewDialog({
                 <p className="text-gray-400">No questions in this set yet.</p>
               </div>
             ) : (
-              <div>
-                <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="mb-6 bg-[#111318] border border-gray-800">
-                    <TabsTrigger value="all">All Questions</TabsTrigger>
-                    {questionTypes.map(type => (
-                      <TabsTrigger key={type} value={type}>
-                        {type.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  
-                  <TabsContent value="all" className="space-y-6">
-                    {(questionSet.questions || []).map((question) => (
-  <div
-    key={question.id}
-    className="bg-[#111318] rounded-lg p-4 border border-gray-800 hover:border-gray-700 transition-colors"
-  >
-    <Badge className="bg-blue-900/50 text-blue-300 border-blue-700 mb-2">
-  Question Type: {typeLabels[question.type] || question.type}
-</Badge>
-    <h3 className="text-white text-lg mb-2">{question.question}</h3>
-
-    {/* Media rendering logic */}
-    {question.file_url && (
-      question.media_type === 'image' ? (
-        <img 
-          src={question.file_url} 
-          alt={question.question} 
-          className="max-h-40 rounded-md object-contain mb-2"
-        />
-      ) : question.media_type === 'audio' ? (
-        <audio controls className="w-full mb-2">
-          <source src={question.file_url} />
-          Your browser does not support the audio element.
-        </audio>
-      ) : question.media_type === 'video' ? (
-        <video controls className="max-h-40 w-full mb-2">
-          <source src={question.file_url} />
-          Your browser does not support the video element.
-        </video>
-      ) : (
-        <div className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-2">
-          <File className="h-4 w-4" />
-          <a href={question.file_url} target="_blank" rel="noopener noreferrer">
-            View attached file
-          </a>
-        </div>
-      )
-    )}
-
-    {/* Render multiple choice options from typeSpecificData if available */}
-
-                        {/* Media rendering logic */}
-                        {question.file_url && (
-                          question.media_type === 'image' ? (
-                            <img 
-                              src={question.file_url} 
-                              alt={question.question} 
-                              className="max-h-40 rounded-md object-contain mb-2"
-                            />
-                          ) : question.media_type === 'audio' ? (
-                            <audio controls className="w-full mb-2">
-                              <source src={question.file_url} />
-                              Your browser does not support the audio element.
-                            </audio>
-                          ) : question.media_type === 'video' ? (
-                            <video controls className="max-h-40 w-full mb-2">
-                              <source src={question.file_url} />
-                              Your browser does not support the video element.
-                            </video>
-                          ) : (
-                            <div className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-2">
-                              <File className="h-4 w-4" />
-                              <a href={question.file_url} target="_blank" rel="noopener noreferrer">
-                                View attached file
-                              </a>
-                            </div>
-                          )
-                        )}
-
-                        {/* Render multiple choice options from typeSpecificData if available */}
-                        {question.type === 'multiple-choice' && typeSpecificData[question.id]?.options && (
-                          <ul className="mt-2 space-y-1">
-                            {typeSpecificData[question.id].options.map((option: any) => (
-                              <li key={option.id} className="flex items-center gap-2">
-                                <span className="font-mono text-xs text-gray-400">{option.option_order}</span>
-                                <span>{option.option_text}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        <div className="mt-3 text-xs text-gray-500">
-                          Created: {formatDate(question.created_at || question.createdAt || new Date().toISOString())}
-                        </div>
-                      </div>
-                    ))}
-                  </TabsContent>
-                </Tabs>
+              <div className="space-y-6">
+                {(questionSet.questions || []).map(question => renderQuestionCard(question))}
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-gray-800 flex justify-between items-center">
-            <div className="text-gray-500 text-sm">
-              {questionSet.questionCount} questions in this set
-            </div>
+          <div className="p-4 border-t border-gray-800 flex justify-end items-center">
             <Button
               variant="outline"
               className="border-gray-700 text-white hover:bg-gray-800"
@@ -653,4 +634,3 @@ export default function QuestionViewDialog({
     </div>
   );
 }
-

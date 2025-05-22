@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from "@/hooks/useSession";
+import { useSession } from "next-auth/react";
 import Navbar from "./Navbar";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -11,13 +11,15 @@ interface LayoutProps {
 }
 
 export function Layout({ children }: LayoutProps) {
-  const { isClient, userEmail } = useSession();
-
-  if (!isClient) {
+  const { data: session, status } = useSession();
+  
+  // While session is loading, just show children without layout
+  if (status === 'loading') {
     return <>{children}</>;
   }
 
-  if (!userEmail) {
+  // If not authenticated, just show children without layout
+  if (status !== 'authenticated' || !session?.user) {
     return <>{children}</>;
   }
 

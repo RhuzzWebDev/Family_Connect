@@ -4,11 +4,13 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { X, Maximize2, Minimize2, Plus, FileText, ImageIcon, Mic, Video, File, Edit, Trash2, User, Link, Heart, ExternalLink, Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { format, formatDistanceToNow } from "date-fns"
 import CreateQuestionDialog from "@/components/question/create-question-dialog"
 import QuestionDetailDialog from "@/components/question/question-detail-dialog"
 import QuestionViewDialog from "@/components/question/question-view-dialog"
 import { adminQuestionServices } from '@/services/AdminQuestionServices'
 import { QuestionTypeData } from '@/types/question'
+import { supabase } from "@/lib/supabaseClient"
 
 interface Question {
   id: string
@@ -16,6 +18,21 @@ interface Question {
   mediaType: "text" | "image" | "audio" | "video" | "file"
   type: string
   createdAt: string
+  answers?: UserAnswer[]
+}
+
+interface UserData {
+  id: string
+  first_name?: string
+  last_name?: string
+  email?: string
+  role?: string
+}
+
+interface UserAnswer {
+  user: UserData
+  answer_data: any
+  created_at: string
 }
 
 interface QuestionSet {
@@ -54,16 +71,95 @@ export default function QuestionSetDialog({
   const [viewQuestionSet, setViewQuestionSet] = useState<QuestionSet | null>(null)
   const [isFullWidth, setIsFullWidth] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [userAnswers, setUserAnswers] = useState<Record<string, UserAnswer[]>>({})
+  const [currentUserAnsweredQuestions, setCurrentUserAnsweredQuestions] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     // Set mounted to true after component mounts to enable animations
     if (open) {
       setMounted(true)
+      
+      // Try to get the user ID from session storage or auth session
+      if (!sessionStorage.getItem('userId')) {
+        const getUserId = async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session?.user?.id) {
+              sessionStorage.setItem('userId', session.user.id)
+            }
+          } catch (error) {
+            console.error('Error getting user session:', error)
+          }
+        }
+        getUserId()
+      }
+      
+      // Fetch answers for each question when dialog opens
+      if (questionSet && questionSet.questions && questionSet.questions.length > 0) {
+        fetchAnswersForQuestions(questionSet.questions)
+      }
     } else {
       // Reset state when dialog closes
       setTimeout(() => setMounted(false), 300)
     }
-  }, [open])
+  }, [open, questionSet?.id])
+  
+  // Fetch answers for all questions in the set
+  const fetchAnswersForQuestions = async (questions: Question[]) => {
+    try {
+      // Get admin email from session storage (or use a default for demo)
+      const adminEmail = sessionStorage.getItem('adminEmail') || 'admin@example.com'
+      // Get current user ID from session storage
+      const currentUserId = sessionStorage.getItem('userId')
+      
+      // Create a map to store answers by question ID
+      const answersMap: Record<string, UserAnswer[]> = {}
+      
+      // Fetch answers for each question
+      for (const question of questions) {
+        // @ts-ignore - adminQuestionServices.getQuestionAnswers exists but TypeScript doesn't recognize it
+        const { data, error } = await adminQuestionServices.getQuestionAnswers(question.id, adminEmail)
+        
+        if (error) {
+          console.error(`Error fetching answers for question ${question.id}:`, error)
+          continue
+        }
+        
+        if (data && data.length > 0) {
+          // Format the answers with user data
+          const formattedAnswers: UserAnswer[] = data.map((answer: any) => ({
+            user: {
+              id: answer.user_id,
+              first_name: answer.users?.first_name || '',
+              last_name: answer.users?.last_name || '',
+              email: answer.users?.email || '',
+              role: answer.users?.role || ''
+            },
+            answer_data: answer.answer_data,
+            created_at: answer.created_at
+          }))
+          
+          // Store in the map
+          answersMap[question.id] = formattedAnswers
+        }
+      }
+      
+      // Update state with all answers
+      setUserAnswers(answersMap)
+
+      // Store which questions the current user has answered
+      const userAnsweredQuestions = new Set<string>()
+      Object.entries(answersMap).forEach(([questionId, answers]) => {
+        // Check if any of the answers are from the current user
+        if (answers.some(answer => answer.user.id === currentUserId)) {
+          userAnsweredQuestions.add(questionId)
+        }
+      })
+      setCurrentUserAnsweredQuestions(userAnsweredQuestions)
+    } catch (err) {
+      console.error('Error fetching answers:', err)
+    }
+  }
 
   if (!questionSet) return null
 
@@ -227,7 +323,7 @@ export default function QuestionSetDialog({
             </div>
 
             {questionSet.questions.length === 0 ? (
-              <div className="bg-[#111318] rounded-lg p-8 text-center">
+              <div className="bg-[#181926] rounded-lg p-8 text-center border border-gray-800">
                 <p className="text-gray-400">No questions in this set yet. Add your first question.</p>
               </div>
             ) : (
@@ -235,7 +331,7 @@ export default function QuestionSetDialog({
                 {questionSet.questions.map((question) => (
                   <div
                     key={question.id}
-                    className="bg-[#111318] rounded-lg p-4 border border-gray-800 hover:border-gray-700 transition-colors"
+                    className="bg-[#181926] rounded-lg p-4 border border-gray-800 hover:border-gray-700 transition-colors relative"
                   >
                     <div className="flex justify-between">
                       <div className="flex-1">
@@ -249,7 +345,53 @@ export default function QuestionSetDialog({
                             {question.type}
                           </Badge>
                           <span className="text-sm text-gray-500">{formatDate(question.createdAt)}</span>
+                          {currentUserAnsweredQuestions.has(question.id) && (
+                            <span className="text-sm text-green-300 font-medium px-2 py-1 bg-green-900/30 rounded">Answered</span>
+                          )}
                         </div>
+                        
+                        {/* Display latest answer per family member */}
+                        {userAnswers[question.id] && userAnswers[question.id].length > 0 && (
+                          <div className="mt-4 pt-3 border-t border-gray-800">
+                            <h4 className="text-sm font-medium text-gray-300 mb-2">Latest Family Responses:</h4>
+                            <div className="space-y-2">
+                              {/* Create a map to only keep the latest answer per user */}
+                              {(() => {
+                                const latestAnswerByUser = new Map()
+                                userAnswers[question.id].forEach((answer: UserAnswer) => {
+                                  if (!latestAnswerByUser.has(answer.user.id) || 
+                                      new Date(answer.created_at) > new Date(latestAnswerByUser.get(answer.user.id).created_at)) {
+                                    latestAnswerByUser.set(answer.user.id, answer)
+                                  }
+                                })
+                                
+                                return Array.from(latestAnswerByUser.values()).map((answer, idx) => (
+                                  <div key={idx} className="flex items-start gap-2 p-2 rounded-md bg-[#1a1d24] border border-gray-800">
+                                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-900 flex items-center justify-center text-xs text-white">
+                                      {answer.user.first_name?.[0] || answer.user.email?.[0] || '?'}
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="flex justify-between items-start">
+                                        <p className="text-sm font-medium text-gray-200">
+                                          {answer.user.first_name} {answer.user.last_name}
+                                          <span className="ml-2 text-xs text-gray-500">{answer.user.role}</span>
+                                        </p>
+                                        <span className="text-xs text-gray-500">
+                                          {formatDistanceToNow(new Date(answer.created_at), { addSuffix: true })}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-gray-400 mt-1">
+                                        {typeof answer.answer_data === 'string' ? answer.answer_data : 
+                                         Array.isArray(answer.answer_data) ? answer.answer_data.join(', ') : 
+                                         JSON.stringify(answer.answer_data)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))
+                              })()}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -385,7 +527,7 @@ export default function QuestionSetDialog({
                               const singleQuestionSet = {
                                 id: 'single-question-' + question.id,
                                 title: question.question,
-                                description: 'Individual question view',
+                                description: '',
                                 questionCount: 1,
                                 questions: [enhancedQuestion]
                               };
@@ -399,7 +541,7 @@ export default function QuestionSetDialog({
                               const singleQuestionSet = {
                                 id: 'single-question-' + question.id,
                                 title: question.question,
-                                description: 'Individual question view',
+                                description: '',
                                 questionCount: 1,
                                 questions: [question]
                               };

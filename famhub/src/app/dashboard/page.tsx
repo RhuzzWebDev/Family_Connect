@@ -10,22 +10,46 @@ import { CalendarDays, ChevronRight, Users } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { CreateFamilyModal } from '@/components/create-family-modal';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
   const [userName, setUserName] = useState('');
   const [limitCards, setLimitCards] = useState(6);
   const [showFamilyModal, setShowFamilyModal] = useState(false);
   const [userHasFamily, setUserHasFamily] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const { data: session, status } = useSession({
+    required: true,
+    onUnauthenticated() {
+      // This will redirect to the login page
+      window.location.href = '/login';
+    }
+  });
+  const router = useRouter();
 
   useEffect(() => {
-    const userEmail = sessionStorage.getItem('userEmail');
-    if (!userEmail) {
+    // If session is still loading, don't do anything yet
+    if (status === 'loading') {
+      setIsLoading(true);
+      return;
+    }
+    
+    // Check if user is authenticated
+    if (status !== 'authenticated') {
       window.location.href = '/login';
       return;
     }
+    
+    // User is authenticated, set loading to false
+    setIsLoading(false);
+    
+    const userEmail = session?.user?.email;
 
     // Fetch user name and family status
     const fetchUserProfile = async () => {
+      if (!userEmail) return;
+      
       const { data, error } = await supabase
         .from('users')
         .select('first_name, family_id, id')
@@ -37,17 +61,30 @@ export default function DashboardPage() {
         if (!data.family_id) {
           setUserHasFamily(false);
           setShowFamilyModal(true);
-          // Store userId for modal
-          sessionStorage.setItem('userId', data.id);
-        } else {
-          setUserHasFamily(true);
         }
       }
     };
 
-    fetchUserProfile();
-  }, []);
+    if (userEmail) {
+      fetchUserProfile();
+    }
+  }, [session]);
 
+  // Show loading state while session is loading
+  if (isLoading || status === 'loading') {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen bg-gray-900">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-white mb-4">Loading dashboard...</h2>
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show dashboard once authenticated and loaded
   return (
     <Layout>
       <InnerNavbar />
@@ -56,7 +93,7 @@ export default function DashboardPage() {
         <CreateFamilyModal
           onFamilyCreated={async () => {
             // Refetch user profile to ensure family_id is set
-            const userEmail = sessionStorage.getItem('userEmail');
+            const userEmail = session?.user?.email;
             if (userEmail) {
               const { data, error } = await supabase
                 .from('users')

@@ -6,8 +6,10 @@ import { FamilyService } from '@/services/familyService';
 import { Button } from '@/components/ui/button';
 import { X, Maximize2, Minimize2, Users2, Link as LinkIcon, Copy, Check } from 'lucide-react';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
 
 export default function FamilyInviteModal() {
+  const { data: session, status } = useSession();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -23,13 +25,21 @@ export default function FamilyInviteModal() {
     setLoading(true);
     setError("");
     setInviteLink("");
+    
     try {
+      // Check if user is authenticated
+      if (status !== 'authenticated' || !session) {
+        throw new Error("You must be logged in to generate an invite link");
+      }
+      
       // Get current user
       const user = await FamilyService.getCurrentUser();
       if (!user.family_id) throw new Error("No family_id found for current user");
+      
       // Create invite
       const invite = await FamilyInviteService.createInvite(user.family_id);
       if (!invite) throw new Error("Failed to generate invite link");
+      
       const url = `${window.location.origin}/invite-register?token=${invite.invite_token}`;
       setInviteLink(url);
     } catch (err: any) {

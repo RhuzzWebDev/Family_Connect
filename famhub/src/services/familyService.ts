@@ -1,6 +1,7 @@
 import { supabase } from './userService';
 import { UserService } from './userService';
 import { v4 as uuidv4 } from 'uuid';
+import { getSession } from 'next-auth/react';
 
 export interface Family {
   id: string;
@@ -26,14 +27,17 @@ export interface FamilyMember {
 
 export class FamilyService {
   /**
-   * Helper method to get the current user's email from session storage
+   * Helper method to get the current user's email from NextAuth session
    * @returns The current user's email or null if not found
    */
-  private static getCurrentUserEmail(): string | null {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('userEmail');
+  private static async getCurrentUserEmail(): Promise<string | null> {
+    try {
+      const session = await getSession();
+      return session?.user?.email || null;
+    } catch (error) {
+      console.error('Error getting session:', error);
+      return null;
     }
-    return null;
   }
 
   /**
@@ -165,7 +169,7 @@ export class FamilyService {
    */
   static async getCurrentUser(): Promise<FamilyMember> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) {
         throw new Error('Not authenticated');
       }
@@ -357,7 +361,7 @@ export class FamilyService {
     memberData: Omit<FamilyMember, 'id' | 'created_at' | 'family_id'>
   ): Promise<string> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) throw new Error('Not authenticated');
       
       // Set the user context for RLS policies
@@ -425,7 +429,7 @@ export class FamilyService {
     memberData: Omit<FamilyMember, 'id' | 'created_at'> & { family_id?: string }
   ): Promise<string> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) throw new Error('Not authenticated');
       
       // Set the user context for RLS policies
@@ -498,7 +502,7 @@ export class FamilyService {
     memberData: Partial<Omit<FamilyMember, 'id' | 'created_at' | 'family_id'>>
   ): Promise<boolean> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) throw new Error('Not authenticated');
       
       // Set the user context for RLS policies
@@ -622,7 +626,7 @@ export class FamilyService {
    */
   static async deleteFamilyMember(memberId: string): Promise<boolean> {
     try {
-      const userEmail = this.getCurrentUserEmail();
+      const userEmail = await this.getCurrentUserEmail();
       if (!userEmail) throw new Error('Not authenticated');
       
       // Set the user context for RLS policies

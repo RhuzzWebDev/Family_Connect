@@ -21,7 +21,7 @@ interface QuestionSetCardProps {
 export default function QuestionSetCard({ questionSet, onViewClick, onEditClick }: QuestionSetCardProps) {
   return (
     <div 
-      className="bg-[#111318] rounded-lg overflow-hidden border border-gray-800 hover:border-gray-700 transition-colors cursor-pointer"
+      className="bg-[#121212] rounded-lg overflow-hidden border border-gray-800 hover:border-gray-700 transition-colors cursor-pointer"
       onClick={() => onViewClick(questionSet.id)}
     >
       {questionSet.cover_image && (
@@ -38,19 +38,19 @@ export default function QuestionSetCard({ questionSet, onViewClick, onEditClick 
           <div>
             <h3 className="font-medium text-lg text-white">{questionSet.title}</h3>
             {questionSet.author_name && (
-              <div className="flex items-center text-sm text-gray-400 mt-1">
+              <div className="flex items-center text-sm text-gray-500 mt-1">
                 <User className="h-3 w-3 mr-1" />
                 <span>{questionSet.author_name}</span>
               </div>
             )}
             {questionSet.description && (
-              <p className="text-sm text-gray-400 mt-1 line-clamp-2">{questionSet.description}</p>
+              <p className="text-sm text-gray-500 mt-1 line-clamp-2">{questionSet.description}</p>
             )}
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+            className="h-8 w-8 p-0 text-gray-500 hover:text-white bg-transparent hover:bg-[#1a1d24]"
             onClick={(e) => {
               e.stopPropagation();
               onEditClick(questionSet.id);
@@ -61,7 +61,7 @@ export default function QuestionSetCard({ questionSet, onViewClick, onEditClick 
           </Button>
         </div>
 
-        <div className="flex items-center mt-4 text-sm text-gray-400 space-x-4">
+        <div className="flex items-center mt-4 text-sm text-gray-500 space-x-4">
           <div className="flex items-center">
             <FileText className="h-4 w-4 mr-1.5" />
             <span>{questionSet.questionCount} Questions</span>
@@ -72,7 +72,7 @@ export default function QuestionSetCard({ questionSet, onViewClick, onEditClick 
           <Button
             variant="outline"
             size="sm"
-            className="w-full bg-transparent border-gray-700 hover:bg-gray-800 text-sm font-medium"
+            className="w-full bg-[#1a1d24] border-gray-800 hover:bg-[#212530] text-sm font-medium text-white"
             onClick={(e) => {
               e.stopPropagation();
               onViewClick(questionSet.id);
