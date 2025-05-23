@@ -8,7 +8,7 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import CreateQuestionForm from './CreateQuestionForm';
 import { format, formatDistanceToNow } from 'date-fns';
-import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart, MoreHorizontal, Share2, Maximize2, Minimize2 } from 'lucide-react';
+import { ThumbsUp, MessageSquare, Image as ImageIcon, Video, Music, Trash2, AlertTriangle, PlusCircle, X, Heart, MoreHorizontal, Share2, Maximize2, Minimize2, FileText } from 'lucide-react';
 import Image from 'next/image';
 import { CommentSection } from '@/components/comment-section';
 import { cn } from '@/lib/utils';
@@ -174,7 +174,7 @@ export default function QuestionGridBase({
           );
         default:
           return (
-            <div className="flex items-center justify-center p-4 bg-gray-100 text-gray-500 rounded-md">
+            <div className="flex items-center justify-center p-4 bg-[#181926] text-[#e5e7eb] rounded-md" style={{ border: '1px solid #232336' }}>
               <AlertTriangle className="h-6 w-6 mr-2" />
               <span>Unsupported media type</span>
             </div>
@@ -183,7 +183,7 @@ export default function QuestionGridBase({
     } catch (error) {
       console.error('Error rendering media preview:', error);
       return (
-        <div className="flex items-center justify-center p-4 bg-gray-100 text-gray-500 rounded-md">
+        <div className="flex items-center justify-center p-4 bg-[#181926] text-[#e5e7eb] rounded-md" style={{ border: '1px solid #232336' }}>
           <AlertTriangle className="h-6 w-6 mr-2" />
           <span>Error loading media</span>
         </div>
@@ -192,31 +192,16 @@ export default function QuestionGridBase({
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full min-h-[calc(100vh-8rem)] flex flex-col">
       {showHeader && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: '#fff' }}>Family Feed</h1>
-            <p className="text-muted-foreground">Share and respond to family questions</p>
+            
           </div>
           
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            {/* Ask Question button removed */}
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button 
-                  className="w-full sm:w-auto"
-                  style={{ background: '#232336', color: '#fff' }}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setIsCreateDialogOpen(true);
-                    if (onCreateQuestion) onCreateQuestion();
-                  }}
-                >
-                  <PlusCircle className="h-4 w-4 mr-2" />
-                  Ask Question
-                </Button>
-              </DialogTrigger>
               <DialogContent className="sm:max-w-[425px]" style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}>
                 <CreateQuestionForm onQuestionCreated={() => setIsCreateDialogOpen(false)} />
               </DialogContent>
@@ -228,22 +213,55 @@ export default function QuestionGridBase({
       )}
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-[#232336] border border-red-400 text-red-300 px-4 py-3 rounded mb-4">
           <p>{error}</p>
         </div>
       )}
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 animate-pulse">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-48 bg-gray-200 rounded-lg"></div>
+        <div className="flex-grow grid grid-cols-1 gap-4 animate-pulse">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-48 bg-[#232336] rounded-lg"></div>
           ))}
         </div>
       ) : (
-        <div className={viewType === 'card' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-4'}>
+        <div className={viewType === 'card' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-16' : 'space-y-4 pb-16'}>
           {/* Question Sets */}
-          {viewType === 'card' && questionSets.map(set => (
-            <QuestionSetCard key={set.id} questionSet={set} />
+          {questionSets.map(set => (
+            viewType === 'card' ? (
+              <QuestionSetCard key={set.id} questionSet={set} />
+            ) : (
+              <div 
+                key={set.id}
+                className="flex items-center p-4 rounded-lg border hover:border-[#3b3b4f] cursor-pointer transition-colors"
+                style={{ background: '#181926', color: '#fff', border: '1px solid #232336' }}
+              >
+                <div className="flex-shrink-0 mr-3">
+                  <div className="h-10 w-10 rounded-md flex items-center justify-center" style={{ background: '#0F1017', color: '#60a5fa' }}>
+                    <FileText className="h-5 w-5" />
+                  </div>
+                </div>
+                
+                <div className="flex-grow mr-4">
+                  <div className="flex flex-col">
+                    <h3 className="font-medium text-white">{set.title}</h3>
+                    <p className="text-sm text-gray-400 line-clamp-1">{set.description || 'No description available'}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <div>
+                    <span className="text-xs px-2 py-1 rounded-full bg-[#232336] text-[#60a5fa]">
+                      {set.question_count || 0} Questions
+                    </span>
+                  </div>
+                  
+                  <div className="text-xs text-gray-400">
+                    by {set.author_name || 'Unknown'} • {formatDistanceToNow(new Date(set.created_at), { addSuffix: true })}
+                  </div>
+                </div>
+              </div>
+            )
           ))}
           
           {/* Questions */}
@@ -277,7 +295,7 @@ export default function QuestionGridBase({
                   {/* Question set badge */}
                   {question.question_set && (
                     <div className="mb-3">
-                      <span className="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-300">
+                      <span className="text-xs px-2 py-1 rounded-full bg-[#232336] text-[#60a5fa]">
                         {question.question_set.title}
                       </span>
                     </div>
@@ -344,11 +362,11 @@ export default function QuestionGridBase({
                   {/* Question set badge in list view */}
                   {question.question_set && (
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-300">
+                      <span className="text-xs px-2 py-1 rounded-full bg-[#232336] text-[#60a5fa]">
                         {question.question_set.title}
                       </span>
                       {question.question_set.author_name && (
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-[#e5e7eb]">
                           by {question.question_set.author_name}
                         </span>
                       )}
@@ -357,7 +375,7 @@ export default function QuestionGridBase({
                   
                   {/* Media preview removed from list view */}
                   {question.media_type && (
-                    <span className="flex items-center gap-1 text-gray-500 mb-3">
+                    <span className="flex items-center gap-1 text-[#e5e7eb] mb-3">
                       <MediaTypeIcon type={question.media_type} />
                       <span className="text-xs capitalize">{question.media_type} attached</span>
                     </span>
@@ -377,7 +395,7 @@ export default function QuestionGridBase({
                       <span className="text-xs">{question.like_count > 0 ? question.like_count : "Like"}</span>
                     </Button>
                     
-                    <span className="flex items-center gap-1 text-gray-500">
+                    <span className="flex items-center gap-1 text-[#e5e7eb]">
                       <MessageSquare className="h-4 w-4" />
                       <span className="text-xs">{question.comment_count > 0 ? `${question.comment_count} comments` : "Comment"}</span>
                     </span>
@@ -409,7 +427,7 @@ export default function QuestionGridBase({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-gray-500 hover:text-gray-900 mr-1"
+                  className="text-[#e5e7eb] hover:text-white mr-1"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsFullWidth(!isFullWidth);
@@ -421,7 +439,7 @@ export default function QuestionGridBase({
                     <Maximize2 className="h-4 w-4" />
                   )}
                 </Button>
-                <div className="w-8 h-8 rounded-full bg-gray-600 overflow-hidden">
+                <div className="w-8 h-8 rounded-full bg-[#232336] overflow-hidden">
                   <Image
                     src="/logo.svg"
                     alt="Community logo"
@@ -436,7 +454,7 @@ export default function QuestionGridBase({
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="text-gray-500 hover:text-gray-900" 
+                  className="text-[#e5e7eb] hover:text-white" 
                   onClick={() => {
                     setSelectedQuestionId(null);
                     setSelectedQuestion(null);
@@ -458,7 +476,7 @@ export default function QuestionGridBase({
                     {`${selectedQuestion.user.first_name} ${selectedQuestion.user.last_name}`}
                     <span className="bg-orange-500 rounded-full w-2 h-2"></span>
                   </div>
-                  <div className="text-sm text-gray-500">{selectedQuestion.user.role}</div>
+                  <div className="text-sm text-[#e5e7eb]">{selectedQuestion.user.role}</div>
                 </div>
               </div>
             </div>
@@ -477,7 +495,7 @@ export default function QuestionGridBase({
                 
                 {/* Question set details in detail view */}
                 {selectedQuestion.question_set && (
-                  <div className="mb-6 p-4 rounded-lg" style={{ background: '#20212b' }}>
+                  <div className="mb-6 p-4 rounded-lg" style={{ background: '#1a1d24', border: '1px solid #232336' }}>
                     <div className="flex items-center gap-2 mb-2">
                       {selectedQuestion.question_set.cover_image && (
                         <div className="w-10 h-10 rounded overflow-hidden">
@@ -497,14 +515,14 @@ export default function QuestionGridBase({
                     </div>
                     
                     {selectedQuestion.question_set.description && (
-                      <p className="text-sm text-gray-300 mb-3">
+                      <p className="text-sm text-[#e5e7eb] mb-3">
                         {selectedQuestion.question_set.description}
                       </p>
                     )}
                     
                     <div className="flex flex-wrap gap-2">
                       {selectedQuestion.question_set.author_name && (
-                        <span className="text-xs bg-gray-700 px-2 py-1 rounded-full">
+                        <span className="text-xs bg-[#232336] px-2 py-1 rounded-full">
                           By {selectedQuestion.question_set.author_name}
                         </span>
                       )}
@@ -514,7 +532,7 @@ export default function QuestionGridBase({
                           href={selectedQuestion.question_set.resource_url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full hover:bg-blue-800"
+                          className="text-xs bg-[#232336] text-[#60a5fa] px-2 py-1 rounded-full hover:bg-[#212530]"
                           onClick={(e) => e.stopPropagation()}
                         >
                           View Resource
@@ -526,7 +544,7 @@ export default function QuestionGridBase({
                           href={selectedQuestion.question_set.donate_url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-xs bg-green-900 text-green-300 px-2 py-1 rounded-full hover:bg-green-800"
+                          className="text-xs bg-[#232336] text-[#4ade80] px-2 py-1 rounded-full hover:bg-[#212530]"
                           onClick={(e) => e.stopPropagation()}
                         >
                           Support
@@ -548,7 +566,7 @@ export default function QuestionGridBase({
               <div className="flex items-center justify-center mb-4">
                 <Button 
                   variant="ghost" 
-                  className={cn("text-gray-500 hover:text-gray-900 relative", { "text-red-500": selectedQuestion.has_liked })}
+                  className={cn("text-[#e5e7eb] hover:text-white relative", { "text-red-500": selectedQuestion.has_liked })}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();

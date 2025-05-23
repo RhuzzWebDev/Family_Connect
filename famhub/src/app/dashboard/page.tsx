@@ -87,7 +87,6 @@ export default function DashboardPage() {
   // Show dashboard once authenticated and loaded
   return (
     <Layout>
-      <InnerNavbar />
       {/* Show family creation modal if user has no family */}
       {!userHasFamily && (
         <CreateFamilyModal

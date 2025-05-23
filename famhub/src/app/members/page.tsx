@@ -17,8 +17,7 @@ export default function MembersPage() {
   
   return (
     <Layout>
-      <InnerNavbar />
-      <div className="pl-6 pr-6 md:pl-8">
+      <div className="pl-6 pr-6 md:pl-8" style={{ background: '#0F1017', color: '#fff' }}>
         {/* Search and Invite */}
         <div className="mb-6 pt-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="relative w-full md:w-64">

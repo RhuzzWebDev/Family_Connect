@@ -11,8 +11,7 @@ export default function EventsPage() {
   return (
     <AuthGuard>
       <Layout>
-        <InnerNavbar />
-        <div className="pl-6 pr-6 md:pl-8">
+        <div className="pl-6 pr-6 md:pl-8" style={{ background: '#0F1017', color: '#fff' }}>
           {/* Events Header */}
           <div className="mb-6 pt-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -30,6 +30,7 @@ export default function Navbar() {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { data: session, status } = useSession();
+  const pathname = '';
 
   // Handle click outside to close menus
   useEffect(() => {
