@@ -23,14 +23,46 @@ const navItems: NavItem[] = [
 export function InnerNavbar() {
   const pathname = usePathname();
 
+  // Determine the title and subtitle based on the current route
+  const getPageInfo = () => {
+    if (pathname?.includes('/dashboard')) {
+      return {
+        title: 'Family Dashboard',
+        subtitle: 'Stay connected with your family members and latest activities'
+      };
+    } else if (pathname?.includes('/questions')) {
+      return {
+        title: 'Family Questions',
+        subtitle: 'Ask and answer questions to stay connected with your family'
+      };
+    } else if (pathname?.includes('/events')) {
+      return {
+        title: 'Family Events',
+        subtitle: 'Schedule and RSVP for upcoming family gatherings and events'
+      };
+    } else if (pathname?.includes('/members')) {
+      return {
+        title: 'Family Members',
+        subtitle: 'View and connect with all your family members'
+      };
+    } else {
+      return {
+        title: 'Family Connect',
+        subtitle: 'Bringing families closer together'
+      };
+    }
+  };
+
+  const { title, subtitle } = getPageInfo();
+
   return (
-    <div className="bg-[#1E1F29]">
+    <div className="bg-[#1E1F29] mt-[-1px]">
       {/* Header with logo and title */}
-      <div className="container mx-auto px-6 py-4 flex justify-center">
+      <div className="container mx-auto px-6 py-3 flex justify-center">
         <div className="flex items-center">
           <img 
             src="/logo.svg" 
-            alt="Community Avatar" 
+            alt="Family Connect Logo" 
             className="h-10 w-10 rounded-full mr-4"
             onError={(e) => {
               const target = e.target as HTMLImageElement;
@@ -38,16 +70,16 @@ export function InnerNavbar() {
             }}
           />
           <div>
-            <h2 className="text-xl font-bold text-white">All Community Members</h2>
+            <h2 className="text-xl font-bold text-white">{title}</h2>
             <p className="text-sm text-gray-300">
-              Explore our resources. RSVP for our events. Discover our solutions.
+              {subtitle}
             </p>
           </div>
         </div>
       </div>
       
       {/* Navigation tabs */}
-      <div className="w-full border-b border-[#232336]">
+      <div className="w-full">
         <nav className="container mx-auto px-6 flex justify-center overflow-x-auto">
           {navItems.map((item) => (
             <Link
