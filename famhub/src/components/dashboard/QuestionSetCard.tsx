@@ -349,9 +349,16 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
                         className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-800 cursor-pointer border border-gray-800 transition-colors"
                         onClick={() => setSelectedQuestion(question)}
                       >
-                        <div className="flex items-center space-x-3">
-                          {getMediaTypeIcon(question.media_type)}
-                          <span className="text-gray-200">{question.question}</span>
+                        <div className="flex flex-col">
+                          <div className="flex items-center space-x-3">
+                            {getMediaTypeIcon(question.media_type)}
+                            <span className="text-gray-200">{question.question}</span>
+                          </div>
+                          {question.type && (
+                            <span className="text-xs text-blue-400 ml-7 mt-1 capitalize">
+                              {question.type.replace(/-/g, ' ')} question
+                            </span>
+                          )}
                         </div>
                         <span 
                           className={`text-sm font-medium px-2 py-1 rounded ${question.answer ? 'text-green-300 bg-green-900/30' : 'text-gray-400 bg-gray-800/50'}`}
