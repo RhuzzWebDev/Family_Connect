@@ -4,9 +4,13 @@ import { useState, useEffect } from "react"
 import Image from "next/image"
 import { FileText } from "lucide-react"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabaseClient"
 import { QuestionViewModal } from "./QuestionViewModal"
 import { userAnswerQuestions } from '@/services/userAnswerQuestions'
+import { useSession } from "next-auth/react"
 // Import the utility functions directly to avoid module resolution issues
 import { FileText as FileTextIcon, Image as ImageIcon, Music, Video } from "lucide-react"
 
@@ -83,6 +87,7 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
+  const { data: session } = useSession()
 
   // Fetch questions and their answers
   const fetchQuestions = async () => {
@@ -97,21 +102,51 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
       if (questionsError) throw questionsError;
 
       if (questionsData) {
-        // Get the current user's ID from session storage
-        const currentUserId = sessionStorage.getItem('userId');
-        
         // Fetch answers for all questions
         const { data: answersData, error: answersError } = await userAnswerQuestions.getQuestionSetAnswers(
           questionsData.map(q => q.id)
         );
 
         if (answersError) throw answersError;
+        
+        console.log('All answers for these questions:', answersData);
+        
+        // Get the current user ID from Next.js auth session
+        let currentUserId = null;
+        
+        if (session?.user?.email) {
+          console.log('User email from Next.js auth:', session.user.email);
+          
+          // Get the user ID from the users table using the email
+          try {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', session.user.email)
+              .single();
+              
+            if (userData?.id) {
+              currentUserId = userData.id;
+              console.log('Got user ID from users table:', currentUserId);
+            }
+          } catch (error) {
+            console.error('Error getting user ID from email:', error);
+          }
+        }
 
         // Merge questions with their answers, but only mark as answered if the current user has answered
         const questionsWithAnswers = questionsData.map(question => {
           const allAnswers = answersData?.filter(a => a.question_id === question.id) || [];
-          // Only consider an answer as belonging to the question if it's from the current user
-          const currentUserAnswer = allAnswers.find(a => a.user_id === currentUserId);
+          console.log(`Answers for question ${question.id}:`, allAnswers);
+          
+          // Find an answer from the current user
+          const currentUserAnswer = currentUserId ? allAnswers.find(a => {
+            const match = a.user_id === currentUserId;
+            if (match) {
+              console.log(`Found answer for question ${question.id} from current user ${currentUserId}:`, a);
+            }
+            return match;
+          }) : null;
           
           return {
             ...question,
@@ -130,28 +165,31 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
   };
 
   useEffect(() => {
-    // Check if userId exists in sessionStorage, if not, try to get it
-    if (!sessionStorage.getItem('userId')) {
-      // Try to get the user ID from the session
-      const getUserId = async () => {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user?.id) {
-            sessionStorage.setItem('userId', session.user.id);
-          }
-        } catch (error) {
-          console.error('Error getting user session:', error);
-        }
-      };
-      getUserId();
-    }
-    
+    // Fetch questions whenever the component mounts or dialog state changes
     fetchQuestions();
     
     // Refresh questions when dialog opens
     if (isDialogOpen) {
       fetchQuestions();
     }
+    
+    // Set up a real-time listener for changes to the answers table
+    const answersSubscription = supabase
+      .channel('answers-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'answers' }, 
+        (payload) => {
+          console.log('Answers table changed:', payload);
+          // Refresh questions when answers are added, updated, or deleted
+          fetchQuestions();
+        }
+      )
+      .subscribe();
+      
+    // Clean up subscription when component unmounts
+    return () => {
+      supabase.removeChannel(answersSubscription);
+    };
   }, [isDialogOpen]);
 
   return (
@@ -315,9 +353,11 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
                           {getMediaTypeIcon(question.media_type)}
                           <span className="text-gray-200">{question.question}</span>
                         </div>
-                        {question.answer && (
-                          <span className="text-sm text-green-300 font-medium px-2 py-1 bg-green-900/30 rounded">Answered</span>
-                        )}
+                        <span 
+                          className={`text-sm font-medium px-2 py-1 rounded ${question.answer ? 'text-green-300 bg-green-900/30' : 'text-gray-400 bg-gray-800/50'}`}
+                        >
+                          {question.answer ? 'Answered' : 'Not Answered'}
+                        </span>
                       </div>
                     ))
                   )}

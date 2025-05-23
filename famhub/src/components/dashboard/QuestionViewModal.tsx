@@ -257,6 +257,9 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           // Format the answer based on its type and question type
           let formattedAnswer = answerData.answer_data;
           
+          // Log the raw answer data for debugging
+          console.log('Raw answer data:', formattedAnswer, 'Type:', typeof formattedAnswer);
+          
           if (question.type === 'multiple-choice') {
             // For multiple choice, we need to extract the selected option
             if (Array.isArray(formattedAnswer)) {
@@ -282,6 +285,39 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                 // If parsing fails, convert to string as fallback
                 formattedAnswer = JSON.stringify(formattedAnswer);
               }
+            }
+          } else if (question.type === 'ranking') {
+            // For ranking questions, ensure we have a valid JSON array
+            try {
+              if (typeof formattedAnswer === 'string') {
+                // Try to parse it as JSON
+                try {
+                  JSON.parse(formattedAnswer);
+                  // If parsing succeeds, keep it as is
+                } catch (e) {
+                  // If it's not valid JSON but contains items, convert to JSON array
+                  if (formattedAnswer.includes('Item')) {
+                    // Extract items from a string like "Item 1, Item 2, Item 3"
+                    const items = formattedAnswer.split(',').map(item => item.trim());
+                    formattedAnswer = JSON.stringify(items);
+                    console.log('Converted ranking items to JSON array:', formattedAnswer);
+                  }
+                }
+              } else if (Array.isArray(formattedAnswer)) {
+                // If it's already an array, stringify it
+                formattedAnswer = JSON.stringify(formattedAnswer);
+              } else if (typeof formattedAnswer === 'object' && formattedAnswer !== null) {
+                // If it's an object, try to convert to array
+                const values = Object.values(formattedAnswer);
+                formattedAnswer = JSON.stringify(values);
+              }
+            } catch (e) {
+              console.warn('Could not process ranking answer:', e);
+              // Create a fallback array from the question type data
+              const fallbackItems = questionTypeData
+                .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
+                .map(item => item.item_text || '');
+              formattedAnswer = JSON.stringify(fallbackItems);
             }
           } else if (question.type === 'likert-scale') {
             // For likert scale, ensure we have a string value
@@ -1407,14 +1443,58 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                   const initialRanking = questionTypeData
                     .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
                     .map(item => item.item_text || '');
+                  // Log the initial ranking for debugging
+                  console.log('Setting initial ranking:', initialRanking);
                   setTimeout(() => setAnswer(JSON.stringify(initialRanking)), 0);
                   return null;
                 })()}
                 
                 {/* Ranking items */}
-                {(answer ? JSON.parse(answer) as string[] : questionTypeData
-                  .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
-                  .map(item => item.item_text || ''))
+                {(() => {
+                  // Safely parse the answer JSON or use default ranking
+                  let parsedRanking: string[] = [];
+                  
+                  // Handle the case where answer might be a non-JSON string
+                  if (answer && typeof answer === 'string') {
+                    // Check if it's already a valid JSON string
+                    try {
+                      // Try to parse as JSON first
+                      const parsed = JSON.parse(answer);
+                      if (Array.isArray(parsed)) {
+                        parsedRanking = parsed;
+                      } else {
+                        // If parsed but not an array, use default
+                        console.error('Parsed ranking is not an array:', parsed);
+                        parsedRanking = questionTypeData
+                          .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
+                          .map(item => item.item_text || '');
+                      }
+                    } catch (error) {
+                      // Not valid JSON, check if it's a comma-separated list
+                      console.log('Failed to parse ranking as JSON, trying alternative formats:', answer);
+                      
+                      if (answer.includes('Item') || answer.includes(',')) {
+                        // It might be a comma-separated list like "Item 1, Item 2, Item 3"
+                        parsedRanking = answer.split(',').map(item => item.trim());
+                        console.log('Parsed ranking from comma-separated list:', parsedRanking);
+                      } else {
+                        // Single item or unknown format, make it an array with one item
+                        parsedRanking = [answer];
+                        console.log('Using answer as single item in array:', parsedRanking);
+                      }
+                    }
+                  } else if (Array.isArray(answer)) {
+                    // If answer is already an array, use it directly
+                    parsedRanking = answer;
+                  } else {
+                    // If answer is not a string or array or is empty, use default
+                    parsedRanking = questionTypeData
+                      .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
+                      .map(item => item.item_text || '');
+                  }
+                  
+                  return parsedRanking;
+                })()
                   .map((item, index, items) => (
                     <div key={index} className="flex items-center space-x-2 p-3 bg-[#1e2330] rounded-lg border border-gray-700 transition-all duration-300">
                       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-900 flex items-center justify-center text-white font-medium">
@@ -1428,9 +1508,46 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                           className="h-8 w-8 rounded-full"
                           disabled={index === 0}
                           onClick={() => {
-                            const newRanking = [...JSON.parse(answer)];
-                            [newRanking[index], newRanking[index - 1]] = [newRanking[index - 1], newRanking[index]];
-                            setAnswer(JSON.stringify(newRanking));
+                            try {
+                              // Safely parse the current ranking
+                              let currentRanking: string[] = [];
+                              
+                              if (answer && typeof answer === 'string') {
+                                try {
+                                  // Try to parse as JSON
+                                  currentRanking = JSON.parse(answer);
+                                  if (!Array.isArray(currentRanking)) {
+                                    throw new Error('Parsed ranking is not an array');
+                                  }
+                                } catch (e) {
+                                  console.log('Error parsing ranking for up button:', e);
+                                  
+                                  // Check if it's a comma-separated list
+                                  if (answer.includes(',')) {
+                                    currentRanking = answer.split(',').map(item => item.trim());
+                                  } else if (answer.includes('Item')) {
+                                    // It might be a list of items
+                                    currentRanking = [answer]; // Use as single item
+                                  } else {
+                                    // Fallback to the current displayed items
+                                    currentRanking = items as string[];
+                                  }
+                                }
+                              } else if (Array.isArray(answer)) {
+                                // If answer is already an array, use it directly
+                                currentRanking = answer;
+                              } else {
+                                // If answer is not a string or array, use the current items
+                                currentRanking = items as string[];
+                              }
+                              
+                              // Create a new ranking with the swapped items
+                              const newRanking = [...currentRanking];
+                              [newRanking[index], newRanking[index - 1]] = [newRanking[index - 1], newRanking[index]];
+                              setAnswer(JSON.stringify(newRanking));
+                            } catch (error) {
+                              console.error('Error updating ranking:', error);
+                            }
                           }}
                         >
                           ↑
@@ -1441,9 +1558,46 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                           className="h-8 w-8 rounded-full"
                           disabled={index === items.length - 1}
                           onClick={() => {
-                            const newRanking = [...JSON.parse(answer)];
-                            [newRanking[index], newRanking[index + 1]] = [newRanking[index + 1], newRanking[index]];
-                            setAnswer(JSON.stringify(newRanking));
+                            try {
+                              // Safely parse the current ranking
+                              let currentRanking: string[] = [];
+                              
+                              if (answer && typeof answer === 'string') {
+                                try {
+                                  // Try to parse as JSON
+                                  currentRanking = JSON.parse(answer);
+                                  if (!Array.isArray(currentRanking)) {
+                                    throw new Error('Parsed ranking is not an array');
+                                  }
+                                } catch (e) {
+                                  console.log('Error parsing ranking for down button:', e);
+                                  
+                                  // Check if it's a comma-separated list
+                                  if (answer.includes(',')) {
+                                    currentRanking = answer.split(',').map(item => item.trim());
+                                  } else if (answer.includes('Item')) {
+                                    // It might be a list of items
+                                    currentRanking = [answer]; // Use as single item
+                                  } else {
+                                    // Fallback to the current displayed items
+                                    currentRanking = items as string[];
+                                  }
+                                }
+                              } else if (Array.isArray(answer)) {
+                                // If answer is already an array, use it directly
+                                currentRanking = answer;
+                              } else {
+                                // If answer is not a string or array, use the current items
+                                currentRanking = items as string[];
+                              }
+                              
+                              // Create a new ranking with the swapped items
+                              const newRanking = [...currentRanking];
+                              [newRanking[index], newRanking[index + 1]] = [newRanking[index + 1], newRanking[index]];
+                              setAnswer(JSON.stringify(newRanking));
+                            } catch (error) {
+                              console.error('Error updating ranking:', error);
+                            }
                           }}
                         >
                           ↓
