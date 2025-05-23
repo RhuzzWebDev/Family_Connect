@@ -28,7 +28,7 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
   // Fetch question sets with question counts in a single query
   const fetchQuestionSets = async () => {
     try {
-      console.log('Fetching question sets with counts...');
+      // Fetching question sets with counts
       
       // If we have initial question sets from server-side props, use those instead of fetching
       if (initialQuestionSets && initialQuestionSets.length > 0) {
@@ -45,12 +45,12 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         `);
       
       if (error) {
-        console.error('Error fetching question sets with counts:', error);
+        // Error fetching question sets with counts
         return;
       }
       
       if (!data || data.length === 0) {
-        console.log('No question sets found');
+        // No question sets found
         setQuestionSets([]);
         return;
       }
@@ -69,10 +69,10 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         };
       });
       
-      console.log('Question sets with counts:', questionSetsWithCounts);
+      // Question sets with counts
       setQuestionSets(questionSetsWithCounts);
     } catch (err) {
-      console.error('Error in fetchQuestionSets:', err);
+      // Error in fetchQuestionSets
     }
   };
 
@@ -85,7 +85,7 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
       
       // Safety check - ensure we have a user email
       if (!userEmail) {
-        console.log('No user email found in session');
+        // No user email found in session
         setLoading(false);
         setError('User email not found');
         return;
@@ -106,7 +106,7 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         .single();
 
       if (userError) {
-        console.error('User fetch error:', userError);
+        // User fetch error
         throw new Error('Failed to fetch user data');
       }
 
@@ -178,7 +178,7 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         .eq('user_id', userData.id);
         
       if (likesError) {
-        console.error('Error fetching likes:', likesError);
+        // Error fetching likes
       }
       
       // Create a set of question IDs that the user has liked
@@ -209,7 +209,6 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
       setQuestions(sortedQuestions);
       setLoading(false);
     } catch (err: any) {
-      console.error('Error fetching questions:', err);
       setError(err.message || 'Failed to load questions');
       setLoading(false);
     }
@@ -265,7 +264,6 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         .single();
 
       if (error) {
-        console.error('Error fetching new question:', error);
         return;
       }
 
@@ -289,7 +287,7 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         setQuestions(prev => [newQuestion, ...prev]);
       }
     } catch (err) {
-      console.error('Error in fetchNewQuestion:', err);
+      // Error in fetchNewQuestion
     }
   };
 
@@ -308,7 +306,6 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
         .single();
 
       if (userError) {
-        console.error('Error getting user:', userError);
         throw new Error('Failed to get user data');
       }
 
@@ -348,7 +345,6 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
           .eq('user_id', userData.id);
 
         if (deleteError) {
-          console.error('Error removing like:', deleteError);
           throw new Error('Failed to unlike');
         }
       } else {
@@ -361,13 +357,10 @@ export default function QuestionGrid({ limitCards, showHeader = true, initialQue
           });
 
         if (insertError) {
-          console.error('Error adding like:', insertError);
           throw new Error('Failed to like');
         }
       }
     } catch (err: any) {
-      console.error('Error in handleLike:', err);
-      
       // Revert the optimistic update
       setQuestions(prev => {
         const question = prev.find(q => q.id === questionId);

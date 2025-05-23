@@ -65,7 +65,7 @@ export default function QuestionGridClient({
         .single();
 
       if (error) {
-        console.error('Error fetching new question:', error);
+        // Error fetching new question
         return;
       }
 
@@ -74,7 +74,7 @@ export default function QuestionGridClient({
         setQuestions(prev => [data, ...prev]);
       }
     } catch (err) {
-      console.error('Error in fetchNewQuestion:', err);
+      // Error in fetchNewQuestion
     }
   };
 
@@ -122,7 +122,7 @@ export default function QuestionGridClient({
         setError(result.error || 'Failed to update like');
       }
     } catch (err) {
-      console.error('Error in handleLike:', err);
+      // Error in handleLike
       setError('Failed to update like');
     } finally {
       setIsLiking(false);

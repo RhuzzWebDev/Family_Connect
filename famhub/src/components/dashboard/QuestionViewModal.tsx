@@ -142,15 +142,10 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
   const [userAnswers, setUserAnswers] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Add this useEffect to log when relevant state changes
+  // Monitor state changes
   useEffect(() => {
-    console.log('State updated:', { 
-      userExistingAnswer: !!userExistingAnswer, 
-      answer, 
-      questionType: question.type,
-      options: questionTypeData.map(opt => opt.option_text)
-    });
-  }, [userExistingAnswer, answer, question.type, questionTypeData]);
+    // State monitoring removed
+  }, [userExistingAnswer, answer, question, questionTypeData]);
 
   // Handle resetting the user's answer without refreshing the page
   const handleResetAnswer = async () => {
@@ -192,7 +187,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         calculateCommunityAnswers();
       }
     } catch (err) {
-      console.error('Error resetting answer:', err);
+      // Error resetting answer
       toast.error("An unexpected error occurred");
     } finally {
       setResettingAnswer(false);
@@ -215,7 +210,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .single();
         
       if (userError || !userData) {
-        console.error('User not found:', userError);
+        // User not found
         return;
       }
       
@@ -226,7 +221,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .limit(1);
       
       if (tableCheckError) {
-        console.log('Answers table may not exist:', tableCheckError.message);
+        // Answers table may not exist
         return;
       }
       
@@ -244,12 +239,12 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .maybeSingle(); // Use maybeSingle instead of single to avoid 406 errors
       
       if (answerError && answerError.code !== 'PGRST116') { // PGRST116 is 'no rows returned'
-        console.error('Error fetching answer:', answerError);
+        // Error fetching answer
         return;
       }
       
       if (answerData) {
-        console.log('Found existing answer:', answerData);
+        // Found existing answer
         setUserExistingAnswer(answerData);
         
         // Set the answer in the form
@@ -258,7 +253,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           let formattedAnswer = answerData.answer_data;
           
           // Log the raw answer data for debugging
-          console.log('Raw answer data:', formattedAnswer, 'Type:', typeof formattedAnswer);
+          // Raw answer data
           
           if (question.type === 'multiple-choice') {
             // For multiple choice, we need to extract the selected option
@@ -281,7 +276,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                   formattedAnswer = Object.values(formattedAnswer)[0];
                 }
               } catch (e) {
-                console.warn('Could not parse multiple choice answer:', e);
+                // Could not parse multiple choice answer
                 // If parsing fails, convert to string as fallback
                 formattedAnswer = JSON.stringify(formattedAnswer);
               }
@@ -300,7 +295,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                     // Extract items from a string like "Item 1, Item 2, Item 3"
                     const items = formattedAnswer.split(',').map(item => item.trim());
                     formattedAnswer = JSON.stringify(items);
-                    console.log('Converted ranking items to JSON array:', formattedAnswer);
+                    // Converted ranking items to JSON array
                   }
                 }
               } else if (Array.isArray(formattedAnswer)) {
@@ -312,7 +307,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                 formattedAnswer = JSON.stringify(values);
               }
             } catch (e) {
-              console.warn('Could not process ranking answer:', e);
+              // Could not process ranking answer
               // Create a fallback array from the question type data
               const fallbackItems = questionTypeData
                 .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
@@ -339,7 +334,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                   }
                 }
               } catch (e) {
-                console.warn('Could not parse likert scale answer:', e);
+                // Could not parse likert scale answer
                 formattedAnswer = JSON.stringify(formattedAnswer);
               }
             }
@@ -353,17 +348,17 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                 formattedAnswer = JSON.stringify(formattedAnswer);
               }
             } catch (e) {
-              console.warn('Could not extract value from object:', e);
+              // Could not extract value from object
               formattedAnswer = JSON.stringify(formattedAnswer);
             }
           }
           
-          console.log('Setting answer from existing data:', formattedAnswer, 'Type:', typeof formattedAnswer, 'for question type:', question.type);
+          // Setting answer from existing data
           setAnswer(formattedAnswer);
         }
       }
     } catch (err) {
-      console.error('Error in fetchUserAnswer:', err);
+      // Error in fetchUserAnswer
     } finally {
       setLoadingExistingAnswer(false);
     }
@@ -416,7 +411,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .order('created_at', { ascending: false });
         
       if (error) {
-        console.error('Error fetching community answers:', error);
+        // Error fetching community answers
         return;
       }
       
@@ -493,7 +488,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
       setCommunityAnswers(answerStats);
       setUserAnswers(userAnswers);
     } catch (err) {
-      console.error('Error in calculateCommunityAnswers:', err);
+      // Error in calculateCommunityAnswers
     }
   };
   
@@ -519,7 +514,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .single();
         
       if (userError) {
-        console.error('Error getting user ID:', userError);
+        // Error getting user ID
         setCommentsLoading(false);
         return;
       }
@@ -538,7 +533,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .order('created_at', { ascending: false });
         
       if (error) {
-        console.error('Error fetching comments:', error);
+        // Error fetching comments
         setComments([]);
         return;
       }
@@ -550,7 +545,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .eq('user_id', userId);
         
       if (likeError) {
-        console.error('Error fetching likes:', likeError);
+        // Error fetching likes
       }
       
       // Create a set of comment IDs the user has liked
@@ -573,7 +568,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           .order('created_at', { ascending: true });
           
         if (replyError) {
-          console.error('Error fetching replies:', replyError);
+          // Error fetching replies
         } else {
           replies = replyData || [];
         }
@@ -635,7 +630,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         setComments([]);
       }
     } catch (err) {
-      console.error('Error in fetchComments:', err);
+      // Error in fetchComments
       setComments([]);
     } finally {
       setCommentsLoading(false);
@@ -647,7 +642,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
     
     setLoading(true);
     try {
-      console.log(`Fetching type data for question: ${question.id}, type: ${question.type}`);
+      // Fetching type data for question
       
       // Determine which table to query based on question type
       let tableName = '';
@@ -682,7 +677,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           tableName = 'question_demographic';
           break;
         default:
-          console.log(`No specific table for question type: ${question.type}`);
+          // No specific table for question type
           setLoading(false);
           return;
       }
@@ -698,9 +693,9 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
             .single();
             
           if (demographicError) {
-            console.error('Error fetching demographic data:', demographicError);
+            // Error fetching demographic data
           } else if (demographicData) {
-            console.log('Fetched demographic data:', demographicData);
+            // Fetched demographic data
             
             // Then fetch the demographic options using the question_demographic_id
             const { data: optionsData, error: optionsError } = await supabase
@@ -710,9 +705,9 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               .order('option_order', { ascending: true });
               
             if (optionsError) {
-              console.error('Error fetching demographic options:', optionsError);
+              // Error fetching demographic options
             } else {
-              console.log(`Fetched ${optionsData?.length || 0} demographic options`);
+              // Fetched demographic options
               
               // Combine the demographic data with its options
               const combinedData = {
@@ -731,15 +726,15 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
             .eq('question_id', question.id);
             
           if (error) {
-            console.error(`Error fetching ${tableName} data:`, error);
+            // Error fetching data
           } else {
-            console.log(`Fetched ${data?.length || 0} type data items for question`);
+            // Fetched type data items
             setQuestionTypeData(data || []);
           }
         }
       }
     } catch (err) {
-      console.error('Error in fetchQuestionTypeData:', err);
+      // Error in fetchQuestionTypeData
     } finally {
       setLoading(false);
     }
@@ -889,7 +884,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .single();
         
       if (userError) {
-        console.error('Error getting user ID:', userError);
+        // Error getting user ID
         toast.error('Failed to identify user');
         return;
       }
@@ -932,7 +927,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           .eq('comment_id', commentId);
           
         if (unlikeError) {
-          console.error('Error unliking comment:', unlikeError);
+          // Error unliking comment
           toast.error('Failed to unlike comment');
           // Revert the optimistic update
           fetchComments();
@@ -952,7 +947,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           });
           
         if (likeError) {
-          console.error('Error liking comment:', likeError);
+          // Error liking comment
           toast.error('Failed to like comment');
           // Revert the optimistic update
           fetchComments();
@@ -963,7 +958,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         await supabase.rpc('increment_comment_like', { comment_id: commentId });
       }
     } catch (err) {
-      console.error('Error in handleLikeComment:', err);
+      // Error in handleLikeComment
       toast.error('An unexpected error occurred');
       // Revert the optimistic update
       fetchComments();
@@ -1004,7 +999,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
           .upload(filePath, mediaFile);
           
         if (uploadError) {
-          console.error('Error uploading media:', uploadError);
+          // Error uploading media
           toast.error('Failed to upload media');
           return;
         }
@@ -1025,7 +1020,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .single();
         
       if (userError) {
-        console.error('Error getting user ID:', userError);
+        // Error getting user ID
         toast.error('Failed to identify user');
         return;
       }
@@ -1046,7 +1041,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
         .single();
         
       if (commentError) {
-        console.error('Error posting comment:', commentError);
+        // Error posting comment
         toast.error('Failed to post comment');
         return;
       }
@@ -1066,7 +1061,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
       
       toast.success(replyingTo ? 'Reply posted successfully' : 'Comment posted successfully');
     } catch (err) {
-      console.error('Error in handlePostComment:', err);
+      // Error in handlePostComment
       toast.error('An unexpected error occurred');
     } finally {
       setPostingComment(false);
@@ -1218,7 +1213,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               <div className="space-y-2">
                 {questionTypeData.map((option, index) => {
                   // Log for debugging
-                  console.log('Comparing option:', option.option_text, 'with answer:', answer);
+                  // Comparing option with answer
                   
                   // Check if this option is selected in the current form
                   const isSelected = option.option_text === answer;
@@ -1444,7 +1439,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                     .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
                     .map(item => item.item_text || '');
                   // Log the initial ranking for debugging
-                  console.log('Setting initial ranking:', initialRanking);
+                  // Setting initial ranking
                   setTimeout(() => setAnswer(JSON.stringify(initialRanking)), 0);
                   return null;
                 })()}
@@ -1464,23 +1459,23 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                         parsedRanking = parsed;
                       } else {
                         // If parsed but not an array, use default
-                        console.error('Parsed ranking is not an array:', parsed);
+                        // Parsed ranking is not an array
                         parsedRanking = questionTypeData
                           .sort((a, b) => (a.item_order || 0) - (b.item_order || 0))
                           .map(item => item.item_text || '');
                       }
                     } catch (error) {
                       // Not valid JSON, check if it's a comma-separated list
-                      console.log('Failed to parse ranking as JSON, trying alternative formats:', answer);
+                      // Failed to parse ranking as JSON
                       
                       if (answer.includes('Item') || answer.includes(',')) {
                         // It might be a comma-separated list like "Item 1, Item 2, Item 3"
                         parsedRanking = answer.split(',').map(item => item.trim());
-                        console.log('Parsed ranking from comma-separated list:', parsedRanking);
+                        // Parsed ranking from comma-separated list
                       } else {
                         // Single item or unknown format, make it an array with one item
                         parsedRanking = [answer];
-                        console.log('Using answer as single item in array:', parsedRanking);
+                        // Using answer as single item in array
                       }
                     }
                   } else if (Array.isArray(answer)) {
@@ -1520,7 +1515,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                                     throw new Error('Parsed ranking is not an array');
                                   }
                                 } catch (e) {
-                                  console.log('Error parsing ranking for up button:', e);
+                                  // Error parsing ranking for up button
                                   
                                   // Check if it's a comma-separated list
                                   if (answer.includes(',')) {
@@ -1546,7 +1541,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                               [newRanking[index], newRanking[index - 1]] = [newRanking[index - 1], newRanking[index]];
                               setAnswer(JSON.stringify(newRanking));
                             } catch (error) {
-                              console.error('Error updating ranking:', error);
+                              // Error updating ranking
                             }
                           }}
                         >
@@ -1570,7 +1565,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                                     throw new Error('Parsed ranking is not an array');
                                   }
                                 } catch (e) {
-                                  console.log('Error parsing ranking for down button:', e);
+                                  // Error parsing ranking for down button
                                   
                                   // Check if it's a comma-separated list
                                   if (answer.includes(',')) {
@@ -1596,7 +1591,7 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
                               [newRanking[index], newRanking[index + 1]] = [newRanking[index + 1], newRanking[index]];
                               setAnswer(JSON.stringify(newRanking));
                             } catch (error) {
-                              console.error('Error updating ranking:', error);
+                              // Error updating ranking
                             }
                           }}
                         >
@@ -1870,84 +1865,86 @@ export function QuestionViewModal({ question, onClose, isOpen }: QuestionViewMod
               <div className="text-red-500 text-sm mt-2">{submitError}</div>
             )}
 
-            <Button
-              className={`w-full mt-4 ${userExistingAnswer ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-              disabled={!answer || submitting}
-              onClick={async () => {
-                setSubmitting(true);
-                setSubmitError('');
-                try {
-                  // Get user email from NextAuth session
-                  const userEmail = session?.user?.email;
-                  if (!userEmail) throw new Error('Not logged in');
+            <div className="flex justify-center mt-4">
+              <Button
+                className={`px-6 max-w-[200px] ${userExistingAnswer ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                disabled={!answer || submitting}
+                onClick={async () => {
+                  setSubmitting(true);
+                  setSubmitError('');
+                  try {
+                    // Get user email from NextAuth session
+                    const userEmail = session?.user?.email;
+                    if (!userEmail) throw new Error('Not logged in');
 
-                  const { data: userData, error: userError } = await supabase
-                    .from('users')
-                    .select('id')
-                    .eq('email', userEmail)
-                    .single();
+                    const { data: userData, error: userError } = await supabase
+                      .from('users')
+                      .select('id')
+                      .eq('email', userEmail)
+                      .single();
 
-                  if (userError || !userData) throw new Error('User not found');
+                    if (userError || !userData) throw new Error('User not found');
 
-                  // Determine the appropriate answer format based on question type
-                  let answer_format: 'text' | 'number' | 'array' | 'json';
-                  switch (question.type) {
-                    case 'multiple-choice':
-                    case 'image-choice':
-                    case 'ranking':
-                      answer_format = 'array';
-                      break;
-                    case 'rating-scale':
-                    case 'likert-scale':
-                    case 'slider':
-                      answer_format = 'number';
-                      break;
-                    case 'matrix':
-                      answer_format = 'json';
-                      break;
-                    case 'dropdown':
-                    case 'open-ended':
-                    case 'dichotomous':
-                    default:
-                      answer_format = 'text';
-                      break;
+                    // Determine the appropriate answer format based on question type
+                    let answer_format: 'text' | 'number' | 'array' | 'json';
+                    switch (question.type) {
+                      case 'multiple-choice':
+                      case 'image-choice':
+                      case 'ranking':
+                        answer_format = 'array';
+                        break;
+                      case 'rating-scale':
+                      case 'likert-scale':
+                      case 'slider':
+                        answer_format = 'number';
+                        break;
+                      case 'matrix':
+                        answer_format = 'json';
+                        break;
+                      case 'dropdown':
+                      case 'open-ended':
+                      case 'dichotomous':
+                      default:
+                        answer_format = 'text';
+                        break;
+                    }
+
+                    // Use the userAnswerQuestions service to submit the answer
+                    // The service handles all the formatting and authentication
+                    const { data, error: answerError } = await userAnswerQuestions.submitAnswer({
+                      question_id: question.id,
+                      answer_data: answer,
+                      answer_format,
+                      question_type: question.type || 'text'
+                    });
+                    
+                    if (answerError) {
+                      // Answer submission failed
+                      setSubmitError(answerError.message);
+                      return;
+                    }
+                    
+                    // Answer submitted successfully
+                    toast.success('Your answer has been submitted!');
+                    
+                    // Update the existing answer in state
+                    setUserExistingAnswer(data);
+                    
+                    // Refresh community answers without closing the modal
+                    calculateCommunityAnswers();
+                    
+                    // Stay on the current tab instead of switching to community answers
+                  } catch (err) {
+                    // Error in answer submission
+                    setSubmitError('An unexpected error occurred. Please try again.');
+                  } finally {
+                    setSubmitting(false);
                   }
-
-                  // Use the userAnswerQuestions service to submit the answer
-                  // The service handles all the formatting and authentication
-                  const { data, error: answerError } = await userAnswerQuestions.submitAnswer({
-                    question_id: question.id,
-                    answer_data: answer,
-                    answer_format,
-                    question_type: question.type || 'text'
-                  });
-                  
-                  if (answerError) {
-                    console.error('Answer submission failed:', answerError);
-                    setSubmitError(answerError.message);
-                    return;
-                  }
-                  
-                  console.log('Answer submitted successfully:', data);
-                  toast.success('Your answer has been submitted!');
-                  
-                  // Update the existing answer in state
-                  setUserExistingAnswer(data);
-                  
-                  // Refresh community answers without closing the modal
-                  calculateCommunityAnswers();
-                  
-                  // Stay on the current tab instead of switching to community answers
-                } catch (err) {
-                  console.error('Error in answer submission:', err);
-                  setSubmitError('An unexpected error occurred. Please try again.');
-                } finally {
-                  setSubmitting(false);
-                }
-              }}
-            >
-              {submitting ? 'Submitting...' : userExistingAnswer ? 'Update Answer' : 'Submit Answer'}
-            </Button>
+                }}
+              >
+                {submitting ? 'Submitting...' : userExistingAnswer ? 'Update Answer' : 'Submit Answer'}
+              </Button>
+            </div>
           </div>
             </TabsContent>
             
