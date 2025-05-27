@@ -593,11 +593,11 @@ export default function QuestionsPage() {
 
   return (
     <AdminLayout>
-      <div className="p-6 bg-[#0a0c10] min-h-screen">
+      <div className="p-6 bg-[#0F1017] min-h-screen">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-2xl font-bold text-white">Question Management</h1>
           <Button
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-[#232336] hover:bg-[#2a2b3a] text-white"
             onClick={() => {
               setSelectedQuestionSet(null);
               setCreateEditDialogOpen(true);
@@ -617,7 +617,7 @@ export default function QuestionsPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           </div>
         ) : error ? (
-          <div className="bg-red-900/20 border border-red-800 text-red-300 p-4 rounded-md">
+          <div className="bg-[#232336] border border-red-500 text-red-300 p-4 rounded-md">
             {error}
           </div>
         ) : (
@@ -633,7 +633,7 @@ export default function QuestionsPage() {
               ))}
             </div>
           ) : (
-            <div className="bg-[#111318] rounded-lg overflow-hidden border border-gray-800">
+            <div className="bg-[#1E1F29] rounded-lg overflow-hidden border border-[#232336]">
               {questionSets.map((questionSet) => (
                 <QuestionSetListItem
                   key={questionSet.id}

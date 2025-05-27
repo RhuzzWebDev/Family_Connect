@@ -18,23 +18,24 @@ const Input = ({
   error?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) => (
   <div className="mb-4">
-    <label className="block text-sm font-medium text-gray-700 mb-1">
+    <label className="block text-sm font-medium text-gray-300 mb-1">
       {label}
     </label>
     <input
       {...props}
       className={`
         w-full px-4 py-2 rounded-lg border
-        ${error ? 'border-red-500' : 'border-gray-300'}
+        ${error ? 'border-red-500' : 'border-[#232336]'}
         focus:outline-none focus:ring-2
         ${error ? 'focus:ring-red-500' : 'focus:ring-blue-500'}
         focus:border-transparent
         transition duration-200 ease-in-out
-        placeholder:text-gray-400
+        placeholder:text-gray-500
+        bg-[#1E1F29] text-white
       `}
     />
     {error && (
-      <p className="mt-1 text-sm text-red-600">{error}</p>
+      <p className="mt-1 text-sm text-red-400">{error}</p>
     )}
   </div>
 );
@@ -100,13 +101,13 @@ export default function AdminLoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <Card className="max-w-md w-full space-y-8 p-8">
+    <div className="min-h-screen flex items-center justify-center bg-[#0F1017] py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="max-w-md w-full space-y-8 p-8 bg-[#1E1F29] border border-[#232336]">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
             Admin Login
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-gray-400">
             Sign in to access the admin dashboard
           </p>
         </div>
@@ -138,7 +139,7 @@ export default function AdminLoginForm() {
           <div>
             <Button
               type="submit"
-              className="w-full"
+              className="w-full bg-[#232336] hover:bg-[#2a2b3a] text-white"
               disabled={loading}
             >
               {loading ? (
@@ -154,7 +155,7 @@ export default function AdminLoginForm() {
           <div className="text-sm text-center">
             <Link
               href="/login"
-              className="font-medium text-blue-600 hover:text-blue-500"
+              className="font-medium text-blue-400 hover:text-blue-300"
             >
               Return to user login
             </Link>

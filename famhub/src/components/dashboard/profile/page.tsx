@@ -98,9 +98,9 @@ export default function ProfilePage() {
         {isEditing ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="flex items-center gap-6 mb-8">
-              <Avatar className="w-24 h-24">
-                <AvatarImage src={userData?.avatar_url} />
-                <AvatarFallback>
+              <Avatar className="w-24 h-24 border-2 border-[#232336] bg-[#1E1F29]">
+                <AvatarImage src={userData?.avatar_url} className="object-cover" />
+                <AvatarFallback className="bg-[#232336] text-gray-300 font-medium">
                   {userData?.first_name?.charAt(0) || 'U'}
                 </AvatarFallback>
               </Avatar>
@@ -177,9 +177,9 @@ export default function ProfilePage() {
         ) : (
           <>
             <div className="flex items-center gap-6 mb-8">
-              <Avatar className="w-24 h-24">
-                <AvatarImage src={userData?.avatar_url} />
-                <AvatarFallback>
+              <Avatar className="w-24 h-24 border-2 border-[#232336] bg-[#1E1F29]">
+                <AvatarImage src={userData?.avatar_url} className="object-cover" />
+                <AvatarFallback className="bg-[#232336] text-gray-300 font-medium">
                   {userData?.first_name?.charAt(0) || 'U'}
                 </AvatarFallback>
               </Avatar>

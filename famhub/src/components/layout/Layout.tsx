@@ -28,6 +28,7 @@ NavLink.displayName = 'NavLink';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
+  const pathname = usePathname() || '';
   
   if (!session) {
     return (
@@ -37,8 +38,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const pathname = usePathname() || '';
-  
   // Show inner navigation for main app sections
   const showInnerNav = pathname.includes('/dashboard') || 
                       pathname.includes('/questions') || 
