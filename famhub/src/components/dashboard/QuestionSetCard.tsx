@@ -87,6 +87,8 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
+  const [showFullDescription, setShowFullDescription] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const { data: session } = useSession()
 
   // Fetch questions and their answers
@@ -216,7 +218,22 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
         <CardContent className="p-4">
           <h3 className="text-lg font-medium mb-2 text-white">{questionSet.title}</h3>
           {questionSet.description && (
-            <p className="text-sm text-gray-500 mb-3 line-clamp-2">{questionSet.description}</p>
+            <div className="mb-3">
+              <p className={`text-sm text-gray-500 ${!showFullDescription ? 'line-clamp-2' : ''}`}>
+                {questionSet.description}
+              </p>
+              {questionSet.description.length > 100 && (
+                <button 
+                  className="text-xs text-blue-400 hover:text-blue-300 mt-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowFullDescription(!showFullDescription);
+                  }}
+                >
+                  {showFullDescription ? 'Read Less' : 'Read More'}
+                </button>
+              )}
+            </div>
           )}
           {questionSet.author_name && (
             <p className="text-xs text-gray-500">By {questionSet.author_name}</p>
@@ -239,7 +256,7 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
       {isDialogOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
           <div 
-            className="bg-[#121212] text-white w-full max-w-md h-full overflow-hidden flex flex-col animate-slide-in-right"
+            className={`bg-[#121212] text-white ${isFullscreen ? 'w-full' : 'w-full md:w-1/2'} h-full overflow-hidden flex flex-col animate-slide-in-right`}
             style={{
               boxShadow: '-4px 0 12px rgba(0, 0, 0, 0.2)',
               animation: 'slideInRight 0.3s forwards'
@@ -253,7 +270,24 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
             `}</style>
             {/* Header with close button */}
             <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-              <h2 className="text-xl font-semibold">{questionSet.title}</h2>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setIsFullscreen(!isFullscreen)}
+                  className="p-1 rounded hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                  title={isFullscreen ? 'Minimize' : 'Maximize'}
+                >
+                  {isFullscreen ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                    </svg>
+                  )}
+                </button>
+                <h2 className="text-xl font-semibold">{questionSet.title}</h2>
+              </div>
               <button 
                 onClick={() => setIsDialogOpen(false)}
                 className="p-1 rounded-full hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
@@ -278,7 +312,19 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
               
               <div className="space-y-3">
                 {questionSet.description && (
-                  <p className="text-gray-300">{questionSet.description}</p>
+                  <div>
+                    <p className={`text-gray-300 ${!showFullDescription ? 'line-clamp-3' : ''}`}>
+                      {questionSet.description}
+                    </p>
+                    {questionSet.description.length > 100 && (
+                      <button 
+                        className="text-sm text-blue-400 hover:text-blue-300 mt-1"
+                        onClick={() => setShowFullDescription(!showFullDescription)}
+                      >
+                        {showFullDescription ? 'Read Less' : 'Read More'}
+                      </button>
+                    )}
+                  </div>
                 )}
                 
                 {questionSet.author_name && (

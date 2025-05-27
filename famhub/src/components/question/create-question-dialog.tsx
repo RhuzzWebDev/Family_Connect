@@ -1195,36 +1195,58 @@ export default function CreateQuestionDialog({
               )}
               
               {formData.type === QuestionTypeEnum.DICHOTOMOUS && (
-                <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
-                  <Label>Dichotomous Question Options</Label>
-                  <div className="text-sm text-gray-400 mb-2">
-                    Customize the binary options for your yes/no question
-                  </div>
-                  {formData.dichotomousOptions.map((option, index) => (
-                    <div key={index} className="flex items-center space-x-2">
-                      <Input
-                        value={option}
-                        onChange={(e) => handleArrayFieldChange('dichotomousOptions', index, e.target.value)}
-                        placeholder={index === 0 ? "Positive option (e.g., Yes)" : "Negative option (e.g., No)"}
-                        className="bg-[#0d0f14] border-gray-800 text-white flex-1"
-                      />
-                    </div>
-                  ))}
-                  
-                  {/* Preview */}
-                  <div className="mt-4">
-                    <Label className="mb-2 block">Preview</Label>
-                    <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700 flex justify-center gap-4">
-                      {formData.dichotomousOptions.map((option, index) => (
-                        <div key={index} className="flex items-center space-x-2">
-                          <div className="w-4 h-4 rounded-full border border-gray-600"></div>
-                          <span>{option || (index === 0 ? "Yes" : "No")}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+  <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">
+    <Label>Dichotomous Question Options</Label>
+    <div className="text-sm text-gray-400 mb-2">
+      Customize the options for your yes/no question. You can add more than two options if needed.
+    </div>
+    {formData.dichotomousOptions.map((option, index) => (
+      <div key={index} className="flex items-center space-x-2">
+        <Input
+          value={option}
+          onChange={(e) => handleArrayFieldChange('dichotomousOptions', index, e.target.value)}
+          placeholder={index === 0 ? "Positive option (e.g., Yes)" : index === 1 ? "Negative option (e.g., No)" : `Option ${index + 1}`}
+          className="bg-[#0d0f14] border-gray-800 text-white flex-1"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => removeArrayItem('dichotomousOptions', index)}
+          className="text-gray-400 hover:text-white"
+          disabled={formData.dichotomousOptions.length <= 2}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    ))}
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={() => addArrayItem('dichotomousOptions')}
+      className="mt-2 border-gray-700 text-white hover:bg-gray-800 w-full"
+    >
+      <Plus className="h-4 w-4 mr-2" />
+      Add Option
+    </Button>
+    
+    {/* Preview */}
+    <div className="mt-4">
+      <Label className="mb-2 block">Preview</Label>
+      <div className="p-4 bg-[#0d0f14] rounded-md border border-gray-700">
+        <div className="space-y-2">
+          {formData.dichotomousOptions.map((option, index) => (
+            <div key={index} className="flex items-center space-x-2">
+              <div className="w-4 h-4 rounded-full border border-gray-600"></div>
+              <span>{option || (index === 0 ? "Yes" : index === 1 ? "No" : `Option ${index + 1}`)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
               
               {formData.type === QuestionTypeEnum.RANKING && (
                 <div className="space-y-4 mt-4 bg-[#111318] p-4 rounded-md border border-gray-800">

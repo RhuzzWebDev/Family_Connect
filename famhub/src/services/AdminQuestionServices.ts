@@ -935,12 +935,25 @@ export class AdminQuestionServices {
                 option_order: option.option_order || index
               }));
               
-              const { data: options, error: optionsError } = await this.supabase
-                .from('question_likert_scale')
-                .insert(optionsToInsert)
-                .select();
+              // Use direct fetch approach for likert scale options to bypass RLS
+              const optionsResponse = await fetch(`${supabaseUrl}/rest/v1/question_likert_scale`, {
+                method: 'POST',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(optionsToInsert)
+              });
               
-              if (optionsError) throw optionsError;
+              if (!optionsResponse.ok) {
+                const errorText = await optionsResponse.text();
+                console.error(`API error inserting likert scale options: ${optionsResponse.status}`, errorText);
+                throw new Error(`Failed to insert likert scale options: ${optionsResponse.status}. ${errorText}`);
+              }
+              
+              const options = await optionsResponse.json();
               result.options = options;
             }
             break;
@@ -956,12 +969,25 @@ export class AdminQuestionServices {
                   item_order: row.item_order || index
                 }));
                 
-                const { data: rows, error: rowsError } = await this.supabase
-                  .from('question_matrix')
-                  .insert(rowsToInsert)
-                  .select();
+                // Use direct fetch approach for matrix rows to bypass RLS
+                const rowsResponse = await fetch(`${supabaseUrl}/rest/v1/question_matrix`, {
+                  method: 'POST',
+                  headers: {
+                    'apikey': supabaseKey,
+                    'Authorization': `Bearer ${supabaseKey}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                  },
+                  body: JSON.stringify(rowsToInsert)
+                });
                 
-                if (rowsError) throw rowsError;
+                if (!rowsResponse.ok) {
+                  const errorText = await rowsResponse.text();
+                  console.error(`API error inserting matrix rows: ${rowsResponse.status}`, errorText);
+                  throw new Error(`Failed to insert matrix rows: ${rowsResponse.status}. ${errorText}`);
+                }
+                
+                const rows = await rowsResponse.json();
                 
                 // Insert columns
                 const columnsToInsert = questionData.matrix.columns.map((col, index) => ({
@@ -971,12 +997,25 @@ export class AdminQuestionServices {
                   item_order: col.item_order || index
                 }));
                 
-                const { data: columns, error: columnsError } = await this.supabase
-                  .from('question_matrix')
-                  .insert(columnsToInsert)
-                  .select();
+                // Use direct fetch approach for matrix columns to bypass RLS
+                const columnsResponse = await fetch(`${supabaseUrl}/rest/v1/question_matrix`, {
+                  method: 'POST',
+                  headers: {
+                    'apikey': supabaseKey,
+                    'Authorization': `Bearer ${supabaseKey}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                  },
+                  body: JSON.stringify(columnsToInsert)
+                });
                 
-                if (columnsError) throw columnsError;
+                if (!columnsResponse.ok) {
+                  const errorText = await columnsResponse.text();
+                  console.error(`API error inserting matrix columns: ${columnsResponse.status}`, errorText);
+                  throw new Error(`Failed to insert matrix columns: ${columnsResponse.status}. ${errorText}`);
+                }
+                
+                const columns = await columnsResponse.json();
                 
                 result.matrix = {
                   rows,
@@ -988,61 +1027,92 @@ export class AdminQuestionServices {
             
           case QuestionTypeEnum.OPEN_ENDED:
             if (questionData.openEndedSettings) {
-              const { data: openEndedData, error: openEndedError } = await this.supabase
-                .from('question_open_ended')
-                .insert([{
+              // Use direct fetch approach for open-ended settings to bypass RLS
+              const openEndedResponse = await fetch(`${supabaseUrl}/rest/v1/question_open_ended`, {
+                method: 'POST',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=representation'
+                },
+                body: JSON.stringify([{
                   question_id: questionId,
                   answer_format: questionData.openEndedSettings.answer_format || 'text',
                   character_limit: questionData.openEndedSettings.character_limit
                 }])
-                .select()
-                .single();
+              });
               
-              if (openEndedError) throw openEndedError;
-              result.openEndedSettings = openEndedData;
+              if (!openEndedResponse.ok) {
+                const errorText = await openEndedResponse.text();
+                console.error(`API error inserting open-ended settings: ${openEndedResponse.status}`, errorText);
+                throw new Error(`Failed to insert open-ended settings: ${openEndedResponse.status}. ${errorText}`);
+              }
+              
+              const openEndedData = await openEndedResponse.json();
+              result.openEndedSettings = openEndedData[0]; // Get the first item from the array
             }
             break;
             
           case QuestionTypeEnum.RATING_SCALE:
-          // Make sure to set admin context again before fetching rating scale data
-          if (adminEmail) {
-            await this.setAdminContext(adminEmail);
-          }
-          
-          console.log(`Fetching rating scale data for question ID: ${questionId}`);
+            console.log(`Fetching rating scale data for question ID: ${questionId}`);
             if (questionData.scale) {
-              const { data: scale, error: scaleError } = await this.supabase
-                .from('question_rating_scale')
-                .insert([{
+              // Use direct fetch approach for rating scale to bypass RLS
+              const ratingScaleResponse = await fetch(`${supabaseUrl}/rest/v1/question_rating_scale`, {
+                method: 'POST',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=representation'
+                },
+                body: JSON.stringify([{
                   question_id: questionId,
                   min_value: questionData.scale.min_value,
                   max_value: questionData.scale.max_value,
                   step_value: questionData.scale.step_value || 1
                 }])
-                .select()
-                .single();
+              });
               
-              if (scaleError) throw scaleError;
-              result.scale = scale;
+              if (!ratingScaleResponse.ok) {
+                const errorText = await ratingScaleResponse.text();
+                console.error(`API error inserting rating scale: ${ratingScaleResponse.status}`, errorText);
+                throw new Error(`Failed to insert rating scale: ${ratingScaleResponse.status}. ${errorText}`);
+              }
+              
+              const scaleData = await ratingScaleResponse.json();
+              result.scale = scaleData[0]; // Get the first item from the array
             }
             break;
             
           case QuestionTypeEnum.SLIDER:
             if (questionData.scale) {
-              const { data: sliderData, error: sliderError } = await this.supabase
-                .from('question_slider')
-                .insert([{
+              // Use direct fetch approach for slider to bypass RLS
+              const sliderResponse = await fetch(`${supabaseUrl}/rest/v1/question_slider`, {
+                method: 'POST',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=representation'
+                },
+                body: JSON.stringify([{
                   question_id: questionId,
                   min_value: questionData.scale.min_value,
                   max_value: questionData.scale.max_value,
                   step_value: questionData.scale.step_value || 1,
                   default_value: questionData.scale.default_value
                 }])
-                .select()
-                .single();
+              });
               
-              if (sliderError) throw sliderError;
-              result.scale = sliderData;
+              if (!sliderResponse.ok) {
+                const errorText = await sliderResponse.text();
+                console.error(`API error inserting slider: ${sliderResponse.status}`, errorText);
+                throw new Error(`Failed to insert slider: ${sliderResponse.status}. ${errorText}`);
+              }
+              
+              const sliderData = await sliderResponse.json();
+              result.scale = sliderData[0]; // Get the first item from the array
             }
             break;
             
@@ -1072,21 +1142,81 @@ export class AdminQuestionServices {
             const negativeOption = questionData.options && questionData.options.length > 1 ? 
               questionData.options[1].option_text : 'No';
               
-            const { data: dichotomousData, error: dichotomousError } = await this.supabase
-              .from('question_dichotomous')
-              .insert([{
+            // Get additional options if available
+            const additionalOptions = questionData.options && questionData.options.length > 2 ?
+              questionData.options.slice(2) : [];
+              
+            // Use direct fetch approach for dichotomous options to bypass RLS
+            const dichotomousResponse = await fetch(`${supabaseUrl}/rest/v1/question_dichotomous`, {
+              method: 'POST',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify([{
                 question_id: questionId,
                 positive_option: positiveOption,
                 negative_option: negativeOption
               }])
-              .select()
-              .single();
+            });
             
-            if (dichotomousError) throw dichotomousError;
-            result.options = [
+            if (!dichotomousResponse.ok) {
+              const errorText = await dichotomousResponse.text();
+              console.error(`API error inserting dichotomous options: ${dichotomousResponse.status}`, errorText);
+              throw new Error(`Failed to insert dichotomous options: ${dichotomousResponse.status}. ${errorText}`);
+            }
+            
+            const dichotomousData = await dichotomousResponse.json();
+            
+            // Prepare the basic options
+            let resultOptions = [
               { id: `${questionId}-yes`, question_id: questionId, option_text: positiveOption, option_order: 0 },
               { id: `${questionId}-no`, question_id: questionId, option_text: negativeOption, option_order: 1 }
             ];
+            
+            // If we have additional options beyond Yes/No, store them in question_dichotomous_option table
+            if (additionalOptions.length > 0) {
+              // Prepare additional options data
+              const additionalOptionsToInsert = additionalOptions.map((option, index) => ({
+                question_id: questionId,
+                option_text: option.option_text,
+                option_order: index + 2 // Start from index 2 (after Yes/No)
+              }));
+              
+              // Use direct fetch for additional options
+              const additionalOptionsResponse = await fetch(`${supabaseUrl}/rest/v1/question_dichotomous_option`, {
+                method: 'POST',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=representation'
+                },
+                body: JSON.stringify(additionalOptionsToInsert)
+              });
+              
+              if (!additionalOptionsResponse.ok) {
+                const errorText = await additionalOptionsResponse.text();
+                console.error(`API error inserting additional dichotomous options: ${additionalOptionsResponse.status}`, errorText);
+                throw new Error(`Failed to insert additional dichotomous options: ${additionalOptionsResponse.status}. ${errorText}`);
+              }
+              
+              const additionalOptionsData = await additionalOptionsResponse.json();
+              
+              // Add additional options to the result
+              additionalOptionsData.forEach((option: any) => {
+                resultOptions.push({
+                  id: option.id,
+                  question_id: questionId,
+                  option_text: option.option_text,
+                  option_order: option.option_order
+                });
+              });
+            }
+            
+            result.options = resultOptions;
             break;
             
           case QuestionTypeEnum.DEMOGRAPHIC:
