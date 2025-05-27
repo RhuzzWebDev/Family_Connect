@@ -1,31 +1,44 @@
 'use client';
 
-import { useSession } from "next-auth/react";
-import Navbar from "./Navbar";
-import { InnerNavbar } from "./InnerNavbar";
-import { usePathname } from "next/navigation";
+import { Navbar } from './Navbar';
+import { useSession } from 'next-auth/react';
+import { usePathname } from 'next/navigation';
+import { InnerNavbar } from './InnerNavbar';
+import { memo } from 'react';
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { HomeIcon, Users, Calendar, MessageSquare } from "lucide-react";
+import { HomeIcon, Users, Calendar, MessageSquare, Group, PersonStanding } from "lucide-react";
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-export function Layout({ children }: LayoutProps) {
-  const { data: session, status } = useSession();
+const NavLink = memo(({ href, icon: Icon, children }: { href: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) => (
+  <Link 
+    href={href}
+    prefetch
+    className="flex items-center px-4 py-2.5 text-sm font-medium text-white hover:bg-[#232336] rounded-none transition-colors duration-200 will-change-transform"
+  >
+    <Icon className="w-5 h-5 mr-3 text-gray-400 group-hover:text-white transition-colors duration-200" />
+    <span className="transition-colors duration-200">{children}</span>
+  </Link>
+));
+
+NavLink.displayName = 'NavLink';
+
+export function Layout({ children }: { children: React.ReactNode }) {
+  const { data: session } = useSession();
+  
+  if (!session) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
   const pathname = usePathname() || '';
   
-  // While session is loading, just show children without layout
-  if (status === 'loading') {
-    return <>{children}</>;
-  }
-
-  // If not authenticated, just show children without layout
-  if (status !== 'authenticated' || !session?.user) {
-    return <>{children}</>;
-  }
-
   // Show inner navigation for main app sections
   const showInnerNav = pathname.includes('/dashboard') || 
                       pathname.includes('/questions') || 
@@ -33,39 +46,21 @@ export function Layout({ children }: LayoutProps) {
                       pathname.includes('/members');
   
   return (
-    <div className="min-h-screen bg-background flex flex-col" style={{ background: '#171821' }}>
+    <div className="min-h-screen bg-[#0F1017]">
       {/* Header - visible to all */}
-      <div className="sticky top-0 z-50">
+      <div className="sticky top-0 z-50 transition-all duration-300 will-change-transform">
         <Navbar />
       </div>
       
-      <div className="flex flex-1">
+      <div className="flex flex-1 transition-opacity duration-300 will-change-opacity">
         {/* Sidebar */}
-        <aside className="w-64 hidden md:block sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto" style={{ background: '#1E1F29', borderRight: '1px solid #232336' }}>
+        <aside className="w-64 hidden md:block sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto transition-all duration-300 will-change-transform" 
+              style={{ background: '#1E1F29', borderRight: '1px solid #232336' }}>
           <div className="flex flex-col space-y-1 pt-4">
-            <Link 
-              href="/dashboard" 
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-white hover:bg-[#232336] rounded-none group"
-            >
-              <HomeIcon className="w-5 h-5 mr-3 text-gray-400 group-hover:text-white" />
-              <span>Welcome</span>
-            </Link>
-            
-            <Link 
-              href="/events" 
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-white hover:bg-[#232336] rounded-none group"
-            >
-              <Calendar className="w-5 h-5 mr-3 text-gray-400 group-hover:text-white" />
-              <span>Events</span>
-            </Link>
-            
-            <Link 
-              href="/members" 
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-white hover:bg-[#232336] rounded-none group"
-            >
-              <Users className="w-5 h-5 mr-3 text-gray-400 group-hover:text-white" />
-              <span>Members</span>
-            </Link>
+            <NavLink href="/dashboard" icon={HomeIcon}>Welcome</NavLink>
+            <NavLink href="/events" icon={Calendar}>Events</NavLink>
+            <NavLink href="/members" icon={Users}>Members</NavLink>
+            <NavLink href="/family" icon={PersonStanding}>Family</NavLink>
             
             <div className="px-3 pt-5 pb-2">
               <div className="flex items-center">
@@ -78,28 +73,14 @@ export function Layout({ children }: LayoutProps) {
               </div>
             </div>
             
-            <Link 
-              href="/community" 
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-white hover:bg-[#232336] rounded-none group pl-6"
-            >
-              <div className="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center mr-3 text-xs">A</div>
-              <span>All Community Members</span>
-            </Link>
+            <NavLink href="/community" icon={MessageSquare}>All Community Members</NavLink>
             
-            <Link 
-              href="/explore" 
-              className="flex items-center px-4 py-2.5 text-sm font-medium text-white hover:bg-[#232336] rounded-none group mt-5"
-            >
-              <svg className="w-5 h-5 mr-3 text-gray-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16l2.879-2.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>Explore</span>
-            </Link>
+            <NavLink href="/explore" icon={Group}>Explore</NavLink>
           </div>
         </aside>
         
         {/* Main content */}
-        <main className="flex-1 min-h-[calc(100vh-4rem)] bg-[#0F1017]">
+        <main className="flex-1 min-h-[calc(100vh-4rem)] bg-[#0F1017] transition-all duration-300 will-change-transform">
           {showInnerNav && <InnerNavbar />}
           <div className="container mx-auto py-6">
             {children}

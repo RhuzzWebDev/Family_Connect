@@ -256,7 +256,7 @@ export function QuestionSetCard({ questionSet }: QuestionSetCardProps) {
       {isDialogOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
           <div 
-            className={`bg-[#121212] text-white ${isFullscreen ? 'w-full' : 'w-full md:w-1/2'} h-full overflow-hidden flex flex-col animate-slide-in-right`}
+            className={`bg-[#121212] text-white ${isFullscreen ? 'w-full' : 'w-full md:w-1/2'} h-screen overflow-hidden flex flex-col animate-slide-in-right`}
             style={{
               boxShadow: '-4px 0 12px rgba(0, 0, 0, 0.2)',
               animation: 'slideInRight 0.3s forwards'

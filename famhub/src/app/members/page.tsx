@@ -1,5 +1,7 @@
 'use client';
 
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Filter, Mail, MapPin, Search, Users } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
@@ -8,16 +10,32 @@ import { Button } from "@/components/ui/button";
 import Image from "next/image";
 
 export default function MembersPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
   useEffect(() => {
-    const userEmail = sessionStorage.getItem('userEmail');
-    if (!userEmail) {
-      window.location.href = '/login';
+    if (status === 'unauthenticated') {
+      router.push('/login');
     }
-  }, []);
-  
+  }, [status, router]);
+
+  if (status === 'loading') {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center h-screen">
+          <p>Loading...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!session) {
+    return null; // Redirect will happen from useEffect
+  }
+
   return (
     <Layout>
-      <div className="pl-6 pr-6 md:pl-8" style={{ background: '#0F1017', color: '#fff' }}>
+      <div className="pl-6 pr-6 md:pl-8 bg-[#0F1017] text-white">
         {/* Search and Invite */}
         <div className="mb-6 pt-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="relative w-full md:w-64">
@@ -25,7 +43,7 @@ export default function MembersPage() {
             <input
               type="text"
               placeholder="Search Members"
-              className="w-full bg-white border border-gray-300 rounded-md py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full bg-[#1E1F29] border border-[#232336] rounded-md py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
           
@@ -35,11 +53,11 @@ export default function MembersPage() {
         <div className="mb-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">All Community Members</h1>
-              <p className="text-gray-600 text-sm mt-1">Connect with other members of our supportive community</p>
+              <h1 className="text-2xl font-bold text-white">All Community Members</h1>
+              <p className="text-gray-400 text-sm mt-1">Connect with other members of our supportive community</p>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+              <Button variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
                 <Filter className="h-4 w-4 mr-2" />
                 Filter Members
               </Button>
@@ -51,17 +69,17 @@ export default function MembersPage() {
         <div>
           {/* Member Categories */}
           <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-            <Button className="bg-blue-600 hover:bg-blue-700">All Members</Button>
-            <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+            <Button className="bg-[#232336] hover:bg-[#2a2b3a] text-white">All Members</Button>
+            <Button variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
               Family Members
             </Button>
-            <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+            <Button variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
               Care Providers
             </Button>
-            <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+            <Button variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
               Healthcare Professionals
             </Button>
-            <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+            <Button variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
               Community Supporters
             </Button>
           </div>
@@ -169,7 +187,7 @@ export default function MembersPage() {
             </div>
 
             <div className="mt-6 flex justify-center">
-              <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+              <Button variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
                 Load More Members
               </Button>
             </div>
@@ -191,25 +209,25 @@ interface FeaturedMemberCardProps {
 
 function FeaturedMemberCard({ name, role, location, image, bio, memberSince }: FeaturedMemberCardProps) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:bg-gray-50 transition-colors cursor-pointer shadow-sm">
+    <div className="bg-[#1E1F29] border border-[#232336] rounded-lg hover:bg-[#232336] transition-colors cursor-pointer shadow-sm">
       <div className="p-4 flex flex-col items-center text-center">
         <div className="w-20 h-20 rounded-full overflow-hidden mb-3">
           <Image src={image || "/placeholder.svg"} alt={name} width={80} height={80} className="object-cover" />
         </div>
-        <h3 className="font-medium text-lg text-gray-900">{name}</h3>
+        <h3 className="font-medium text-lg text-gray-300">{name}</h3>
         <div className="text-blue-600 text-sm">{role}</div>
         <div className="flex items-center text-xs text-gray-500 mt-1">
           <MapPin className="h-3 w-3 mr-1" />
           {location}
         </div>
-        <p className="text-sm text-gray-600 mt-3">{bio}</p>
+        <p className="text-sm text-gray-400 mt-3">{bio}</p>
         <div className="text-xs text-gray-500 mt-3">Member since {memberSince}</div>
 
         <div className="flex gap-2 mt-4">
-          <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+          <Button size="sm" className="bg-[#232336] hover:bg-[#2a2b3a] text-white">
             Connect
           </Button>
-          <Button size="sm" variant="outline" className="border-gray-300 hover:bg-gray-100">
+          <Button size="sm" variant="outline" className="border-[#232336] text-gray-300 hover:bg-[#1E1F29]">
             <Mail className="h-4 w-4" />
           </Button>
         </div>
@@ -228,13 +246,13 @@ interface MemberCardProps {
 
 function MemberCard({ name, role, location, image, memberSince }: MemberCardProps) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:bg-gray-50 transition-colors cursor-pointer shadow-sm">
+    <div className="bg-[#1E1F29] border border-[#232336] rounded-lg hover:bg-[#232336] transition-colors cursor-pointer shadow-sm">
       <div className="p-4 flex items-center">
         <div className="w-12 h-12 rounded-full overflow-hidden mr-3">
           <Image src={image || "/placeholder.svg"} alt={name} width={48} height={48} className="object-cover" />
         </div>
         <div>
-          <h3 className="font-medium text-gray-900">{name}</h3>
+          <h3 className="font-medium text-gray-300">{name}</h3>
           <div className="text-sm text-blue-600">{role}</div>
           <div className="flex items-center text-xs text-gray-500 mt-0.5">
             <MapPin className="h-3 w-3 mr-1" />

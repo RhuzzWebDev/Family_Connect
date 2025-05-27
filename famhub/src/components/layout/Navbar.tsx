@@ -18,7 +18,13 @@ import {
   LikeNotification 
 } from '@/components/ui/notifications-dialog';
 
-export default function Navbar() {
+export function Navbar() {
+  const { data: session } = useSession();
+  
+  if (!session?.user) {
+    return null;
+  }
+
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -29,7 +35,6 @@ export default function Navbar() {
   const [isLoading, setIsLoading] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const { data: session, status } = useSession();
   const pathname = '';
 
   // Handle click outside to close menus
@@ -235,10 +240,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav
-      className="sticky top-0 z-50 w-full"
-      style={{ background: '#1E1F29', borderBottom: '1px solid #232336' }}
-    >
+    <nav className="bg-[#1E1F29] border-b border-[#232336]">
       <div className="w-full px-4 flex h-16 items-center">
         <div className="flex items-center gap-4">
           <Image
@@ -320,16 +322,16 @@ export default function Navbar() {
                     )}
                   </div>
                   
-                  <button
+                  <Link 
+                    href="/profile"
                     className="flex w-full items-center px-4 py-2 text-sm transition-colors"
                     style={{ color: '#e5e7eb', background: 'transparent' }}
                     onMouseOver={e => (e.currentTarget.style.background = '#1E1F29')}
                     onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
-                    onClick={() => setIsProfileModalOpen(true)}
                   >
                     <UserIcon className="mr-3 h-4 w-4" />
                     Profile
-                  </button>
+                  </Link>
 
                   <Link
                     href="/settings"
